@@ -14,6 +14,10 @@
    behaviours that are deliberately NOT promised, lives in
    [docs/program-memory-contract.md]. That document is normative; this interface is a
    summary of it. Do not infer permitted behaviour from the implementation.
+
+   Current status: Config validation is implemented; create remains unimplemented. The
+   contract describes the planned context-taking API for project registration; the
+   signature below has not yet migrated to that API.
 *)
 
 open! Core
@@ -61,8 +65,9 @@ end
     - [enable = 0]: no access. Read data {b holds} its previous value.
     - [enable = 1], [write_enable = 0]: read. [mem.(address)] appears next cycle.
     - [enable = 1], [write_enable = 1]: write [write_data] to [address]. Read data next
-      cycle is {b unspecified}; the simulation model drives a poison pattern so that any
-      consumer depending on it fails visibly rather than silently.
+      cycle is {b unspecified}; the planned simulation model drives a poison pattern to
+      help expose accidental dependencies. Poison is an ordinary bit pattern and does not
+      guarantee a failure; consumer verification must check valid use.
 
     [address] must be [Config.address_bits] wide and [write_data] must be [Config.width]
     wide; [enable] and [write_enable] must be one bit. Mismatches raise at elaboration.

@@ -1,0 +1,54 @@
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "elaboration_context.mli" *)
+(* The temporary, mutable state of exactly one project elaboration.
+
+   {!Project.elaborate} creates a fresh context and passes it to the design constructor.
+   Resource constructors register through it and receive their implementation selection.
+
+   The context closes when elaboration finalizes OR fails; every operation on a closed
+   context raises, so a retained context cannot add to a finished build or leak into a
+   retry. Future logging capabilities for context debugging will come, but not now.
+
+   The context carries the current Hardcaml [Scope.t], which determines the hierarchical
+   part of each resource identity. When a constructor enters a sub-scope (for example via
+   [Hierarchy.In_scope]), obtain a context for it with {!in_scope}.
+*)
+
+open! Core
+open! Hardcaml
+
+type t
+
+val mode : t -> Elaboration_mode.t
+
+(** The current scope. Pass it to Hardcaml hierarchy and naming functions. *)
+val scope : t -> Scope.t
+
+(** A view of the same elaboration positioned at [scope]. Raises if [scope] does not
+    belong to this elaboration. *)
+val in_scope : t -> Scope.t -> t
+
+(** Register one resource instance named [name] in the current scope and select its
+    implementation.
+
+    Raises, with the instance identity and requested contract, if the name duplicates an
+    instance already registered in this scope, if no policy applies, or if the policy
+    cannot be satisfied by the technology. *)
+val register_exn : t -> name:string -> Resource_request.t -> Resource_record.t
+
+module Private : sig
+  val create
+    :  mode:Elaboration_mode.t
+    -> technology:Technology.t
+    -> policy:Resource_policy.t
+    -> scope:Scope.t
+    -> t
+
+  (** Validate collected state and close the context. Returns the inventory ordered by
+      identity. The context is closed whether or not validation succeeds. *)
+  val finalize : t -> Resource_record.t list Or_error.t
+
+  (** Close the context after a failed construction. *)
+  val fail : t -> unit
+end

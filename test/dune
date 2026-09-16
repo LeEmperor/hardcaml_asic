@@ -1,0 +1,15 @@
+; P0 lifecycle, registration and selection tests.
+
+(library
+ (name hardcaml_asic_test)
+ ; The trailing -source-tree-root wins over the one dune passes (%{workspace_root},
+ ; .. from here). Works around a ppx_expect v0.18~preview bug: it drops the directory
+ ; from the test file's path when registering a test, then rebuilds the path at exit
+ ; from the bare filename plus -source-tree-root. Drop this if a later ppx_expect fixes
+ ; the path handling. Same workaround as hardcaml_networking's test suites.
+ (inline_tests
+  (flags
+   (:standard -source-tree-root .)))
+ (libraries core expect_test_helpers_core hardcaml hardcaml_asic)
+ (preprocess
+  (pps ppx_hardcaml ppx_jane)))

@@ -1,10 +1,10 @@
-; v0.1 surface of hardcaml_asic. Technology backends are deliberately NOT linked
-; here: this library holds portable design intent only, and a backend package
-; (hardcaml_asic_ihp_cmos5l) supplies implementations. See
-; docs/hardcaml_asic_concept_note.md section 2.
+; Initial hardcaml_asic package. Keep portable resources, technology bindings,
+; and project/flow support behind clear module boundaries in one package;
+; split packages when dependencies or distribution require it. No technology
+; backend is implemented yet. See docs/architecture.md section 2.
 
 (library
  (name hardcaml_asic)
- (libraries core hardcaml)
+ (libraries core hardcaml yojson)
  (preprocess
   (pps ppx_jane)))

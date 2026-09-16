@@ -1,0 +1,252 @@
+(* University of Florida *)
+(* Author: Bohdan Purtell *)
+(* Module: "test_lifecycle.ml" *)
+(* P0.1, P0.2, P0.4: declaration to finalized build, registration identity and ordering,
+   and closing the context. *)
+
+open! Core
+open! Hardcaml
+open! Hardcaml_asic
+open! Expect_test_helpers_core
+
+let elaborate ?(mode = Elaboration_mode.Implementation) project =
+  Project.elaborate (ok_exn project) ~mode
+;;
+
+let%expect_test "declaration to finalized implementation build" =
+  let build = elaborate (Fixture.project ()) |> ok_exn in
+  print_s [%sexp (build : Build.t)];
+  [%expect
+    {|
+    ((project_name fixture)
+     (top          fixture_top)
+     (metadata (
+       (title  "Lifecycle fixture")
+       (author hardcaml_asic)
+       (description "Exercises declaration, registration and finalization")))
+     (mode Implementation)
+     (target (
+       (harness (Tiny_tapeout (tiles T1x1)))
+       (technology ((name ihp-sg13cmos5l) (resource_mappings ())))))
+     (flow ((adapter (Librelane ((overrides ())))) (operation Hardening)))
+     (clocks ((
+       (port   clock)
+       (period 20ns))))
+     (resources (
+       ((id left/buf)
+        (request ((kind fixture_store) (contract ((width 8)))))
+        (requirement Flops)
+        (policy      Default)
+        (selection (
+          (implementation Flops)
+          (reason         Explicit_flops)))
+        (elaborated_as Selected_implementation)
+        (sources (Generated_synthesis_rtl)))
+       ((id right/buf)
+        (request ((kind fixture_store) (contract ((width 8)))))
+        (requirement Flops)
+        (policy      Default)
+        (selection (
+          (implementation Flops)
+          (reason         Explicit_flops)))
+        (elaborated_as Selected_implementation)
+        (sources (Generated_synthesis_rtl)))
+       ((id status)
+        (request ((kind fixture_store) (contract ((width 8)))))
+        (requirement Flops)
+        (policy      Default)
+        (selection (
+          (implementation Flops)
+          (reason         Explicit_flops)))
+        (elaborated_as Selected_implementation)
+        (sources (Generated_synthesis_rtl))))))
+    |}]
+;;
+
+let%expect_test "simulation mode elaborates behavioural models and simulates" =
+  let build = elaborate ~mode:Simulation (Fixture.project ()) |> ok_exn in
+  List.iter (Build.resources build) ~f:(fun r ->
+    print_s
+      [%message
+        ""
+          ~_:(r.id : Resource_id.t)
+          ~_:(r.elaborated_as : Resource_record.Elaborated_as.t)
+          ~_:(r.sources : Resource_record.Source.t list)]);
+  [%expect
+    {|
+    (left/buf Behavioral_model (Generated_behavioral_model))
+    (right/buf Behavioral_model (Generated_behavioral_model))
+    (status Behavioral_model (Generated_behavioral_model))
+    |}];
+  let sim = Cyclesim.create (Build.circuit build) in
+  Cyclesim.in_port sim "d" := Bits.of_int_trunc ~width:8 0x5a;
+  Cyclesim.cycle sim;
+  print_s [%message "" ~status:(!(Cyclesim.out_port sim "status") : Bits.t)];
+  [%expect {| (status 01011010) |}]
+;;
+
+let%expect_test "identities and inventory order do not depend on registration order" =
+  let inventory order =
+    elaborate (Fixture.project ~design:(Fixture.design ~order ()) ())
+    |> ok_exn
+    |> Build.resources
+  in
+  let forward = inventory `Forward in
+  require_equal
+    (module struct
+      type t = Resource_record.t list [@@deriving equal, sexp_of]
+    end)
+    forward
+    (inventory `Reverse);
+  require_equal
+    (module struct
+      type t = Resource_record.t list [@@deriving equal, sexp_of]
+    end)
+    forward
+    (inventory `Forward);
+  print_s [%sexp (List.map forward ~f:(fun r -> r.id) : Resource_id.t list)];
+  [%expect {| (left/buf right/buf status) |}]
+;;
+
+let%expect_test "duplicate names in one scope are rejected" =
+  let design =
+    Fixture.design
+      ~after:(fun context ->
+        let clock = Signal.input "clock2" 1 in
+        ignore
+          (Fixture.Store.create
+             context
+             ~name:"status"
+             ~clock
+             (Signal.of_int_trunc ~width:8 0)
+           : Signal.t))
+      ()
+  in
+  print_s [%sexp (elaborate (Fixture.project ~design ()) : Build.t Or_error.t)];
+  [%expect
+    {|
+    (Error (
+      ("design construction failed"
+        (project fixture)
+        (mode    Implementation))
+      ("duplicate resource instance; give each instance in a scope a distinct name"
+       (instance status)
+       (request ((kind fixture_store) (contract ((width 8))))))))
+    |}]
+;;
+
+let%expect_test "a retained context cannot register after finalization" =
+  let retained = ref None in
+  let design = Fixture.design ~before:(fun context -> retained := Some context) () in
+  let build = elaborate (Fixture.project ~design ()) |> ok_exn in
+  let context = Option.value_exn !retained in
+  require_does_raise (fun () ->
+    Fixture.Store.create
+      context
+      ~name:"late"
+      ~clock:(Signal.input "clock" 1)
+      (Signal.input "d" 8));
+  require_does_raise (fun () -> Elaboration_context.scope context);
+  print_s [%sexp (List.length (Build.resources build) : int)];
+  [%expect
+    {|
+    ("elaboration context is closed; each elaboration uses a fresh context"
+     (operation register)
+     (state     Finalized))
+    ("elaboration context is closed; each elaboration uses a fresh context"
+     (operation scope)
+     (state     Finalized))
+    3
+    |}]
+;;
+
+let%expect_test "failed construction is closed and a retry starts clean" =
+  let retained = ref None in
+  let fail = ref true in
+  let design =
+    Fixture.design
+      ~before:(fun context -> retained := Some context)
+      ~after:(fun _ ->
+        if !fail then raise_s [%message "fixture failure after registering"])
+      ()
+  in
+  let project = Fixture.project ~design () |> ok_exn in
+  print_s [%sexp (Project.elaborate project ~mode:Implementation : Build.t Or_error.t)];
+  [%expect
+    {|
+    (Error (
+      ("design construction failed"
+        (project fixture)
+        (mode    Implementation))
+      "fixture failure after registering"))
+    |}];
+  let failed_context = Option.value_exn !retained in
+  require_does_raise (fun () ->
+    Elaboration_context.register_exn
+      failed_context
+      ~name:"late"
+      (Fixture.Store.request ~width:8));
+  [%expect
+    {|
+    ("elaboration context is closed; each elaboration uses a fresh context"
+     (operation register)
+     (state     Failed))
+    |}];
+  fail := false;
+  let build = Project.elaborate project ~mode:Implementation |> ok_exn in
+  require (not (phys_equal (Option.value_exn !retained) failed_context));
+  Fixture.print_inventory build;
+  [%expect
+    {|
+    (left/buf Default ((implementation Flops) (reason Explicit_flops)))
+    (right/buf Default ((implementation Flops) (reason Explicit_flops)))
+    (status Default ((implementation Flops) (reason Explicit_flops)))
+    |}]
+;;
+
+let%expect_test "a scope from another elaboration is rejected" =
+  let design =
+    Fixture.design
+      ~before:(fun context ->
+        ignore
+          (Elaboration_context.in_scope context (Scope.create ()) : Elaboration_context.t))
+      ()
+  in
+  print_s [%sexp (elaborate (Fixture.project ~design ()) : Build.t Or_error.t)];
+  [%expect
+    {|
+    (Error (
+      ("design construction failed"
+        (project fixture)
+        (mode    Implementation))
+      "scope does not belong to this elaboration"))
+    |}]
+;;
+
+let%expect_test "invalid declarations produce diagnostics before elaboration" =
+  let flow =
+    Flow.librelane
+      Hardening
+      ~overrides:
+        [ { key = "PL_TARGET_DENSITY_PCT"; value = `Int 60; reason = "" }
+        ; { key = "PL_TARGET_DENSITY_PCT"; value = `Int 55; reason = "fits 1x1" }
+        ]
+  in
+  print_s
+    [%sexp (Fixture.project ~flow () |> Or_error.map ~f:Project.name : string Or_error.t)];
+  [%expect
+    {|
+    (Error (
+      ("invalid project declaration" (name fixture))
+      ("LibreLane overrides need a key and a nonempty reason"
+       (invalid ((
+         (key    PL_TARGET_DENSITY_PCT)
+         (value  60)
+         (reason "")))))
+      ("LibreLane override key set more than once"
+       (duplicate (
+         (key    PL_TARGET_DENSITY_PCT)
+         (value  60)
+         (reason ""))))))
+    |}]
+;;
