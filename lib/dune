@@ -1,0 +1,10 @@
+; v0.1 surface of hardcaml_asic. Technology backends are deliberately NOT linked
+; here: this library holds portable design intent only, and a backend package
+; (hardcaml_asic_ihp_cmos5l) supplies implementations. See
+; docs/hardcaml_asic_concept_note.md section 2.
+
+(library
+ (name hardcaml_asic)
+ (libraries core hardcaml)
+ (preprocess
+  (pps ppx_jane)))
