@@ -18,6 +18,12 @@ CMOS5L SRAM support remains unverified and is not an initial milestone requireme
 The roadmap and package/API sketches below are historical proposals, not promises
 of existing support. The PDF is a snapshot of the original note.
 
+The [architecture direction](hardcaml_asic_architecture_direction.md) develops the
+future open/commercial-tool direction. The accepted plan preserves separate flow
+selection, adapter-owned rendering and results, and independent execution so
+Cadence/Synopsys support can be added without changing portable resource contracts.
+Those adapters remain optional future work.
+
 ## Purpose
 
 `hardcaml_asic` would be a Hardcaml library for expressing ASIC-specific design intent and connecting Hardcaml-generated RTL to ASIC technology primitives and implementation flows.
@@ -82,11 +88,22 @@ Instantiation.create
 
 The backend decides how the requested resource is implemented.
 
+**Current interpretation:** resource implementation selection is constrained by
+explicit project policy and registered through an elaboration context. Technology
+bindings supply cell/macro views; a separately selected flow adapter renders
+constraints and tool inputs. LibreLane orchestrates the initial open flow.
+
 ---
 
 ## Proposed Scope
 
 ### 1. SRAM and Register-File Abstraction
+
+**Superseded scope/API sketch:** the first resource is
+[`Single_port_ram`](program-memory-contract.md), with an enable, shared 1RW port,
+latency 1, whole-word writes, hold on disable, and unspecified output after writes.
+It has no read-during-write policy. Register files remain consumer-owned flops;
+the initial implementation path does not require a physical macro.
 
 This should be the first feature and likely the most immediately valuable one.
 
@@ -130,6 +147,10 @@ Future SKY130 backend  -> corresponding SKY130 macro
 This keeps foundry-specific macro names out of the architecture itself.
 
 ### 2. Technology Backend Interface
+
+**Historical package/interface proposal:** the accepted plan starts with one
+package and clear module boundaries. Harness, technology, and flow selection are
+separate, and neither the CMOS5L nor SKY130 macro backend below exists today.
 
 A small technology interface should own mappings from generic ASIC design intent to process-specific implementations.
 
@@ -177,6 +198,10 @@ Process-specific support should ideally live in separate backend packages rather
 
 ### 3. ASIC Timing Constraints
 
+**Scope clarification:** the list below is exploratory. The initial constraint
+subset is established by the reference project, with adapter capability checks;
+it is not a commitment to implement every listed SDC command in the first milestone.
+
 `hardcaml_asic` could represent common timing constraints as typed OCaml data and emit SDC.
 
 Example:
@@ -205,6 +230,11 @@ The goal is not to reimplement all of SDC. The goal is to keep common design con
 
 ### 4. Generic Macro / Black-Box Support
 
+**Current scope:** use a small internal resource/collateral description first.
+A general public macro constructor follows demonstrated needs. Simulation models
+and synthesis black boxes have distinct source roles, and a future technology may
+need multiple corners or additional view formats beyond the triplet sketched here.
+
 SRAM is only one kind of non-generic ASIC resource. A generic macro description could capture the relationship between logical and physical views:
 
 ```ocaml
@@ -231,6 +261,12 @@ GDS             -> physical mask geometry
 ```
 
 ### 5. Physical-Design Flow Integration
+
+**Current lifecycle:** emit an immutable build bundle first, then execute it via
+external scripts or an optional runner and collect a separate execution/result
+record. LibreLane owns orchestration of the initial synthesis/physical stages.
+The flat metrics below are illustrative: results retain units, analysis context,
+and raw report references, and unavailable metrics must not become zero or pass.
 
 The library should orchestrate existing tools rather than replace them.
 
@@ -347,11 +383,19 @@ protocol_emulator
 
 This is preferable to designing a large generic library in isolation. Every abstraction should be added because the emulator or another real ASIC design needs it.
 
-The strongest initial use case is likely instruction/data memory: the emulator will probably need compact storage, which immediately forces the design to deal with real SRAM macros rather than FPGA block RAM inference.
+The strongest initial use case is program memory. The accepted plan first proves
+the path with explicitly selected flop storage and studies physical SRAM
+separately; compact-storage needs do not establish macro availability or permission.
 
 ---
 
 ## Recommended MVP Roadmap
+
+**Historical roadmap, superseded by the
+[first implementation milestone](architecture.md#8-first-implementation-milestone).**
+The v0.x labels below record the original proposal, not current release commitments.
+In particular, v0.1 does not require a physical SRAM mapping, and project/constraint/
+flow integration now accompanies the first behavioral/flop resource implementation.
 
 ### v0.1 - SRAM abstraction
 
@@ -429,6 +473,11 @@ Three principles should guide development:
 
 ## Questions for Review
 
+**Historical questions:** package boundaries, memory semantics, and the build/run
+split are now settled in the architecture and memory contract. Timing endpoint
+identity and richer physical APIs remain design work. See the
+[current remaining questions](architecture.md#9-deferred-work-and-remaining-interface-questions).
+
 The following are the main design questions worth discussing before implementation grows significantly:
 
 1. Should technology backends live in separate opam packages (`hardcaml_asic_ihp_cmos5l`, `hardcaml_asic_sky130`) or as submodules of one package?
@@ -442,6 +491,10 @@ The following are the main design questions worth discussing before implementati
 ---
 
 ## Recommended Starting Point
+
+**Historical macro-first demonstration:** use the architecture plan's registered
+behavioral/flop memory and immutable TT/LibreLane bundle for the first end-to-end
+path. The macro mapping below is conditional on the separate capability gate.
 
 Build the smallest possible end-to-end demonstration:
 

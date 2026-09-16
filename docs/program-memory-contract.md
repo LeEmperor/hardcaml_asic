@@ -9,33 +9,39 @@ remains unimplemented.
 The [architecture plan](architecture.md) defines project ownership, resource
 selection, registration, and build outputs. This document defines this memory's
 behavior and its obligations within that architecture.
+The [implementation phase plan](phase_plan.md#4-p1--contract-correct-program-memory)
+tracks the behavioral/flop implementation and verification work; its separate
+[SRAM track](phase_plan.md#9-s--separate-sram-capability-investigation) tracks
+conditional macro support.
 
 This is the first concrete memory in `hardcaml_asic`, written before the API was
 frozen, per the review note that memory semantics must precede the `Sram.create`
 signature. Every decision below cites the requirement that forces it, so that a
 later reader can tell a derived constraint from an arbitrary one.
 
-Citations of the form `construction-plan.md:NNN` refer to the protocol emulator
-repository (`hardcaml_protemu`, worktree `scaf`), which is the reference design
-per the concept note's "Relationship to the Protocol Emulator Competition".
+References to the [emulator construction plan](../../scaf/docs/construction-plan.md)
+use stable section links in the reference application's `scaf` worktree. Quoted
+motivation below records the original requirement; the updated plan incorporates
+the settled memory contract. These workspace links are not build dependencies.
 
 ---
 
 ## 1. Why this memory, and only this memory
 
-The emulator names three storage users:
+The emulator studies three storage users. The dimensions below are illustrative
+sweep points, not a frozen ISA or guaranteed macro shape:
 
 | Storage | Size | Decision |
 | --- | --- | --- |
-| Program memory, 256x16 | 4,096 bits | **This primitive.** 94% of all storage bits |
+| Program memory, 256x16 example | 4,096 bits | **This primitive.** About 94% of program-plus-FIFO bits, before registers/metadata |
 | Two byte FIFOs, 16x8 | 256 bits | Flip-flops. Not a macro, not this primitive |
 | Register file, 8x16 | 128 bits | Flip-flops. Multi-port read; wrong shape for 1RW |
 
-`construction-plan.md:179` — *"256x16 program bits plus two 16x8 FIFOs already
+[emulator construction plan](../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — *"256x16 program bits plus two 16x8 FIFOs already
 total 4,352 storage bits before registers and metadata. That can dominate a small
 design if implemented in flip-flops."*
 
-Only the program memory is large enough to justify a physical macro. Routing the
+At these study sizes, program memory is the only initial macro candidate. Routing the
 FIFOs or the register file through this interface would buy interface complexity
 and no area, and is explicitly out of scope for v0.1.
 
@@ -46,7 +52,7 @@ and no area, and is explicitly out of scope for v0.1.
 **Decision: one address bus, one enable, one write-enable. A cycle is a read or a
 write, never both.**
 
-Forced by `construction-plan.md:186` — *"Permit host program writes only while
+Forced by [emulator construction plan](../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — *"Permit host program writes only while
 halted with engines idle."*
 
 Host program load and instruction fetch are **temporally exclusive by
@@ -57,12 +63,16 @@ no reason to pay for a second port.
 This is the most consequential decision in the document. 1RW is the smallest,
 cheapest and most widely available compiled-macro configuration. A 1R1W or true
 dual-port memory is substantially larger and much less likely to exist in an open
-PDK. Had the architecture permitted host writes during execution, the memory
-requirement would have changed shape entirely.
+PDK. Host writes during execution would require an arbitration/stall policy or
+another memory shape; the initial emulator requires neither.
 
-**Consequence for the architecture:** the halted-during-load rule is now a
-*memory* constraint, not only a safety convention. Relaxing it later is not a
-firmware change; it is a change of memory primitive. Record it as such.
+**Consequence for the architecture:** exclusive program-memory access is now a
+hardware contract, not only a safety convention. The emulator initially restricts
+both host loading and readback to halted execution with engines idle; requests
+during execution are rejected without taking a fetch cycle. Supporting live host
+access would require an explicit arbitration/stall timing contract or a different
+memory shape, not only a firmware change. Ordinary status/data-queue operations
+do not imply access to this port.
 
 ---
 
@@ -127,10 +137,11 @@ deasserted. A naive behavioural model emits zero, or re-reads, or emits X. The
 three disagree, and the disagreement only shows up after tapeout.
 
 This matters because the emulator *will* stall fetch:
-`construction-plan.md:165` — the Time family includes *"Wait cycles, wait
+[emulator construction plan](../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — the Time family includes *"Wait cycles, wait
 level/edge with timeout"*, and *"Wait stalls control, not engines."* During a
-stall the fetch stage deasserts `enable`. If the output did not hold, the
-instruction register would latch garbage on every stall cycle.
+stall the fetch stage can deassert `enable` and rely on a stable memory output.
+The consumer must still gate instruction acceptance with fetch validity: held
+data alone does not identify a new or valid instruction.
 
 **Hold is therefore required of every backend, including the flop fallback and the
 behavioural model.** A macro that cannot hold is not a valid backend for this
@@ -138,12 +149,14 @@ primitive.
 
 ### 4.2 Read latency 1 — the pipeline consequence
 
-`construction-plan.md:181` — *"First use a synchronous-read memory abstraction
+[emulator construction plan](../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — *"First use a synchronous-read memory abstraction
 with an explicit latency."*
 
-Latency 1 forces fetch and decode into separate pipeline stages. This interacts
-with `construction-plan.md:163`, which requires the Flow family to *"publish cycle
-counts for every path"*: branch and jump latency become a function of fetch
+Latency 1 requires the consumer to account for the edge between a read request
+and its result, and to track fetch validity separately from held read data. The
+[emulator construction plan](../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study)
+requires the Flow family to *"publish cycle counts for every path"*: branch and
+jump latency become a function of fetch
 latency, so those published numbers cannot be finalised before this value is.
 
 Latency is a `Config` parameter rather than a constant so the call site states it
@@ -153,9 +166,12 @@ rounding.
 
 ### 4.3 No write mask, no byte enables
 
-Instructions are whole 16-bit words. There is no sub-word write case anywhere in
-the ISA study (`construction-plan.md:174`), and the host loader writes whole
-instruction words.
+Writes replace a complete configured memory word. The emulator still compares
+16-bit instructions with extensions against fixed 32-bit instructions; the RAM
+contract does not settle the ISA or equate instruction width with memory width.
+The consumer defines packing, extension layout, byte order, and number of fetches
+for each candidate. A byte-oriented transport assembles a full memory word before
+writing and rejects incomplete words without declaring the image valid.
 
 Byte enables are a portability liability: many compiled macros do not offer them,
 and emulating them costs a read-modify-write that this single-port shape cannot
@@ -170,9 +186,9 @@ initialisation file, and no zero-fill.**
 
 The emulator states this three separate times:
 
-- `construction-plan.md:101` — *"Do not depend on uninitialized program/data memory."*
-- `construction-plan.md:186` — *"Avoid bulk reset on program RAM. Reset its validity instead."*
-- `construction-plan.md:188` — *"Any ROM is a deliberate hardware implementation, not an assumed power-up file load."*
+- [emulator construction plan](../../scaf/docs/construction-plan.md#pins-reset-and-ownership) — *"Do not depend on uninitialized program/data memory."*
+- [emulator construction plan](../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — *"Avoid bulk reset on program RAM. Reset its validity instead."*
+- [emulator construction plan](../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — *"Any ROM is a deliberate hardware implementation, not an assumed power-up file load."*
 
 Validity is the **consumer's** concern: a separate `program_valid` flop, outside
 this primitive, gates execution until a load completes. This primitive has no
@@ -211,6 +227,11 @@ synthesis artifacts remain separate, as specified in the architecture plan.
 
 ## 6. Out-of-range addresses
 
+`Config.create_exn` requires `width >= 1`, `depth >= 2`, and `read_latency = 1`.
+The address width is `ceil(log2(depth))`; the write-data and returned read-data
+widths are `width`. Enable and write-enable are one bit, and all ports use the
+same clock domain. Construction must reject signal-width mismatches at elaboration.
+
 `depth` is not required to be a power of two, so `address` can encode values at or
 above `depth`. Such an access is **out of contract**: the primitive makes no
 promise about what is read or which location is written.
@@ -244,6 +265,12 @@ implementation:
 Implementations must satisfy the hardware contract in sections 4 through 6.
 Poison and invalid-access diagnostics are simulation obligations; section 9
 defines comparison where hardware values are unspecified.
+
+Here, "backend" means a resource implementation (behavioral, flop, or technology
+macro), not a flow adapter such as LibreLane or a future commercial adapter.
+Changing EDA tools does not change this contract or authorize a different memory
+selection. The resource registers its selected implementation and collateral;
+the flow adapter validates and renders the views needed for its operation.
 
 | Backend | Status | Notes |
 | --- | --- | --- |
@@ -351,16 +378,23 @@ ready ports must not be added merely to carry registration information; any
 future architectural requirement needs an explicit contract decision.
 
 Program validity remains owned by the consumer. The context does not take over
-program loading, halted-state arbitration, or fetch-pipeline validity.
+program loading, halted-state arbitration, or fetch-pipeline validity. The
+emulator validates its declared loaded image and prevents out-of-range/out-of-image
+fetches; these checks do not add validity or bounds ports to this primitive.
+The library owns backend conformance; the consumer separately verifies that load,
+readback, fetch, reset, and recovery never depend on unspecified values.
 
 ## 11. Remaining questions
 
-1. How should the context and `Scope.t` cooperate on stable hierarchical naming?
-   The requirement for stable identities and duplicate detection is settled;
-   the exact call shape is not. Resolve with the first real instance.
-2. Does the emulator want 128 or 256 program words? A sweep point in
-   `construction-plan.md:176`, answerable only from mapped area. `Config.storage_bits`
-   exists to feed that comparison.
+1. ~~How should the context and `Scope.t` cooperate on stable hierarchical naming?~~
+   Resolved in [ASIC P0.2](phase_plan.md#3-p0--project-and-elaboration-foundations):
+   the context carries the current scope, so the planned `create` signature needs
+   no scope argument; identity is the scope path plus the explicit instance name.
+   P1.1 still decides the RAM's default name when `?name` is omitted.
+2. Which memory width/depth and instruction packing serve the emulator? The
+   128/256-word and 16/32-bit candidates need firmware-size, cycle-count, and
+   mapped/placed-area evidence. `Config.storage_bits` feeds that comparison;
+   whole-word writes do not choose an instruction encoding.
 3. Where within the consumer does `program_valid` live: the fetch stage or an
    emulator-owned wrapper? Consumer ownership is settled; this placement is an
    emulator decision.

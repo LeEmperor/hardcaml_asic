@@ -6,7 +6,10 @@ names describe the intended design; they are not implemented interfaces.
 This document develops the [original concept note](hardcaml_asic_concept_note.md)
 into the current plan and takes precedence for architecture and sequencing.
 The [program-memory contract](program-memory-contract.md) is authoritative for
-`Single_port_ram` behavior.
+`Single_port_ram` behavior. The
+[architecture direction note](hardcaml_asic_architecture_direction.md) describes
+long-term open/commercial-flow extensibility. The boundaries below incorporate
+that direction; its broader sketches do not expand the first milestone.
 
 ## 1. Product direction
 
@@ -35,6 +38,37 @@ or physical design, and emitting a build does not establish tapeout readiness.
 Start with one package and clear module boundaries. Split packages later when
 dependencies or distribution needs justify it. Process-specific conditionals
 should not accumulate in portable resource contracts.
+
+### Reference application and Workbench ownership
+
+The [protocol emulator construction plan](../../scaf/docs/construction-plan.md)
+owns its core, ISA, firmware, protocol mechanisms, small FIFOs/register file,
+loader, host API, independent execution model, and protocol verification. It
+declares the ASIC project using this library and owns its implementation choices,
+wrapper behavior, timing assumptions, physical acceptance, and submission review.
+The harness validates the wrapper interface; it does not implement the emulator's
+reset/disable logic or pin arbitration. Program validity and fetch/load/readback
+arbitration remain consumer responsibilities under the memory contract.
+
+The [Workbench architecture](../../workbench/docs/hardcaml_workbench_architecture.md)
+owns optional interactive project sessions, job supervision, logs, and artifact
+views. An opened project's driver calls its own ASIC library version in its own
+build environment. The Workbench manifest identifies entry points; ASIC target,
+clock, resource policy, and resolved configuration facts come from the project
+declaration/build rather than a second editable Workbench copy.
+
+ASIC adapters own build rendering, tool-specific flow semantics, and result
+interpretation. An external script or the optional runner can execute the emitted
+bundle; Workbench supervises that operation as a job. Its job/artifact IDs link
+to immutable ASIC build and separate execution identities without replacing them.
+This does not require a GUI, a generic job scheduler in this library, or a second
+ASIC configuration generator in Workbench. Exact driver/result schemas remain
+integration work; ASIC support is not already implemented by the Workbench.
+
+The sibling links use this workspace's checkout names, not required build paths.
+Consumer packaging must pin/resolve the library and collateral without relying
+on those names. Tool/PDK provisioning stays an explicit external operation during
+initial adoption; its eventual reusable home is not decided by this architecture.
 
 ## 3. Target: harness and technology
 
@@ -66,6 +100,20 @@ Tiny Tapeout is the first harness integration. Future harnesses, including a
 bare-die configuration, should fit this separation without putting TT submission
 conventions into core resource APIs.
 
+### Flow selection and compatibility
+
+The flow adapter is selected separately from the harness/technology target. Tiny
+Tapeout is a harness, CMOS5L is a technology, and LibreLane is the initial flow
+adapter. A technology does not imply one tool vendor, and a flow adapter does not
+define resource behavior or replace target requirements.
+
+Validate the selected adapter's support for the resolved target, requested flow
+operation, constraints, and resource collateral before emitting runnable inputs.
+A valid harness/technology pair is not proof that every adapter can implement it.
+Unsupported requirements must produce diagnostics rather than silently disappear.
+This flow capability check is separate from exact resource implementation
+selection in section 5.
+
 ## 4. Project declaration and elaboration lifecycle
 
 The user declares an immutable project containing:
@@ -73,6 +121,7 @@ The user declares an immutable project containing:
 - Project identity and metadata, including descriptive pin meanings as needed.
 - A design constructor that receives an elaboration context and builds the top.
 - Harness and technology selections.
+- Flow adapter and requested operation, initially the TT/LibreLane path.
 - Clocks and other supported timing constraints.
 - Resource implementation policies, optionally scoped to individual instances.
 - Physical settings not fixed by the target.
@@ -88,6 +137,7 @@ immutable Project declaration
   -> create a fresh Elaboration_context for one elaboration
   -> run design constructor; resources select implementations and register
   -> validate top-level interface, resources, constraints, and configuration
+  -> validate adapter support for target, operation, constraints, and collateral
   -> finalize immutable Build description
   -> emit artifacts
   -> optionally run a flow against those artifacts
@@ -141,10 +191,19 @@ module definitions. Wrappers are emitted only when the implementation needs them
 
 ## 6. Configuration ownership and escape hatches
 
-Keep a typed core and an explicit raw flow escape hatch. Each override contains a
-key, JSON value, and nonempty reason; record it in the manifest. The initial
-adapter must accommodate the emulator's existing flow settings without requiring
-a typed API for every LibreLane option.
+Keep a typed core and explicit adapter-specific escape hatches. In the initial
+LibreLane adapter, each configuration override contains a key, JSON value, and
+nonempty reason; record it with its adapter identity in the manifest. This is a
+LibreLane representation, not a universal configuration format for every flow.
+The initial adapter must accommodate the emulator's existing flow settings
+without requiring a typed API for every LibreLane option.
+
+Future Tcl/SDC or structured vendor extensions belong to their adapter and must
+declare their application stage and reason, with their contents captured in build
+provenance. Reject extensions for a different adapter. Raw scripts cannot be
+assumed to be fully understood by typed validation: define supported insertion
+points and validation limits, and preserve the script for review. They do not
+silently supersede protected project, resource, or target facts.
 
 Distinguish overridable defaults from protected derived values:
 
@@ -173,9 +232,12 @@ hook, not evidence that an SRAM is available or accepted by the shuttle.
 
 ## 7. Build artifacts and provenance
 
-The immutable build description is useful without invoking tools. A flow adapter
-renders it into inputs that external scripts or an optional library runner can
-consume. Commands, logs, and underlying tool inputs remain inspectable.
+The immutable build description is useful without invoking tools. Keep portable
+design intent, resolved target/resources, and adapter-specific rendering inputs
+distinct within it; a LibreLane configuration file is an output, not the core
+project model. A flow adapter renders it into inputs that external scripts or an
+optional library runner can consume. Commands, logs, and underlying tool inputs
+remain inspectable.
 
 An illustrative output layout is:
 
@@ -203,8 +265,9 @@ pinned tools expect, including TT's project/source conventions.
 The build manifest records source revision and content hashes (including dirty
 or untracked inputs used by the build), generated RTL hashes, resource requests
 and selections, source sets, collateral hashes, harness/technology revisions,
-resolved configuration and override reasons, and requested tool versions. A Git
-commit alone is insufficient to identify a dirty source tree. Referenced inputs
+resolved configuration and override reasons, adapter identity/version and requested
+operation, and requested tool versions. A Git commit alone is insufficient to
+identify a dirty source tree. Referenced inputs
 must also remain retrievable; hashes alone do not preserve their contents.
 
 Each execution has a separate record of actual tool and environment versions,
@@ -213,7 +276,54 @@ locations. Execution does not mutate the original build's provenance. Reports
 distinguish an emitted build, a successful run, and physical verification still
 required.
 
+### Adapter and execution boundaries
+
+An adapter owns capability validation, input rendering, tool-specific invocation
+requirements, and interpretation of outputs. Rendering and result collection must
+remain usable independently of execution. The runner or external launcher owns
+process execution; a site wrapper or Workbench can supervise it without duplicating
+flow semantics. Ordinary elaboration and input generation must not require a
+commercial executable or license.
+
+Do not require every flow to follow one fixed Yosys/OpenROAD stage sequence or to
+produce GDS. A future synthesis-only adapter can produce a netlist and reports;
+implementation or signoff adapters can have different inputs and outputs. Record
+the requested operation and actual completed stages so synthesis success cannot
+be mistaken for physical closure. The first adapter can remain a single
+LibreLane flow; a generic workflow engine is not required.
+
+Keep launcher/environment settings separate from design intent. A direct local
+command is sufficient initially, but higher-level APIs must allow an external
+wrapper to supply site setup, licenses, or scheduler integration later. Record
+reproducibility-relevant tool/environment identities without copying credentials
+or license secrets into manifests. Provisioning remains external and explicit.
+
+Technology collateral must identify its role, format, applicable corner, and
+provenance rather than assume every library is one Liberty/LEF/GDS file triplet.
+Adapters validate the views required for their operation. Additional formats and
+mode/corner models can be introduced with real adapters; proprietary collateral
+can stay externally supplied without becoming a dependency of the open flow.
+
+### Structured results
+
+Preserve raw reports and expose a small typed result surface as the first adapter
+is exercised. Metrics need units and analysis context: tool/version, stage,
+applicable corner or mode, and a link to the source report. Missing, unsupported,
+or unparseable metrics stay unavailable with a reason; they are not zero or pass.
+Area definitions, timing setup/hold analyses, and power assumptions must remain
+distinguishable before comparing values across tools or runs.
+
+Keep process completion, timing goals, and required verification checks separate.
+Backend-specific results may extend the common representation without forcing all
+flows to pretend to support the same reports. A broad normalized report schema is
+deferred; these interpretation rules apply to the initial results too.
+
 ## 8. First implementation milestone
+
+The [implementation phase plan](phase_plan.md) breaks this milestone into P0–P5
+tasks with dependencies, deliverables, and evidence-based exit gates. Its separate
+SRAM investigation track does not block the initial flop-backed workflow. This
+section retains the architectural scope and high-level sequence.
 
 Build one complete path using the protocol emulator's program-memory requirement:
 
@@ -230,6 +340,24 @@ Build one complete path using the protocol emulator's program-memory requirement
    consumes the same bundle.
 5. Apply that path to the emulator and use measured results to guide further work.
 
+Coordinate with the emulator's [P0.6/P0.7 adoption items](../../scaf/docs/phase_plan.md#3-p0--make-the-tool-path-real):
+P0.6 adopts declarations and emitted artifacts for its existing observable design;
+P0.7 exercises a small registered load/readback memory design and mapped synthesis
+before P3 integrates the full core/loader. Library implementation and backend
+conformance stay here; emulator integration evidence stays there. Existing P0
+scripts remain useful bundle consumers, with full physical/precheck/gate-level
+checks required for the emulator's P0 exit. Do not reclassify the earlier RTL-only
+P0 results as proof of ASIC-library adoption.
+
+First-milestone library evidence should cover deterministic resource identity and
+manifest ordering, fresh contexts on repeated/failed elaboration, interface and
+configuration-conflict and adapter-capability diagnostics, explicit implementation
+selection, distinct simulation/synthesis source sets, and contract-correct
+behavioral/flop memories.
+Consumer evidence adds whole-word load/readback, validity/bounds checks, and lack
+of dependence on unspecified memory outputs. ISA width/depth/packing are study
+parameters supplied by the consumer, not decisions made by the RAM constructor.
+
 The first emitted project does not depend on a physical SRAM macro. A flop-backed
 build is explicitly selected and reported as such, not presented as macro support.
 
@@ -245,7 +373,15 @@ implicitly bootstrap or fetch a PDK.
 Automatic memory composition, additional memory port shapes, clock gates, other
 special primitives, multiple PDKs, a broad public macro API, and richer physical
 planning APIs follow demonstrated needs. They are not prerequisites for the first
-project workflow.
+project workflow. Commercial EDA adapters, industrial power/signoff abstractions,
+and Workbench UI integration are also later, need-driven work.
+
+Future Cadence/Synopsys integration should exercise the same declaration, resource,
+rendering, execution, and result boundaries, starting with one narrow adapter when
+needed. Another open target is a useful portability test, not a new prerequisite
+for the first milestone. Commercial adapters and their proprietary tools,
+collateral, and licenses must remain optional. No industrial MMMC, power-intent,
+DFT, scheduler, or signoff framework is required in the initial package.
 
 The four high-level defaults are settled: immutable project plus temporary
 registration context; declarative build plus optional runner; TT-owned metadata
