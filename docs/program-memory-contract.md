@@ -1,7 +1,14 @@
 # Program memory contract (`Single_port_ram`)
 
-Status: draft, 2026-09-15. Normative for `lib/single_port_ram.mli`. This document
-decides behaviour; the interface summarises it and the implementation obeys it.
+Status: behavioral contract with accepted architecture updates, 2026-09-16.
+Normative for `lib/single_port_ram.mli`. This document decides behaviour; the
+interface and implementation must follow it. The context-taking API described
+below is planned: the current interface has not yet been migrated and `create`
+remains unimplemented.
+
+The [architecture plan](architecture.md) defines project ownership, resource
+selection, registration, and build outputs. This document defines this memory's
+behavior and its obligations within that architecture.
 
 This is the first concrete memory in `hardcaml_asic`, written before the API was
 frozen, per the review note that memory semantics must precede the `Sram.create`
@@ -59,7 +66,7 @@ firmware change; it is a change of memory primitive. Record it as such.
 
 ---
 
-## 3. Read-during-write: not expressible, therefore not promised
+## 3. No independent read during a write
 
 The concept note's sketch carries a `read_during_write` field with `Read_first`,
 `Write_first` and `Undefined`. **This primitive does not have that field.**
@@ -68,11 +75,11 @@ With a shared address and a single write-enable, a simultaneous read and write o
 the same address cannot be expressed: when `write_enable` is high the cycle is a
 write, when it is low the cycle is a read. There is no second port to read from.
 
-Offering a policy enum here would promise a portable behaviour the primitive
-cannot exhibit and a backend cannot guarantee — precisely the trap in concept-note
-open question 2 ("how much memory behaviour should the portable SRAM API promise
-across technologies"). A future memory that genuinely has two ports can carry the
-policy; this one must not.
+This does not mean a physical 1RW memory cannot expose old data, new data, or a
+held value on its output during a write. Those are possible implementation
+behaviors, but this contract deliberately promises none of them. A policy enum
+would expand the portable promise beyond the emulator's requirement. A future
+resource can specify such behavior if a real consumer needs it.
 
 The real question that *does* need answering is what the output does during a
 write cycle. That is section 4.
@@ -101,12 +108,17 @@ write_data          D0     --     --     --     D3     --
 operation          WR     RD     --     RD     WR     --
 read_data (out)     ?   POISON  M[A1]  M[A1]  M[A2] POISON
                            ^      ^      ^             ^
-                           |      |      |             held from
+                           |      |      |             result of
                            |      |      held          cycle 5's
                            |      |      (enable=0)    write
                            |      read of A1 lands
                            write cycle: unspecified
 ```
+
+`POISON` denotes the behavioral model's diagnostic value, not a required physical
+output. The disabled operation in cycle 6 holds that value into cycle 7 (not
+shown). `M[A1]` and `M[A2]` are defined only if those locations were previously
+written; the trace alone does not initialize them.
 
 ### 4.1 Hold on disable — why this is pinned rather than left open
 
@@ -169,8 +181,9 @@ opinion about it and no port for it.
 ### 5.1 Poison rather than X
 
 Hardcaml's `Cyclesim` is two-state — `Bits.t` holds 0 and 1, not X — so "drives X"
-is not implementable in the simulation model. The realisable equivalent is a
-**poison pattern**: a deterministic, conspicuously wrong value.
+is not implementable in that model. Use a **poison pattern** as a diagnostic
+substitute: a deterministic value chosen to stand out in waveforms. It is still
+an ordinary bit pattern, not an unknown value or an automatic assertion failure.
 
 The behavioural model must therefore:
 
@@ -183,8 +196,16 @@ The behavioural model must therefore:
    Alternating bits (`0xAAAA` / `0x5555` by word parity) is suggested so that a
    stuck output is also visible.
 
-This is a deliberate choice to make the model *less* forgiving than the hardware,
-so that dependence on unspecified behaviour fails loudly and early.
+Poison makes accidental dependencies easier to notice, but cannot guarantee that
+misuse fails: a consumer might accept the pattern as data. Consumer verification
+should assert valid use and can repeat tests with varied unspecified values.
+Track written locations and output definedness in the testbench; this tracking
+does not add reset, initialization, or validity ports to the primitive.
+
+Poison initialization and post-write injection belong to the behavioral simulation
+model. They must not introduce an initialization guarantee or extra poison logic
+into the synthesizable flop implementation or a physical macro. Simulation and
+synthesis artifacts remain separate, as specified in the architecture plan.
 
 ---
 
@@ -205,7 +226,9 @@ useful, so no portable behaviour can be offered.
 Listed so that a consumer cannot acquire a dependency on an accident of the
 implementation:
 
-- Any defined value on `read_data` during or after a write cycle.
+- A particular output value in response to a write or a read of an unwritten
+  location. Disabled cycles must still hold the backend's previous output; a
+  later read of a written location restores a defined result.
 - Any relationship between contents at power-up and any prior state.
 - Byte, bit or masked writes.
 - Simultaneous read and write.
@@ -218,12 +241,14 @@ implementation:
 
 ## 8. Backend obligations
 
-Three implementations must agree on sections 4 through 6:
+Implementations must satisfy the hardware contract in sections 4 through 6.
+Poison and invalid-access diagnostics are simulation obligations; section 9
+defines comparison where hardware values are unspecified.
 
 | Backend | Status | Notes |
 | --- | --- | --- |
-| Behavioural model | not written | Hostile per section 5.1. The reference for equivalence testing |
-| Generic flop fallback | not written | Synthesisable, no macro. The path that works if no macro is available |
+| Behavioural model | not written | Diagnostic poison per section 5.1; reference for defined behavior |
+| Generic flop implementation | not written | Synthesisable, no macro; explicitly selected or explicitly allowed as fallback |
 | IHP CMOS5L macro | **blocked — see below** | Requires a macro that exists, is permitted, and can hold on disable |
 
 The macro backend must not be started yet. It is not known whether a usable
@@ -240,11 +265,17 @@ pinned `tt-support-tools` revision `da63c99`:
 - `cell_regexp` is used only for cell-summary reporting in `configure.py`, not as
   a precheck gate, so a non-matching macro name would not by itself fail precheck.
 
-The PDK itself was not inspected; there is no local checkout. **Bootstrapping the
-PDK resolves this question by direct inspection, which is a further reason to run
-the bootstrap before building backends.** If no usable macro exists, this
-primitive collapses to the flop fallback plus a good interface, and sections 2
-through 6 remain correct and useful regardless.
+At the time of that investigation the PDK itself was not inspected and no local
+checkout was available. Inspecting a bootstrapped PDK can establish candidate
+availability and collateral. It does not by itself establish shuttle permission,
+behavioral compatibility, or successful flow integration; those must also be
+verified before implementing the macro backend.
+
+The first project milestone uses an explicitly selected flop implementation and
+does not wait for a macro. A macro-required request must fail if no supported
+exact mapping exists and no fallback was explicitly permitted. Never silently
+change shape, latency, or behavior, or compose several macros. Record the chosen
+implementation and any fallback reason in the build manifest.
 
 ---
 
@@ -253,28 +284,83 @@ through 6 remain correct and useful regardless.
 Concept-note open question 7 asks how to verify that simulation semantics match
 the selected physical macro. The answer this contract enables:
 
-Write one cycle-accurate test vector set directly from section 4 — the six-cycle
-trace above is the seed — and run it against **every** backend. The behavioural
-model, the flop fallback and any macro model must produce identical output for
-identical stimulus, including the poison cycles and the hold cycles.
+Write one cycle-accurate test suite from section 4 and run it against every
+backend. The six-cycle trace is a seed, not a complete test: initialize locations
+through writes before expecting defined read data, and extend it to observe the
+disabled cycle following a write.
 
-A backend that cannot pass that trace is not a backend for this primitive. This is
-the integration test that makes the abstraction real rather than nominal.
+The scoreboard tracks written locations, their expected contents, read latency,
+and whether the current output has a contract-defined value:
+
+- An enabled write updates the addressed location and makes the next output
+  unspecified. Check poison separately for the behavioral model only.
+- An enabled read of a written location produces its expected value one cycle
+  later. Compare this value across implementations.
+- An enabled read of an unwritten location produces an unspecified value.
+  Physical implementations need not match the behavioral poison pattern.
+- A disabled cycle preserves each backend's own prior output, including after a
+  write. Check hold within that backend even when cross-backend value comparison
+  is inappropriate. Output definedness is also preserved.
+- An enabled out-of-range access is out of contract. Verify the behavioral
+  diagnostic separately; do not require agreement on subsequent hardware state.
+
+Cover disabled writes, consecutive reads and writes, write-then-read, holds after
+defined and unspecified results, and non-power-of-two address bounds. For a
+four-state macro model, account for unknown values when checking stability rather
+than treating behavioral poison as the expected value.
+
+A backend passes by satisfying defined behavior and temporal obligations, not
+by reproducing the simulation model's choices for unspecified values. The
+consumer separately verifies that it never depends on those unspecified values.
 
 ---
 
-## 10. Open questions
+## 10. Project integration decisions
 
-1. Should `create` return a record rather than a bare `Signal.t`, so a backend can
-   expose macro-specific extras (a ready flag, a power-down port) without a
-   breaking change? Deferred until a second backend actually needs one.
-2. Should the primitive take a `Scope.t` for hierarchical naming, as the
-   emulator's modules do, instead of `?name`? `?name` is sufficient for an
-   instance name; `Scope.t` would match house style. Resolve when the first real
-   instance is placed.
-3. Does the emulator want 128 or 256 program words? A sweep point in
+Resource construction takes the temporary `Elaboration_context` belonging to one
+project elaboration, registers the resource, and continues to return read data.
+The intended signature is:
+
+```ocaml
+(* Planned API; Elaboration_context is not implemented yet. *)
+val create
+  :  Elaboration_context.t
+  -> ?name:string
+  -> Config.t
+  -> clock:Signal.t
+  -> enable:Signal.t
+  -> write_enable:Signal.t
+  -> address:Signal.t
+  -> write_data:Signal.t
+  -> Signal.t
+```
+
+Registration records instance identity, requested contract, selected
+implementation and fallback reason, source-set membership, and any required
+wrapper, model, timing, or physical files. The finalized immutable build uses
+those records to emit flow inputs and its manifest. Flop-backed instances are
+registered too, even though they have no macro collateral.
+
+The design constructor discovers resource instances through these calls. The
+project supplies selection policy, not a duplicate list of memories. Exact
+mapping and explicit fallback apply as in the architecture plan. No global
+mutable project or backend selection is required.
+
+Returning `Signal.t` is sufficient for this primitive. Macro-specific power or
+ready ports must not be added merely to carry registration information; any
+future architectural requirement needs an explicit contract decision.
+
+Program validity remains owned by the consumer. The context does not take over
+program loading, halted-state arbitration, or fetch-pipeline validity.
+
+## 11. Remaining questions
+
+1. How should the context and `Scope.t` cooperate on stable hierarchical naming?
+   The requirement for stable identities and duplicate detection is settled;
+   the exact call shape is not. Resolve with the first real instance.
+2. Does the emulator want 128 or 256 program words? A sweep point in
    `construction-plan.md:176`, answerable only from mapped area. `Config.storage_bits`
    exists to feed that comparison.
-4. Where does `program_valid` live — in the fetch stage, or in a thin wrapper
-   around this primitive that the emulator owns? This document assumes the
-   consumer owns it.
+3. Where within the consumer does `program_valid` live: the fetch stage or an
+   emulator-owned wrapper? Consumer ownership is settled; this placement is an
+   emulator decision.

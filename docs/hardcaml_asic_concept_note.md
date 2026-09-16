@@ -1,5 +1,23 @@
 # `hardcaml_asic`: Concept Note
 
+## Document status
+
+This note preserves the original intent and exploratory API/roadmap sketches.
+The accepted decisions of 2026-09-16 live in the
+[architecture and implementation plan](architecture.md), which takes precedence
+for current architecture and sequencing. The
+[program-memory contract](program-memory-contract.md) defines the first resource.
+
+The current plan retains the intent-first boundary while establishing three
+parts: design resources, technology implementations, and project/flow support.
+It separates harness from technology, uses an immutable project with a temporary
+resource-registration context, emits an independent build description, and starts
+with one package. Exact resource mappings and explicit fallback replace implicit
+backend choice. The first project uses an explicitly selected flop memory;
+CMOS5L SRAM support remains unverified and is not an initial milestone requirement.
+The roadmap and package/API sketches below are historical proposals, not promises
+of existing support. The PDF is a snapshot of the original note.
+
 ## Purpose
 
 `hardcaml_asic` would be a Hardcaml library for expressing ASIC-specific design intent and connecting Hardcaml-generated RTL to ASIC technology primitives and implementation flows.
