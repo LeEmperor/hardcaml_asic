@@ -251,6 +251,51 @@ let sources_of
   =
 ```
 
+### Local `let` bindings
+
+Any `let ... in` that spans more than one line gets a blank line before and after
+it, so it does not run into the bindings next to it or into the expression that uses
+them. Give each one a short comment above it saying what it computes. One-line
+bindings can stay stacked together without blank lines.
+
+When a function's name and arguments fit on one line, also leave a blank line right
+after its `=`. When the arguments go down in a column (see "Functions with several
+arguments" above), the `=` on its own line already sets the body apart, so the body
+starts directly below it with no blank line.
+
+```ocaml
+let validate_list clocks =
+
+  (* every clock with an empty port or a non-positive period; *)
+  let invalid =
+    List.filter clocks ~f:(fun { port; period } ->
+      String.is_empty port || Time_ns.Span.( <= ) period Time_ns.Span.zero)
+  in
+
+  (* first clock whose port repeats an earlier one, if any; *)
+  let duplicate =
+    List.find_a_dup clocks ~compare:(fun a b -> String.compare a.port b.port)
+  in
+
+  Or_error.combine_errors_unit
+    [ ...
+```
+
+```ocaml
+let sources_of
+    ~(mode : Elaboration_mode.t)
+    ~(technology : Technology.t)
+    (request : Resource_request.t)
+    (selection : Selection.t)
+  : Resource_record.Elaborated_as.t * Resource_record.Source.t list
+  =
+  (* A selection is a record of a choice and the why it was made; *)
+  match (mode : Elaboration_mode.t),
+        (selection : Selection.t).implementation
+  with
+  ...
+```
+
 ### Pattern matches
 
 Put a comment above each non-trivial match arm explaining the case, with a blank line
