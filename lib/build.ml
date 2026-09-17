@@ -85,8 +85,8 @@ let resources t = t.resources
 (* grab the elaborated circuit; tests hand this to Cyclesim *)
 let circuit t = t.circuit
 
-(* The only way to make a build; Private by Jane convention, meaning only Project.elaborate
-   is supposed to call it;
+(* The only way to make a build; Private by Jane convention, meaning only
+   Project.elaborate is supposed to call it;
 *)
 module Private = struct
   (* Assemble a build out of already validated parts;
