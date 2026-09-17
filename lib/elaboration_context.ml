@@ -23,7 +23,7 @@ end
 (* Biggest ownership items for the context.
 
   The mode in which we're operating,
-  The technology we're using and it's features,
+  The technology we're using and its features,
   The resource mapping policy,
   The Circuit_database.t that Hardcaml uses that we may draw from inside of,
   The *mutable* State of the context,
@@ -50,7 +50,7 @@ let check_open
   ~operation
   =
 
-  (* take in a Elaboration_context.t object; match the state with things;
+  (* take in an Elaboration_context.t object; match the state with things;
       if open then chilling
       if not, then raise on it
   *)
@@ -87,7 +87,7 @@ let in_scope t scope =
 (* Takes in an elaboration mode,
 an elaboration,
 a request to do something,
-and a selction and returns the resource map enumeration tuple list;Z
+and a selection and returns the resource map enumeration tuple list;
 
 Once an implementation is picked, decides two things for the Resource_record that is output:
    Elaborated_as.t  :  what this elaboration actually built for the resource.
@@ -102,22 +102,22 @@ let sources_of
   =
 
   (* do the thing with the stuff *)
-  (* A selection is a record ofa  choice and the why it was made;  *)
+  (* A selection is a record of a choice and the why it was made; *)
   match (mode : Elaboration_mode.t),
         (selection : Selection.t).implementation
   with
 
   (* sim generation; only care about behaviour *)
   (* Selection is ignored; simulation always uses the behavioural model, even if a macro was selected;
-      The Behavioural_model tag records that the hardware we simulated that is not the implementation that was select.
+      The Behavioral_model tag records that the hardware we simulated is not the implementation that was selected.
   *)
   | Simulation, _ -> Behavioral_model, [ Generated_behavioral_model ]
 
-  (* Imlementing with flops; *)
-  (* Resource becomes arbitrary RTL from teh hardcaml designa and gets handed to synthesis; *)
+  (* Implementing with flops; *)
+  (* Resource becomes arbitrary RTL from the Hardcaml design and gets handed to synthesis; *)
   | Implementation, Flops -> Selected_implementation, [ Generated_synthesis_rtl ]
 
-  (* Implemention with a set macro of something; *)
+  (* Implementation with a set macro of something; *)
   (* The resource is a hard macro, so the files that come with it matter; function looks up mapping again and turns each entry
      into a Source.Collateral -> see expect tests
   *)
@@ -136,7 +136,7 @@ let sources_of
 (* The main sauce here for contexts;
    pass it an elaboration context, a named string, and a Resource_request.t
 
-    _exn denotes that this function may raise an exception of returning an error value; Jane convention.
+    _exn denotes that this function may raise an exception instead of returning an error value; Jane convention.
 
    This is the body of a registration on a context already known to be open; every raise in
    here is caught by [register_exn] below, which closes the context before re-raising.
@@ -146,13 +146,13 @@ let register_open_exn
     ~name
     request =
 
-  (* grab the path of the scope of the context, feed it to a list transform, and then reverse it to get the outermost-first oft eh path.  *)
+  (* grab the path of the scope of the context, feed it to a list transform, and then reverse it to get the outermost-first order of the path. *)
   (* The identity of the registration item; *)
   let path = Scope.path t.scope |> Scope.Path.to_list |> List.rev in (* order of to_list might matter eventually *)
   let id = Resource_id.create_exn ~path ~name in
 
   (* grabbing the resource selection record map; *)
-  (* Reject duplicates; this raises with a ppx for an sexp on the raise call for context on the occurence. *)
+  (* Reject duplicates; this raises with a ppx for an sexp on the raise call for context on the occurrence. *)
   (* Can be serialized; *)
   if Map.mem t.shared.records id
   then
@@ -176,7 +176,7 @@ let register_open_exn
     (* Wraps in Ok if it passes; *)
     let%map.Or_error selection = Selection.select ~technology ~requirement request in
 
-    (* What the elaboration built for the resouce actually; *)
+    (* What the elaboration built for the resource actually; *)
     let elaborated_as, sources = sources_of
         ~mode ~technology request selection
     in
@@ -193,7 +193,7 @@ let register_open_exn
   in
 
   (* Very painful to do while inside of a design constructor for the Hardcaml circuit, which returns the Signal.t O.t
-      If the register_exn returned Or_error.t, every RAM constructor and hierarchy level would have to pass the Or_error upwards;Z
+      If the register_exn returned Or_error.t, every RAM constructor and hierarchy level would have to pass the Or_error upwards;
 
     With this, we can convert the error into an exception to become a value again;
   *)
@@ -232,8 +232,8 @@ let register_exn t ~name request =
     Exn.raise_with_original_backtrace exn backtrace
 ;;
 
-(* This is the private construction mechanism by which we align call conventions to; 
-    In hardcaml, things aren't truly "private" per say, but as a Jane convention we uset his and enforce it;
+(* This is the private construction mechanism by which we align call conventions to;
+    In hardcaml, things aren't truly "private" per se, but as a Jane convention we use this and enforce it;
 
   Because of how MLIs work we can somewhat emulate this item as the "only" way to make Elaboration_context.t
 
