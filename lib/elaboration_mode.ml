@@ -4,9 +4,11 @@
 (* Why a design is being elaborated. The same constructor serves both.
 
    [Simulation] builds behavioural models for resources. [Implementation] builds the
-   selected implementation. Selection runs in both modes, so a policy that cannot be
-   satisfied fails before any simulation result can be mistaken for an implementable
-   design. *)
+   selected implementation.
+
+   Selection runs in both modes, so a policy that cannot be satisfied fails before any
+   simulation result can be mistaken for an implementable design.
+*)
 
 open! Core
 

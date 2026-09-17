@@ -234,6 +234,9 @@ let register_exn t ~name request =
 
 (* This is the private construction mechanism by which we align call conventions to; 
     In hardcaml, things aren't truly "private" per say, but as a Jane convention we uset his and enforce it;
+
+  Because of how MLIs work we can somewhat emulate this item as the "only" way to make Elaboration_context.t
+
 *)
 module Private = struct
   let create ~mode ~technology ~policy ~scope =
@@ -241,7 +244,7 @@ module Private = struct
         { mode
         ; technology
         ; policy
-        ; database = Scope.circuit_database scope
+        ; database = Scope.circuit_database scope (* derives from the hardcaml scope's circuit database *)
         ; state = Open
         ; records = Map.empty (module Resource_id)
         }
