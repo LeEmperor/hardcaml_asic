@@ -50,8 +50,8 @@ def safe_child(root, relative):
     return path
 
 
-def command_output(argv):
-    result = subprocess.run(argv, capture_output=True, text=True, check=False)
+def command_output(argv, cwd=None):
+    result = subprocess.run(argv, capture_output=True, text=True, check=False, cwd=cwd)
     if result.returncode:
         raise PrerequisiteError(f"command failed: {argv!r}: {result.stderr.strip()}")
     return result.stdout.strip()
@@ -262,7 +262,7 @@ def postcheck(args):
                                    target_is_directory=True)
         pin = read_json(work / "precheck/tool-versions.json")["klayout"]
         native_klayout = command_output(
-            ["nix-shell", "default.nix", "--run", "klayout -v"])
+            ["nix-shell", "default.nix", "--run", "klayout -v"], cwd=work / "precheck")
         record["tools"]["klayout"] = native_klayout
         record["tools"]["klayout_requested"] = pin
         if native_klayout != f"KLayout {pin}":
@@ -272,7 +272,19 @@ def postcheck(args):
              "from importlib.metadata import version; print(version('klayout'))"])
         if not record["tools"]["precheck_python_klayout"].startswith("0.28."):
             raise PrerequisiteError("precheck Python KLayout package must be 0.28.x")
-        record["tools"]["iverilog"] = command_output(["iverilog", "-V"]).splitlines()[0]
+        # The PDK flop models read $setuphold delayed nets, which Icarus 12 leaves
+        # undriven (every flop simulates as X). Use the Icarus in the run's pinned
+        # LibreLane image, with the run and PDK mounted at their host paths.
+        image = f"ghcr.io/librelane/librelane:{run['environment']['requested']['librelane']}"
+        pdk_root = args.pdk_root.resolve()
+        simulator = ["docker", "run", "--rm", "--pull=never",
+                     "--user", f"{os.getuid()}:{os.getgid()}",
+                     "-v", f"{run_dir}:{run_dir}", "-v", f"{pdk_root}:{pdk_root}:ro",
+                     "-w", str(check_dir), "--entrypoint", "env", image]
+        record["tools"]["simulator_image"] = command_output(
+            ["docker", "image", "inspect", "--format", "{{.Id}}", image])
+        record["tools"]["iverilog"] = command_output(
+            simulator + ["iverilog", "-V"]).splitlines()[0]
         save(record_path, record)
         precheck_command = ("exec env -u PYTHONPATH -u PYTHONHOME "
                             + " ".join(shlex.quote(x) for x in
@@ -282,19 +294,20 @@ def postcheck(args):
                           work / "precheck", env, log, record, record_path)
         record["checks"]["precheck"] = "pass" if code == 0 else "fail"
         save(record_path, record)
-        models = [args.pdk_root / "ihp-sg13cmos5l/libs.ref/sg13cmos5l_io/verilog/sg13cmos5l_io.v",
-                  args.pdk_root / "ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v"]
+        cells = pdk_root / "ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog"
+        models = [pdk_root / "ihp-sg13cmos5l/libs.ref/sg13cmos5l_io/verilog/sg13cmos5l_io.v",
+                  cells / "sg13cmos5l_udp.v", cells / "sg13cmos5l_stdcell.v"]
         if not all(path.is_file() for path in models):
             raise PrerequisiteError("missing gate-level PDK Verilog models")
         testbench = check_dir / "testbench.v"
         shutil.copy2(args.testbench, testbench)
         executable = check_dir / "gate.out"
-        compile_command = ["iverilog", "-g2012", "-DFUNCTIONAL", "-DSIM",
+        compile_command = simulator + ["iverilog", "-g2012", "-DFUNCTIONAL", "-DSIM",
                            "-s", "tb_observable", "-o", str(executable),
                            *(str(path) for path in models), str(netlist), str(testbench)]
         if run_logged(compile_command, check_dir, env, log, record, record_path):
             record["checks"]["gate_level"] = "fail"
-        elif run_logged(["vvp", str(executable)], check_dir, env, log, record, record_path):
+        elif run_logged(simulator + ["vvp", str(executable)], check_dir, env, log, record, record_path):
             record["checks"]["gate_level"] = "fail"
         else:
             record["checks"]["gate_level"] = "pass"
@@ -356,6 +369,8 @@ def collect(run_dir):
             state_metrics = read_json(synth_state)["metrics"]
         except (ValueError, KeyError, TypeError) as exc:
             errors.append(f"{synth_state.relative_to(run_dir)}: {exc}")
+    # OpenSTA reports this magnitude when a mode has no constrained paths.
+    unconstrained_threshold = 1e30
     def number(raw, label):
         if raw is None:
             return None, "report absent or metric missing"
@@ -383,9 +398,13 @@ def collect(run_dir):
         valid = [(key, value) for key, value, _ in parsed if value is not None]
         key, value = min(valid, key=lambda item: item[1]) if valid else (None, None)
         corner = key.split("corner:", 1)[1] if key and "corner:" in key else None
+        reason = "report absent or metric missing"
+        if value is not None and abs(value) >= unconstrained_threshold:
+            value, corner = None, None
+            reason = "no constrained timing paths reported"
         output[name] = metric(value, "ns", "worst slack across reported corners",
-                              "final", str(metrics.relative_to(run_dir)), corner,
-                              None if value is not None else "report absent or metric missing")
+                              "final", str(metrics.relative_to(run_dir)), corner, reason)
+        output[name]["mode"] = "setup" if name == "setup_slack" else "hold"
     for name, field, unit, definition in (
         ("final_standard_cell_area", "design__instance__area__stdcell", "um^2",
          "standard-cell area after the completed physical flow"),
@@ -410,10 +429,14 @@ def collect(run_dir):
             reason = None
         checks[name] = {"status": status, "source": str(metrics.relative_to(run_dir)),
                         "raw": matches, "reason": reason}
-    setup = output["setup_slack"]["value"]
-    hold = output["hold_slack"]["value"]
-    timing_goal = "unknown" if setup is None or hold is None else (
-        "pass" if setup >= 0 and hold >= 0 else "fail")
+    slacks = [output[name] for name in ("setup_slack", "hold_slack")]
+    unconstrained = [item["mode"] for item in slacks
+                     if item["unavailable_reason"] == "no constrained timing paths reported"]
+    constrained = [item["value"] for item in slacks if item["mode"] not in unconstrained]
+    if any(value is None for value in constrained) or not constrained:
+        timing_goal = "unknown"
+    else:
+        timing_goal = "pass" if all(value >= 0 for value in constrained) else "fail"
     cells = stats.get("num_cells_by_type") if stats else None
     synthesis_checks = {}
     for label, field in (("unmapped_instances", "design__instance_unmapped__count"),
@@ -450,6 +473,7 @@ def collect(run_dir):
               "tool": librelane_tool,
               "mode": "nominal and reported corners", "metrics": output, "checks": checks,
               "timing_goal": timing_goal,
+              "timing_unconstrained_modes": unconstrained,
               "mapped_cell_types": cells,
               "synthesis_checks": synthesis_checks,
               "raw_artifacts": sorted(str(path.relative_to(run_dir)) for path in

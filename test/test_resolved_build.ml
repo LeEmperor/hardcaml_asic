@@ -214,24 +214,40 @@ let%expect_test "metadata and all 24 pin meanings are required" =
 
 let%expect_test "clock and I/O delay endpoints resolve with nanosecond units" =
   let timing =
-    { Timing.input_delays = [ { port = "ui_in"; maximum = Time_float.Span.of_ns 3. } ]
-    ; output_delays = [ { port = "uo_out"; maximum = Time_float.Span.of_ns 4. } ]
+    { Timing.input_delays =
+        [ { port = "ui_in"
+          ; minimum = Time_float.Span.of_ns 0.5
+          ; maximum = Time_float.Span.of_ns 3.
+          }
+        ]
+    ; output_delays =
+        [ { port = "uo_out"
+          ; minimum = Time_float.Span.of_ns (-1.)
+          ; maximum = Time_float.Span.of_ns 4.
+          }
+        ]
+    }
+  in
+  let delay port ~minimum ~maximum : Timing.Delay.t =
+    { port
+    ; minimum = Time_float.Span.of_ns minimum
+    ; maximum = Time_float.Span.of_ns maximum
     }
   in
   let resolved = resolve ~timing () |> ok_exn in
   print_s
     [%sexp
-      (resolved.input_delays_ns : (string * float) list)
-      , (resolved.output_delays_ns : (string * float) list)];
+      (resolved.input_delays_ns : Resolved_build.Delay_ns.t list)
+      , (resolved.output_delays_ns : Resolved_build.Delay_ns.t list)];
   [%expect {|
-    (((ui_in  3))
-     ((uo_out 4)))
+    ((((port ui_in)  (minimum 0.5) (maximum 3)))
+     (((port uo_out) (minimum -1)  (maximum 4))))
     |}];
   error_contains
     (resolve
        ~timing:
          { timing with
-           input_delays = [ { port = "uo_out"; maximum = Time_float.Span.of_ns 3. } ]
+           input_delays = [ delay "uo_out" ~minimum:0. ~maximum:3. ]
          }
        ())
     "nonclock top-level port";
@@ -242,10 +258,24 @@ let%expect_test "clock and I/O delay endpoints resolve with nanosecond units" =
     (resolve
        ~timing:
          { timing with
-           input_delays = [ { port = "ui_in"; maximum = Time_float.Span.of_ns (-1.) } ]
+           input_delays = [ delay "ui_in" ~minimum:(-2.) ~maximum:(-1.) ]
          }
        ())
     "nonnegative";
+  error_contains
+    (resolve
+       ~timing:
+         { timing with input_delays = [ delay "ui_in" ~minimum:2. ~maximum:1. ] }
+       ())
+    "no greater than its maximum";
+  error_contains
+    (resolve
+       ~timing:
+         { timing with
+           output_delays = [ delay "uo_out" ~minimum:Float.nan ~maximum:1. ]
+         }
+       ())
+    "no greater than its maximum";
   error_contains
     (resolve
        ~timing:{ timing with input_delays = timing.input_delays @ timing.input_delays }

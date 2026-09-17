@@ -85,7 +85,9 @@ def main(executable, source_root):
                     format(config["CLOCK_PERIOD"], ".17g")) in sdc
             if kind == "observable":
                 assert "set_input_delay -max 1 -clock clk [get_ports {ui_in}]" in sdc
+                assert "set_input_delay -min 0 -clock clk [get_ports {ui_in}]" in sdc
                 assert "set_output_delay -max 2 -clock clk [get_ports {uo_out}]" in sdc
+                assert "set_output_delay -min 0 -clock clk [get_ports {uo_out}]" in sdc
             synth = data["synthesis_sources"]
             sim = data["simulation_sources"]
             assert len(synth) == len(sim) == 1 and synth != sim

@@ -66,6 +66,19 @@ class CollectorTest(unittest.TestCase):
         absent = phase4.collect(self.root)
         self.assertIn("absent", absent["metrics"]["mapped_area"]["unavailable_reason"])
 
+    def test_unconstrained_hold_sentinel(self):
+        self.put("final/metrics.csv", "timing__setup__ws__corner:slow,18.0\n"
+                 "timing__hold__ws__corner:slow,1.0000000433293989E+39\n")
+        result = phase4.collect(self.root)
+        hold = result["metrics"]["hold_slack"]
+        self.assertIsNone(hold["value"])
+        self.assertEqual(hold["unavailable_reason"], "no constrained timing paths reported")
+        self.assertEqual(result["timing_unconstrained_modes"], ["hold"])
+        self.assertEqual(result["timing_goal"], "pass")
+        self.put("final/metrics.csv", "timing__setup__ws__corner:slow,-0.5\n"
+                 "timing__hold__ws__corner:slow,1.0000000433293989E+39\n")
+        self.assertEqual(phase4.collect(self.root)["timing_goal"], "fail")
+
     def test_malformed_reports_and_failed_process(self):
         self.put("06-yosys-synthesis/reports/stat.json", "{bad")
         self.put("final/metrics.csv", "timing__setup__ws,not-a-number\ninvalid-row\n")
