@@ -10,6 +10,9 @@
   Use this for architecture and scope decisions.
 - [Program-memory contract](program-memory-contract.md): authoritative behavior,
   verification obligations, and planned project integration for `Single_port_ram`.
+- [Comment and formatting guidelines](comment_guidelines.md): header, doc comment,
+  alignment and error message conventions, drawn from `Resource_policy` and
+  `Elaboration_context`.
 - [Architecture direction](hardcaml_asic_architecture_direction.md): Tiny Tapeout
   first, with optional future open/commercial-flow adapters. Examples align with
   the accepted plan; broader API/module sketches remain exploratory.

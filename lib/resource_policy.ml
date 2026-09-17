@@ -141,6 +141,11 @@ type t =
    The one check: the same selector cannot appear in two rules. This is rejected even if
    both rules ask for the same requirement, since two rules with the same selector always
    tie on precedence and [lookup] would have no way to pick between them;
+
+
+    Request     : what is being asked for by a resource constructor?
+    Requirement : what will the project accept - derived from a policy
+    Tech Map    : what macros exist, based on the request for exact equality
 *)
 let create ?default rules =
   match
