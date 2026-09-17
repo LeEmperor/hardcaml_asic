@@ -126,6 +126,8 @@ let sources_of
       match Technology.exact_mapping technology request with
       | Some { macro; _ } -> macro.collateral
       | None -> [] (* can never happen, will exception/error before this for an unmapped macro; *)
+      (* TODO (possible optimization): this second lookup could go away; see
+         Selection.Implementation *)
     in
 
     ( Selected_implementation
