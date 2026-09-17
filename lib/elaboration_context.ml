@@ -266,16 +266,52 @@ module Private = struct
     (* If open, then recheck and convert to finalizing; *)
     | Open | Finalized ->
       check_open t ~operation:"finalize";
-      (* set the records, the unmatched items, and setup their error exception management build; *)
       let records = Map.data t.shared.records in
-      let unmatched_rules =
-        List.filter (Resource_policy.rules t.shared.policy) ~f:(fun rule ->
-          not
-            (List.exists records ~f:(fun record ->
-               Resource_policy.Selector.matches rule.selector record.id)))
+
+      (* The selectors that actually decided some resource's requirement; selectors are unique
+         within a policy, so a selector here identifies exactly one rule;
+      *)
+      let applied =
+        List.filter_map records ~f:(fun record ->
+          match record.policy with
+          | Rule selector -> Some selector
+          | Default -> None)
       in
 
-      match unmatched_rules with
+      (* A rule is dead when it never applied. Matching is not enough: a rule can match
+         resources and still lose to a higher-precedence rule on every one of them;
+
+         unmatched : matches no registered resource; most likely a misspelt identity;
+         shadowed  : matches resources, but each of them was decided by a more specific
+                     rule, listed as overridden_by; the two rules contradict or repeat;
+      *)
+      let dead_rules =
+        List.filter (Resource_policy.rules t.shared.policy) ~f:(fun rule ->
+          not (List.mem applied rule.selector ~equal:Resource_policy.Selector.equal))
+      in
+      let unmatched_rules, shadowed_rules =
+        List.partition_map dead_rules ~f:(fun rule ->
+          match
+            List.filter records ~f:(fun record ->
+              Resource_policy.Selector.matches rule.selector record.id)
+          with
+          | [] -> First rule
+          | matched ->
+            let overridden_by =
+              List.filter_map matched ~f:(fun record ->
+                match record.policy with
+                | Rule selector -> Some selector
+                | Default -> None) (* unreachable; a matching rule always beats the default *)
+              |> List.dedup_and_sort ~compare:Resource_policy.Selector.compare
+            in
+            Second
+              [%message
+                ""
+                  (rule : Resource_policy.Rule.t)
+                  (overridden_by : Resource_policy.Selector.t list)])
+      in
+
+      match dead_rules with
       | [] ->
         t.shared.state <- Finalized;
         Ok records
@@ -283,8 +319,9 @@ module Private = struct
         t.shared.state <- Failed;
         Or_error.error_s
           [%message
-            "implementation policy rules match no registered resource"
-              (unmatched_rules : Resource_policy.Rule.t list)
+            "implementation policy rules never applied to a registered resource"
+              (unmatched_rules : Resource_policy.Rule.t list [@sexp.omit_nil])
+              (shadowed_rules : Sexp.t list [@sexp.omit_nil])
               ~registered:(List.map records ~f:(fun r -> r.id) : Resource_id.t list)]
   ;;
 

@@ -54,7 +54,7 @@ type t
   target    : asic? fpga? sim? emulate?
   flow      : tt? cadence? synopsys?
   clocks    : clock data; what speeds, who exists, where they are
-  policy    : falbacks if we can't make a certain resource -> do i default to smaller? larger? compose in a certain way?
+  policy    : per-instance or per-subtree requirement (Flops, Exact, Exact_or_flop_fallback); exact contracts only, never rounded or composed; flops are the only fallback
   unit      : positional for optional boundaries
 
   -> Or_error.t

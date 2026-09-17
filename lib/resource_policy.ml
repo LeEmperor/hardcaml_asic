@@ -7,7 +7,7 @@
    It is a default requirement plus a list of rules, where each rule points at one
    instance or at a whole scope subtree. Elaboration_context.register_exn asks it for a
    requirement through [lookup], and Private.finalize walks its [rules] to catch rules
-   nothing used;
+   that never applied (matched nothing, or were always outranked);
 
    It does NOT know what the technology can do, that is Technology's job; Selection is
    where the two meet.
@@ -39,6 +39,9 @@ end
 
    The type is private in the mli, so the only way to build one is through the _exn
    constructors below, which means every selector has already been validated.
+
+   We importantly store WHY we got its requirement, not just what it happened to get.
+   For performance optimizations, it might make sense to turn this off.
 *)
 module Selector = struct
   type t =
@@ -163,19 +166,28 @@ let rules t = t.rules
    3. nothing matched -> fall back to the default;
    4. no default either -> error; register_exn tags it with the request and raises;
 *)
-let lookup t id =
+let lookup
+  t (* Resource_policy.t *)
+  (id : Resource_id.t)
+  =
   (* Equal precedence implies an identical selector, which [create] rejects, so the
      maximum is unique. *)
   (* Why: two matching instance rules would both name [id], and two matching subtree rules
      of the same depth are both prefixes of the same path with the same length, so they
      are the same path; either way it is a duplicate selector; *)
-  let matching = List.filter t.rules ~f:(fun rule -> Selector.matches rule.selector id) in
+  let matching =
+    List.filter t.rules ~f:(fun rule ->
+      Selector.matches rule.selector id
+    )
+  in
+
   match
     List.max_elt matching ~compare:(fun (a : Rule.t) b ->
       [%compare: int * int]
         (Selector.precedence a.selector)
         (Selector.precedence b.selector))
   with
+
   (* a rule won; record the winning selector as the reason *)
   | Some { selector; requirement } -> Ok (requirement, Applied.Rule selector)
   | None ->

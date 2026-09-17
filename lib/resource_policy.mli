@@ -13,8 +13,9 @@
 
    Repeating a selector is ambiguous and rejected. A resource with no applicable
    requirement fails registration: there is no implicit implementation choice. A rule that
-   matches no registered resource fails finalization, since it is most likely a misspelt
-   identity. *)
+   never applies fails finalization: either it matches no registered resource (most likely
+   a misspelt identity), or every resource it matches is decided by a higher-precedence
+   rule. *)
 
 open! Core
 

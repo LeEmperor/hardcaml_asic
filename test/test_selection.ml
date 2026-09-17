@@ -200,9 +200,46 @@ let%expect_test "a rule matching no registered resource fails finalization" =
     (("elaboration validation failed"
        (project fixture)
        (mode    Implementation))
-     ("implementation policy rules match no registered resource"
+     ("implementation policy rules never applied to a registered resource"
       (unmatched_rules (((selector (Instance left/bfu)) (requirement Exact))))
       (registered (left/buf right/buf status))))
+    |}]
+;;
+
+let%expect_test "a rule outranked on every resource it matches fails finalization" =
+  (* [subtree "left"] matches only left/buf, which the instance rule decides. Its [Exact]
+     cannot be satisfied by this technology, so it would fail registration if it applied. *)
+  show
+    ~technology:Technology.ihp_sg13cmos5l
+    (Resource_policy.create
+       ~default:Flops
+       [ rule (subtree "left") Exact; rule (instance "left/buf") Flops ]);
+  [%expect {|
+    (("elaboration validation failed"
+       (project fixture)
+       (mode    Implementation))
+     ("implementation policy rules never applied to a registered resource"
+      (shadowed_rules ((
+        (rule ((selector (Subtree (left))) (requirement Exact)))
+        (overridden_by ((Instance left/buf))))))
+      (registered (left/buf right/buf status))))
+    |}]
+;;
+
+let%expect_test "a rule outranked on only some of its resources is live" =
+  let design = Fixture.design ~within:"core" () in
+  show
+    ~design
+    ~technology:Technology.ihp_sg13cmos5l
+    (Resource_policy.create
+       [ rule (subtree "core") Flops; rule (instance "core/left/buf") Flops ]);
+  [%expect {|
+    (core/left/buf (Rule (Instance core/left/buf))
+     ((implementation Flops) (reason Explicit_flops)))
+    (core/right/buf (Rule (Subtree (core)))
+     ((implementation Flops) (reason Explicit_flops)))
+    (core/status (Rule (Subtree (core)))
+     ((implementation Flops) (reason Explicit_flops)))
     |}]
 ;;
 
