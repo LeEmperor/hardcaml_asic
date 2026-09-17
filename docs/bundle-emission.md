@@ -23,9 +23,11 @@ The memory example uses an explicitly selected four-word, eight-bit flop RAM.
 write data, `ena` enables access, and `uo_out` is registered read data. It has
 no reset or validity port on the RAM; reads of unwritten words are unspecified.
 The observable example registers `ui_in` on `clk`, clears on active-low `rst_n`,
-and drives zero to `uo_out` when `ena` is low. Its declared maximum input and
-output delays of 1 ns and 2 ns demonstrate typed SDC emission; these are example
-assumptions, not values inferred from the TT board.
+and drives zero to `uo_out` when `ena` is low. Its declared input and output
+delays (minimum 0 ns; maximum 1 ns and 2 ns) demonstrate typed SDC emission;
+these are example assumptions, not values inferred from the TT board. The
+minimum of 0 ns is the hold-pessimistic choice for inputs driven asynchronously
+to `clk`.
 
 ## Bundle layout
 
@@ -35,7 +37,7 @@ OUTPUT/
   src/config.json           resolved LibreLane settings
   src/<top>.v               synthesis RTL
   simulation/<top>.v        separately elaborated behavioral simulation RTL
-  constraints/top.sdc       typed clock and optional maximum I/O delays
+  constraints/top.sdc       typed clock and optional min/max I/O delays
   inputs/...                exact copies of declared generator source inputs
   manifest.json             schema version 1, identity and SHA-256 inventory
 ```

@@ -461,6 +461,13 @@ usable. P1 supplies memory; P4 supplies execution/results. Adoption is part of
 closing the library milestone, not a prerequisite that must already be complete.
 Consumer code and tests stay in the emulator repository; library fixes stay here.
 
+As of 2026-09-17 the emulator has deferred its adoption
+([emulator non-linear sequencing](../../scaf/docs/phase_plan.md#non-linear-sequencing-rtl-decoupled-from-asic-adoption)):
+its P0.6 starts once P5.1 here has evidence and its UART TX slice (P2.7) or
+store-consumer logic (P3.1a) is complete, and must land before its P3 exits.
+P5.1 and P5.5 can proceed independently; P5.2–P5.4, and therefore M3, wait on
+that trigger. Do not substitute a library-owned fixture for the consumer evidence.
+
 - [ ] **P5.1 — Make the library consumable from a separate project.** Establish
   the Dune/package installation or pinned dependency mechanism needed by the
   consumer, with version/revision and collateral resolution instructions. Keep

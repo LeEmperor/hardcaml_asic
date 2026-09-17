@@ -74,8 +74,18 @@ python3 scripts/phase4.py collect "$RUNS/<printed-run-id>" \
 ```
 
 Postcheck uses the pinned support-tools `precheck/default.nix` and a separate
-Python environment with its KLayout dependency. It records the GDS, netlist,
-and testbench hashes, command log, and both verdicts under `checks/<id>/`.
+Python environment with its KLayout dependency. The gate-level simulation runs
+Icarus from the run's pinned LibreLane image, because the CMOS5L flop models
+depend on `$setuphold` delayed nets that Icarus 12 leaves undriven. It compiles
+the PDK I/O, UDP, and standard-cell models with the final `nl` netlist. It
+records the GDS, netlist, and testbench hashes, simulator image and version,
+command log, and both verdicts under `checks/<id>/`.
+
+The bundle's LibreLane settings must include the TT template's physical
+settings, supplied as reasoned overrides. Without `FP_PDN_MULTILAYER=0` and the
+template's PDN and LEF-pin settings, LibreLane's defaults put the power grid on
+`TopMetal1`, and TT precheck rejects the layout even though LibreLane's own DRC,
+LVS, and antenna checks pass.
 
 `run.json` records build identity, manifest hash, actual environment, command
 arguments, requested/completed stage, status, timestamps, and output paths.

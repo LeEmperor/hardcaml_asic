@@ -59,11 +59,15 @@ title, author, and description plus one description for each of the 24 `ui`,
 behavior; these checks only validate its boundary.
 
 The initial timing subset is one primary clock on input `clk`, with optional
-maximum input and output delays on named top-level ports. `Clock.period` and
-`Timing.Delay.maximum` use `Time_float.Span.t`, allowing the 48 MHz reference
-period of about 20.833333 ns. Resolution rejects nonfinite or nonpositive
-clock periods, negative or nonfinite delays, duplicate delays, wrong-direction
-endpoints, delays on `clk`, and additional clocks. It sorts delay endpoints for
+input and output delays on named top-level ports. Each delay declares both a
+`minimum` (hold) and a `maximum` (setup); both are required because an SDC
+delay with only `-max` leaves hold unconstrained, so STA reports no hold paths
+and the resizer inserts no hold buffers. `Clock.period` and the delay bounds use
+`Time_float.Span.t`, allowing the 48 MHz reference period of about 20.833333
+ns. Resolution rejects nonfinite or nonpositive clock periods, negative or
+nonfinite maximums, nonfinite minimums or minimums above their maximum
+(negative minimums are allowed), duplicate delays, wrong-direction endpoints,
+delays on `clk`, and additional clocks. It sorts delay endpoints for
 stable emission. P3 renders the resolved primary clock to LibreLane
 `CLOCK_PORT`/`CLOCK_PERIOD` and TT `clock_hz`, and the validated delay
 subset to SDC. No other SDC intent is accepted by this declaration API.
