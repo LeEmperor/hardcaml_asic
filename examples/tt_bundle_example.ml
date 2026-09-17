@@ -138,16 +138,17 @@ let project kind =
     (* Minimums of 0 are the hold-pessimistic choice: TT inputs are driven asynchronously
        to clk through the mux, so a change right at the clock edge is possible, and the
        template's PL/GRT hold slack margins then make the resizer repair hold with that
-       assumption rather than find no hold paths at all. *)
+       assumption rather than find no hold paths at all. rst_n (synchronous clear) and
+       ena (output gate) are delayed like ui_in so their paths are not unconstrained. *)
     ~timing:
       (if String.equal kind "observable"
        then
          { Timing.input_delays =
-             [ { port = "ui_in"
+             List.map [ "ui_in"; "rst_n"; "ena" ] ~f:(fun port ->
+               { Timing.Delay.port
                ; minimum = Time_float.Span.of_ns 0.
                ; maximum = Time_float.Span.of_ns 1.
-               }
-             ]
+               })
          ; output_delays =
              [ { port = "uo_out"
                ; minimum = Time_float.Span.of_ns 0.

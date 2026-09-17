@@ -24,7 +24,8 @@ write data, `ena` enables access, and `uo_out` is registered read data. It has
 no reset or validity port on the RAM; reads of unwritten words are unspecified.
 The observable example registers `ui_in` on `clk`, clears on active-low `rst_n`,
 and drives zero to `uo_out` when `ena` is low. Its declared input and output
-delays (minimum 0 ns; maximum 1 ns and 2 ns) demonstrate typed SDC emission;
+delays (minimum 0 ns; maximum 1 ns on `ui_in`, `rst_n` and `ena`, 2 ns on
+`uo_out`) demonstrate typed SDC emission;
 these are example assumptions, not values inferred from the TT board. The
 minimum of 0 ns is the hold-pessimistic choice for inputs driven asynchronously
 to `clk`.
