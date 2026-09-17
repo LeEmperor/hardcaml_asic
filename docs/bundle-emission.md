@@ -73,5 +73,6 @@ Actual run versions, logs and reports belong to separate execution records.
 stable output and content hashes, changes a tracked source and adds an untracked
 source to prove manifest identity changes, checks missing-input diagnostics, and
 compiles and simulates each RTL source set with Icarus when it is installed.
-The testbench is [`test/tt_bundle_tb.v`](../test/tt_bundle_tb.v). Physical
-acceptance remains a phase 4 activity.
+The testbench is [`test/tt_bundle_tb.v`](../test/tt_bundle_tb.v). The
+[Phase 4 guide](phase4-execution.md) covers preflight, isolated execution,
+result collection, and physical acceptance evidence.

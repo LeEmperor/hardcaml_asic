@@ -17,6 +17,8 @@
   timing/configuration ownership for P2.
 - [Bundle emission](bundle-emission.md): P3 commands, TT staging layout,
   manifest/source sets, and verification boundary.
+- [Execution and results](phase4-execution.md): P4 tool preflight, isolated
+  LibreLane runs, result collection, TT precheck, and gate-level commands.
 - [Comment and formatting guidelines](comment_guidelines.md): header, doc comment,
   alignment and error message conventions, with a table of reference files in `lib/`
   for each kind of example.

@@ -1,7 +1,7 @@
 # hardcaml_asic phase plan
 
-Status: working implementation plan, 2026-09-17. P0–P3 have evidence;
-P4–P5 and the separate SRAM investigation remain open.
+Status: working implementation plan, 2026-09-17. P0–P3 and P4.1–P4.4 have
+evidence; P4.5, P5, and the separate SRAM investigation remain open.
 
 ## 1. Purpose and use
 
@@ -395,28 +395,52 @@ owns installed PDK checks and physical-tool acceptance.
 Use existing external scripts first; implementing the optional library runner is
 not required to close this phase.
 
-- [ ] **P4.1 — Document and prepare the external environment.** Record the pinned
+- [x] **P4.1 — Document and prepare the external environment.** Record the pinned
   tools, PDK/library inputs, staging requirements, and explicit setup commands.
   Reuse the reference application's provisioning where appropriate. Evidence: a
   reproducible preflight establishes required files and tools; missing prerequisites
   are reported without implicit installation during elaboration or emission.
-- [ ] **P4.2 — Execute the emitted bundle and record runs.** Document the adapter's
+  *Done:* the [execution guide](phase4-execution.md) gives explicit setup and
+  preflight commands. [`phase4.py`](../scripts/phase4.py) checks every emitted
+  file hash, target reference and revision, installed LibreLane, Python, Docker,
+  and the exact container image without installing anything. The
+  [memory preflight](../evidence/p4/memory-synthesis/preflight.json) records all
+  external hashes and the intentional Python-version exceptions on this host.
+- [x] **P4.2 — Execute the emitted bundle and record runs.** Document the adapter's
   invocation requirements and provide an external consumer command. Record a
   separate run identity, build-manifest identity, actual tools/environment,
   commands, requested/completed stages, status, logs, and output locations.
   Evidence: execution leaves the build's provenance unchanged; repeated attempts
   have distinct run records; failed or interrupted runs retain useful diagnostics.
-- [ ] **P4.3 — Collect structured results independently of execution.** Parse the
+  *Done:* `phase4.py run` executes the exact emitted `src/config.json` in a
+  per-attempt staging directory. Its [run record](../evidence/p4/memory-synthesis/run.json)
+  has a distinct UUID, manifest hash/build identity, environment, commands,
+  status, and artifact paths; the archived attempt includes the unchanged
+  manifest. A [failed native attempt](../evidence/p4/failed-native-run/run.json)
+  retained its own ID and [diagnostic log](../evidence/p4/failed-native-run/execution.log).
+- [x] **P4.3 — Collect structured results independently of execution.** Parse the
   initial useful timing/area/check results and preserve raw report/artifact links.
   Include units, definitions, stage, tool/version, and applicable mode/corner.
   Evidence: report fixtures cover successful, partial, absent, and malformed
   outputs. Unavailable metrics carry reasons; process success, timing goals, and
   physical checks remain separate. Collection can run on an existing run directory.
-- [ ] **P4.4 — Prove mapped synthesis for registered memory.** Consume the P3
+  *Done:* `phase4.py collect` reads an existing run directory without executing
+  tools. It reports units, stage, corner, tool version, raw paths, unavailable
+  reasons, and separate process/timing/check statuses. The
+  [fixture tests](../test/test_phase4.py) cover complete, partial, absent, and
+  malformed reports; the [memory result](../evidence/p4/memory-synthesis/results.json)
+  exercises real Yosys reports.
+- [x] **P4.4 — Prove mapped synthesis for registered memory.** Consume the P3
   flop-memory bundle with the pinned technology and record mapped cost and actual
   selected resources. Evidence: synthesis completes without accidental macro
   substitution or unresolved black boxes; results link to the exact build and
   run. Fix rendering problems in the adapter, not by hand-editing emitted files.
+  *Done:* the [memory synthesis record](../evidence/p4/memory-synthesis/README.md)
+  links the build/run identities and archived inputs, logs, and reports. Yosys
+  mapped 179 `sg13cmos5l_*` cells (3,480.0192 µm²); unmapped instances and
+  synthesis check errors were zero. The manifest records explicit flops with no
+  macro collateral. The Python launcher/container versions differ from the
+  bundle's request and are disclosed in the preflight record.
 - [ ] **P4.5 — Prove the small physical path.** Run the adopted-bundle observable
   design through hardening, required physical checks, TT precheck, and gate-level
   wrapper verification. Record constraints, timing outcomes, and check status.
