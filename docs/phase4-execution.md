@@ -44,24 +44,10 @@ scripts only drive them.
 ./bootstrap.sh --install-deps   # also install missing packages into the opam switch
 ```
 
-It has two layers, each its own script because they fail for unrelated reasons.
-`scripts/ocaml-deps.sh` checks the shared `5.2.0+ox` opam switch and the packages
-the dune files name; it reports rather than installs unless `--install-deps` is
-given, because that switch is shared with every other Hardcaml checkout on the
-machine. `scripts/toolchain.sh` then creates, under `.toolchain/`:
-
-| Path | What |
-| --- | --- |
-| `.toolchain/tt` | tt-support-tools, detached at `support_tools_revision` |
-| `.toolchain/pdk` | IHP-Open-PDK, detached at `pdk_revision`; this is `PDK_ROOT` (~1.3 GB) |
-| `.toolchain/.venv` | `librelane` at `librelane_version` |
-| `.toolchain/.venv-precheck` | the TT precheck requirements, which cannot share `.venv` |
-| `.toolchain/toolchain-env.sh` | generated; `flow.sh` reads it, a shell can source it |
-
-Both checkouts are fetched by exact hash with `--depth 1`, never by branch: the
-support-tools branch head has already moved past the pinned revision, so a
-shallow clone of the branch would not contain it. `git rev-parse HEAD` in each is
-the pinned revision itself, which is what preflight compares against.
+It provisions `.toolchain/{tt,pdk,.venv,.venv-precheck}` and the LibreLane
+container image, and writes `.toolchain/toolchain-env.sh` for `flow.sh` to read.
+The [bootstrap guide](bootstrap.md) covers the layers, the options, overriding
+paths, and what to do when a check fails.
 
 There is no dependency on a sibling checkout, in either direction. The pins are
 this repository's own, in `lib/target.ml` and `lib/bundle.ml`; `toolchain.lock`
@@ -74,17 +60,10 @@ codes. `scripts/phase4.py preflight` then checks the particular emitted bundle
 against the installed files, and never fetches or installs anything itself.
 
 The runner uses Dockerized LibreLane by default and needs an accessible Docker
-daemon. A client installed but unreachable usually means the socket is
-root-owned and you are not in the `docker` group yet:
-
-```sh
-sudo groupadd -f docker && sudo usermod -aG docker "$USER"
-newgrp docker                                   # or log out and back in
-sudo snap disable docker && sudo snap enable docker   # snap installs only
-```
-
-The runner copies the pinned floorplan into its per-run staging directory so the
-container can resolve `dir::../tt/...`. It reads PDK views from `PDK_ROOT`.
+daemon; see [bootstrap troubleshooting](bootstrap.md#troubleshooting) when it is
+installed but unreachable. The runner copies the pinned floorplan into its
+per-run staging directory so the container can resolve `dir::../tt/...`. It reads
+PDK views from `PDK_ROOT`.
 
 From this repository root, after emitting a bundle as in
 [bundle emission](bundle-emission.md):

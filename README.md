@@ -12,7 +12,8 @@ Start with the [documentation index](docs/README.md) and the
 On a new machine, `./bootstrap.sh` provisions the pinned toolchain (opam packages,
 tt-support-tools, the IHP PDK, the LibreLane and precheck environments) into
 `.toolchain/`; `./bootstrap.sh --check` reports what is missing without changing
-anything. `scripts/flow.sh` then runs the implementation flow end to end.
+anything. `scripts/flow.sh` then runs the implementation flow end to end. The
+[bootstrap guide](docs/bootstrap.md) has the options and the troubleshooting.
 
 The [implementation phase plan](docs/phase_plan.md) breaks initial usage into
 tasks, dependencies, and completion criteria.

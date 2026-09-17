@@ -17,9 +17,12 @@
   timing/configuration ownership for P2.
 - [Bundle emission](bundle-emission.md): P3 commands, TT staging layout,
   manifest/source sets, and verification boundary.
-- [Execution and results](phase4-execution.md): P4 toolchain bootstrap, tool
-  preflight, isolated LibreLane runs, result collection, TT precheck, and
-  gate-level commands. Start here to set up a new machine.
+- [Bootstrapping the toolchain](bootstrap.md): `./bootstrap.sh`, its two layers
+  and options, what lands in `.toolchain/`, overriding paths, where the pins live
+  and how drift is caught, and what to do when a check fails. Start here on a new
+  machine.
+- [Execution and results](phase4-execution.md): P4 tool preflight, isolated
+  LibreLane runs, result collection, TT precheck, and gate-level commands.
 - [Comment and formatting guidelines](comment_guidelines.md): header, doc comment,
   alignment and error message conventions, with a table of reference files in `lib/`
   for each kind of example.
