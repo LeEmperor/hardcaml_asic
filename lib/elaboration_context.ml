@@ -50,6 +50,10 @@ let check_open
   ~operation
   =
 
+  (* take in a Elaboration_context.t object; match the state with things;
+      if open then chilling
+      if not, then raise on it
+  *)
   match t.shared.state with
   | Open -> ()
   | (Finalized | Failed) as state ->
@@ -60,13 +64,19 @@ let check_open
           (state : State.t)]
 ;;
 
+(* Close the context as Failed. Shared by every view, since the state lives in [shared]. *)
+let fail t = t.shared.state <- Failed
+
+(* grab the mode out of a context object *)
 let mode t = t.shared.mode
 
+(* grab the scope only if open *)
 let scope t =
   check_open t ~operation:"scope";
   t.scope
 ;;
 
+(* lets us grab a new view into an existing elaboration context; grab a scope and turn it into a context attached; *)
 let in_scope t scope =
   check_open t ~operation:"in_scope";
   if not (phys_equal (Scope.circuit_database scope) t.shared.database)
@@ -74,26 +84,76 @@ let in_scope t scope =
   { t with scope }
 ;;
 
-let sources_of ~(mode : Elaboration_mode.t) ~(technology : Technology.t) request selection
+(* Takes in an elaboration mode,
+an elaboration,
+a request to do something,
+and a selction and returns the resource map enumeration tuple list;Z
+
+Once an implementation is picked, decides two things for the Resource_record that is output:
+   Elaborated_as.t  :  what this elaboration actually built for the resource.
+   Source.t list    :  artifacts downstream steps (simulation, synthesis, hardening) need for it.
+*)
+let sources_of
+    ~(mode : Elaboration_mode.t)
+    ~(technology : Technology.t) (* description of what the company can do; list of mappings between requests and macros; *)
+    (request : Resource_request.t) (* what is the resource asking for? kind plus a contract, not dependent on a specific technology *)
+    (selection : Selection.t) (* This is a request, tech, and req wrapped up; *)
   : Resource_record.Elaborated_as.t * Resource_record.Source.t list
   =
-  match mode, (selection : Selection.t).implementation with
+
+  (* do the thing with the stuff *)
+  (* A selection is a record ofa  choice and the why it was made;  *)
+  match (mode : Elaboration_mode.t),
+        (selection : Selection.t).implementation
+  with
+
+  (* sim generation; only care about behaviour *)
+  (* Selection is ignored; simulation always uses the behavioural model, even if a macro was selected;
+      The Behavioural_model tag records that the hardware we simulated that is not the implementation that was select.
+  *)
   | Simulation, _ -> Behavioral_model, [ Generated_behavioral_model ]
+
+  (* Imlementing with flops; *)
+  (* Resource becomes arbitrary RTL from teh hardcaml designa and gets handed to synthesis; *)
   | Implementation, Flops -> Selected_implementation, [ Generated_synthesis_rtl ]
+
+  (* Implemention with a set macro of something; *)
+  (* The resource is a hard macro, so the files that come with it matter; function looks up mapping again and turns each entry
+     into a Source.Collateral -> see expect tests
+  *)
   | Implementation, Macro _ ->
     let collateral =
       match Technology.exact_mapping technology request with
       | Some { macro; _ } -> macro.collateral
-      | None -> []
+      | None -> [] (* can never happen, will exception/error before this for an unmapped macro; *)
     in
+
     ( Selected_implementation
-    , List.map collateral ~f:(fun c -> Resource_record.Source.Collateral c) )
+    , List.map collateral ~f:(fun c -> Resource_record.Source.Collateral c)
+    )
 ;;
 
-let register_exn t ~name request =
-  check_open t ~operation:"register";
-  let path = Scope.path t.scope |> Scope.Path.to_list |> List.rev in
+(* The main sauce here for contexts;
+   pass it an elaboration context, a named string, and a Resource_request.t
+
+    _exn denotes that this function may raise an exception of returning an error value; Jane convention.
+
+   This is the body of a registration on a context already known to be open; every raise in
+   here is caught by [register_exn] below, which closes the context before re-raising.
+*)
+let register_open_exn
+    t
+    ~name
+    request =
+
+  (* grab the path of the scope of the context, feed it to a list transform, and then reverse it to get the outermost-first oft eh path.  *)
+  (* The identity of the registration item; *)
+  let path = Scope.path t.scope |> Scope.Path.to_list |> List.rev in (* order of to_list might matter eventually *)
   let id = Resource_id.create_exn ~path ~name in
+
+  (* grabbing the resource selection record map; *)
+  (* Reject duplicates; this raises with a ppx for an sexp on the raise call for context on the occurence. *)
+  (* Can be serialized; *)
   if Map.mem t.shared.records id
   then
     raise_s
@@ -101,11 +161,26 @@ let register_exn t ~name request =
         "duplicate resource instance; give each instance in a scope a distinct name"
           ~instance:(id : Resource_id.t)
           (request : Resource_request.t)];
-  let { mode; technology; policy; _ } = t.shared in
+
+  (* extract the items out of the shared context; *)
+  let { mode
+      ; technology
+      ; policy
+      ; _
+      } = t.shared in
+
   let record =
+    (* If no policy rule applies, then stop and return the error; short circuits in a monad; *)
     let%bind.Or_error requirement, applied = Resource_policy.lookup policy id in
+
+    (* Wraps in Ok if it passes; *)
     let%map.Or_error selection = Selection.select ~technology ~requirement request in
-    let elaborated_as, sources = sources_of ~mode ~technology request selection in
+
+    (* What the elaboration built for the resouce actually; *)
+    let elaborated_as, sources = sources_of
+        ~mode ~technology request selection
+    in
+
     { Resource_record.id
     ; request
     ; requirement
@@ -114,7 +189,14 @@ let register_exn t ~name request =
     ; elaborated_as
     ; sources
     }
+
   in
+
+  (* Very painful to do while inside of a design constructor for the Hardcaml circuit, which returns the Signal.t O.t
+      If the register_exn returned Or_error.t, every RAM constructor and hierarchy level would have to pass the Or_error upwards;Z
+
+    With this, we can convert the error into an exception to become a value again;
+  *)
   match record with
   | Error error ->
     Error.raise
@@ -130,6 +212,29 @@ let register_exn t ~name request =
     record
 ;;
 
+(* Any failed registration closes the context as Failed before the exception leaves
+
+   A design is free to catch the exception (try ... with _ -> ...), and Project.elaborate would
+   then never see it; closing here means the swallowed failure still stops the elaboration; any
+   later registration raises, and Private.finalize returns an error instead of a build that is
+   missing the resource. I think there was a possible race condition here but I dunno.
+
+   check_open stays outside the handler: a closed context is already closed, and a Finalized
+   one must not be rewritten to Failed. The original exception and backtrace are re-raised
+   unchanged.
+*)
+let register_exn t ~name request =
+  check_open t ~operation:"register";
+  try register_open_exn t ~name request with
+  | exn ->
+    let backtrace = Backtrace.Exn.most_recent () in
+    fail t;
+    Exn.raise_with_original_backtrace exn backtrace
+;;
+
+(* This is the private construction mechanism by which we align call conventions to; 
+    In hardcaml, things aren't truly "private" per say, but as a Jane convention we uset his and enforce it;
+*)
 module Private = struct
   let create ~mode ~technology ~policy ~scope =
     { shared =
@@ -145,27 +250,42 @@ module Private = struct
   ;;
 
   let finalize t =
-    check_open t ~operation:"finalize";
-    let records = Map.data t.shared.records in
-    let unmatched_rules =
-      List.filter (Resource_policy.rules t.shared.policy) ~f:(fun rule ->
-        not
-          (List.exists records ~f:(fun record ->
-             Resource_policy.Selector.matches rule.selector record.id)))
-    in
-    match unmatched_rules with
-    | [] ->
-      t.shared.state <- Finalized;
-      Ok records
-    | _ :: _ ->
-      t.shared.state <- Failed;
+    (* A Failed context here means a registration raised and the design caught it; construction
+       "succeeded", so report it as an error rather than raising out of Project.elaborate.
+    *)
+    match t.shared.state with
+    | Failed -> (* see the failed and prop the sexp exception conversion; *)
       Or_error.error_s
         [%message
-          "implementation policy rules match no registered resource"
-            (unmatched_rules : Resource_policy.Rule.t list)
-            ~registered:(List.map records ~f:(fun r -> r.id) : Resource_id.t list)]
+          "a resource registration failed during construction and the exception was caught \
+           inside the design"]
+
+    (* If open, then recheck and convert to finalizing; *)
+    | Open | Finalized ->
+      check_open t ~operation:"finalize";
+      (* set the records, the unmatched items, and setup their error exception management build; *)
+      let records = Map.data t.shared.records in
+      let unmatched_rules =
+        List.filter (Resource_policy.rules t.shared.policy) ~f:(fun rule ->
+          not
+            (List.exists records ~f:(fun record ->
+               Resource_policy.Selector.matches rule.selector record.id)))
+      in
+
+      match unmatched_rules with
+      | [] ->
+        t.shared.state <- Finalized;
+        Ok records
+      | _ :: _ ->
+        t.shared.state <- Failed;
+        Or_error.error_s
+          [%message
+            "implementation policy rules match no registered resource"
+              (unmatched_rules : Resource_policy.Rule.t list)
+              ~registered:(List.map records ~f:(fun r -> r.id) : Resource_id.t list)]
   ;;
 
-  let fail t = t.shared.state <- Failed
+  (* if the fail happens, here it is! *)
+  let fail = fail
 end
 [@@@ocamlformat "enable"]

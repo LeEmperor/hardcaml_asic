@@ -204,6 +204,50 @@ let%expect_test "failed construction is closed and a retry starts clean" =
     |}]
 ;;
 
+let%expect_test "a registration failure caught by the design still fails elaboration" =
+  let swallow_duplicate context =
+    try
+      ignore
+        (Elaboration_context.register_exn
+           context
+           ~name:"status"
+           (Fixture.Store.request ~width:8)
+         : Resource_record.t)
+    with
+    | _ -> ()
+  in
+  (* Swallowed after every resource registered: finalization refuses the build. *)
+  let design = Fixture.design ~after:swallow_duplicate () in
+  print_s [%sexp (elaborate (Fixture.project ~design ()) : Build.t Or_error.t)];
+  [%expect
+    {|
+    (Error (
+      ("elaboration validation failed"
+        (project fixture)
+        (mode    Implementation))
+      "a resource registration failed during construction and the exception was caught inside the design"))
+    |}];
+  (* Swallowed before the rest of the design registers: the next registration raises. *)
+  let design =
+    Fixture.design
+      ~before:(fun context ->
+        swallow_duplicate context;
+        swallow_duplicate context)
+      ()
+  in
+  print_s [%sexp (elaborate (Fixture.project ~design ()) : Build.t Or_error.t)];
+  [%expect
+    {|
+    (Error (
+      ("design construction failed"
+        (project fixture)
+        (mode    Implementation))
+      ("elaboration context is closed; each elaboration uses a fresh context"
+       (operation scope)
+       (state     Failed))))
+    |}]
+;;
+
 let%expect_test "a scope from another elaboration is rejected" =
   let design =
     Fixture.design

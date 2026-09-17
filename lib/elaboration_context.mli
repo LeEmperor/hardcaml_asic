@@ -34,7 +34,11 @@ val in_scope : t -> Scope.t -> t
 
     Raises, with the instance identity and requested contract, if the name duplicates an
     instance already registered in this scope, if no policy applies, or if the policy
-    cannot be satisfied by the technology. *)
+    cannot be satisfied by the technology.
+
+    Any failure closes the context as failed before raising, so an exception caught inside
+    the design still stops the elaboration: later registrations raise and
+    {!Private.finalize} returns an error. *)
 val register_exn : t -> name:string -> Resource_request.t -> Resource_record.t
 
 module Private : sig
@@ -46,7 +50,8 @@ module Private : sig
     -> t
 
   (** Validate collected state and close the context. Returns the inventory ordered by
-      identity. The context is closed whether or not validation succeeds. *)
+      identity. The context is closed whether or not validation succeeds. Returns an error
+      if a registration already failed and closed the context. *)
   val finalize : t -> Resource_record.t list Or_error.t
 
   (** Close the context after a failed construction. *)
