@@ -60,21 +60,23 @@ let sha256 contents =
   |> String.concat
 ;;
 
-(* Pretty printed JSON with a trailing newline, the form every emitted .json file takes *)
+(* Pretty printed JSON plus a trailing newline; how every .json file is written; *)
 let json value = Yojson.Safe.pretty_to_string value ^ "\n"
 
-(* Shorthand for a JSON string, so manifest builders read as key/value tables *)
+(* Shorthand for a JSON string, so manifest builders read as key/value tables; *)
 let string value = `String value
 
 (* Shorthand for a JSON object; field order is kept as given, and it is part of the
-   identity (see [render]) *)
+   identity (see [render]);
+*)
 let assoc fields = `Assoc fields
 
-(* Shorthand for a JSON list built by mapping [f] over [values] *)
+(* Shorthand for a JSON list built by mapping [f] over [values]; *)
 let list f values = `List (List.map values ~f)
 
 (* An OCaml value as a JSON string holding its human readable sexp; the manifest records
-   requests, selections and roles the same way the expect tests print them *)
+   requests, selections and roles the same way the expect tests print them;
+*)
 let sexp to_sexp value = string (Sexp.to_string_hum (to_sexp value))
 
 (* Run "git -C [root] [args]" and return its stdout; Or_error since a missing git or a
@@ -94,12 +96,19 @@ let run_git root args =
   let argv = Array.of_list ("git" :: "-C" :: root :: args) in
   Or_error.try_with (fun () ->
     let channel = U.open_process_args_in "git" argv in
+
+    (* All of stdout, read before closing so git never blocks on a full pipe *)
     let output =
       Stdlib.In_channel.input_all channel
       |> String.rstrip ~drop:(Char.equal '\n')
     in
+
     match U.close_process_in channel with
+
+    (* git exited cleanly; its output is the answer *)
     | U.WEXITED 0 -> output
+
+    (* Nonzero exit, or killed by a signal; the output is discarded *)
     | _ -> failwithf "git failed: %s" (String.concat ~sep:" " args) ())
 ;;
 
@@ -148,12 +157,18 @@ let read_input ~source_root path =
   else (
     let full = Filename.concat source_root path in
     Or_error.try_with (fun () ->
+
+      (* Step 2; a dangling symlink counts as missing, since file_exists follows it *)
       if not (Stdlib.Sys.file_exists full) || Stdlib.Sys.is_directory full
       then failwithf "source input is missing: %s" full ();
+
+      (* Step 3 *)
       let real_root = U.realpath source_root in
       let real_file = U.realpath full in
       if not (String.is_prefix real_file ~prefix:(real_root ^ "/"))
       then failwithf "source input escapes source root: %s" path ();
+
+      (* Step 4 *)
       In_channel.read_all full))
 ;;
 
@@ -168,6 +183,7 @@ let read_input ~source_root path =
    this) rather than a rounded neighbour;
 *)
 let sdc (resolved : Resolved_build.t) =
+
   let number value = Printf.sprintf "%.17g" value in
 
   (* One "set_<direction>_delay" line for a (port, maximum ns) pair *)
@@ -201,6 +217,7 @@ let sdc (resolved : Resolved_build.t) =
    yaml_version is 6, the version the pinned TT support tools read;
 *)
 let info_yaml (resolved : Resolved_build.t) source_name =
+
   let build = resolved.build in
   let metadata = Build.metadata build in
   let yaml_string value = Yojson.Safe.to_string (`String value) in
@@ -315,7 +332,8 @@ let reference_json (reference : Target.Reference.t) =
 ;;
 
 (* One resolved setting as a manifest entry; unlike config.json, this keeps the [owner],
-   so an override is recorded along with its reason *)
+   so an override is recorded along with its reason;
+*)
 let setting_json (setting : Resolved_build.Setting.t) =
   assoc
     [ "key", string setting.key
@@ -333,8 +351,9 @@ let setting_json (setting : Resolved_build.Setting.t) =
       [simulation_build] when there is one;
    3. dedup and sort [input_paths]; none left -> error;
    4. read git HEAD of [source_root] -> error when there is no repository or no commit;
-   5. read every input's bytes (see [read_input]) and its git status -> first failure is
-      the error;
+   5. read every input's bytes (see [read_input]) and its git status -> every input that
+      fails is reported in one combined error; an input whose read fails skips its git
+      status;
    6. collect produced and copied files, sorted by path;
    7. build the manifest payload and hash it into the identity;
    8. prepend the identity to the payload, and append "manifest.json" to the files;
@@ -394,23 +413,33 @@ let render
       |> Rope.to_string)
   in
 
+  (* config.json's value; also recorded in the manifest as "flow_configuration" *)
   let flow_configuration = config resolved source_name in
+
+  (* Step 3; order and repeats in the declaration do not matter *)
   let input_paths = List.dedup_and_sort input_paths ~compare:String.compare in
 
   (* TODO (possible optimization): this check runs after both RTL sets are generated; it
      could move to the top, since it needs nothing computed above; *)
+  (* TODO (future fix): this message and the simulation build one above use
+     error_string with no fix, against docs/comment_guidelines.md section 9; see
+     [read_input] for the other messages in this file; *)
   let%bind.Or_error () =
     if List.is_empty input_paths
     then Or_error.error_string "bundle needs at least one declared source input"
     else Ok ()
   in
 
+  (* Step 4; the commit checked out, NOT where the inputs are read from, which is the
+     working tree (so dirty files are copied as they are) *)
   let%bind.Or_error source_revision = run_git source_root [ "rev-parse"; "HEAD" ] in
 
-  (* (path, bytes, porcelain status) per input; status is "" for a clean tracked file
+  (* Step 5; (path, bytes, porcelain status) per input; status is "" for a clean tracked
+     file;
 
      Careful: a file ignored by .gitignore also reports "", so it looks clean in the
      manifest. Its bytes are still copied and hashed, so the identity still covers it.
+
      TODO (possible optimization): one git status per input; a single call over all paths
      would do, if input lists grow;
   *)
@@ -468,9 +497,11 @@ let render
     (if Option.is_some simulation_rtl then "simulation/" else "src/") ^ source_name
   in
 
+  (* Only [operation] is used; the adapter is always LibreLane here *)
   let flow = Build.flow build in
 
-  (* The manifest without its identity; see the header for why field ORDER matters
+  (* Step 7; the manifest without its identity; see the header for why field ORDER
+     matters;
 
      pdk_revision: the first view's revision. The [] arm is unreachable in practice, since
      Resolved_build.validate_capabilities requires the PDK configuration view for every
@@ -526,9 +557,10 @@ let render
       ]
   in
 
+  (* Hashed in compact form, so pretty printing of manifest.json never affects it *)
   let identity = sha256 (Yojson.Safe.to_string payload) in
 
-  (* The payload with "identity" as its first field *)
+  (* Step 8; the payload with "identity" as its first field *)
   let manifest =
     match payload with
     | `Assoc fields -> assoc (("identity", string identity) :: fields)
