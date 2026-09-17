@@ -182,6 +182,28 @@ Reported, never fatal. Upstream's TT precheck wants a pinned native KLayout and
 Magic from its `default.nix`, which pip cannot supply. Precheck is a later step
 than bootstrap; `scripts/flow.sh postcheck` re-checks it.
 
+### `nix-shell is installed but Nix is not usable`
+
+Also reported and never fatal, for the same reason, but it is the more expensive
+one to ignore: postcheck is the last step of the flow, so a Nix that cannot
+evaluate is discovered after the hardening run it follows. Bootstrap probes the
+daemon with `nix-store --version` rather than looking for the binary on `PATH`,
+because an installed `nix-shell` whose daemon socket the user cannot open fails
+every evaluation.
+
+A distro Nix restricts that socket to a group and does not necessarily add anyone
+to it, so a fresh install reports a permission error on a socket its own daemon
+is serving:
+
+```
+error: getting status of /nix/var/nix/daemon-socket/socket: Permission denied
+```
+
+Bootstrap reads the socket's group and prints the `usermod` line for it. Log out
+and back in afterwards rather than using `newgrp`: postcheck shells out to both
+`nix-shell` and `docker`, and `newgrp` sets one primary group, so a shell that
+gains `nix-users` that way can lose `docker`.
+
 ### `could not list installed packages in switch`
 
 An opam failure, reported as one, with opam's own message attached. It is not the

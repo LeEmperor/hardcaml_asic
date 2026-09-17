@@ -83,7 +83,10 @@ done
 
 step() { printf '\n==> %s\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
-warn() { printf '    warning: %s\n' "$*" >&2; }
+# Counted so the closing summary can admit they happened. A warning is something the run
+# survived but a later step may not, and the summary is the line people actually read.
+warnings=0
+warn() { warnings=$((warnings + 1)); printf '    warning: %s\n' "$*" >&2; }
 net()  { printf '    [network] %s\n' "$*"; }
 
 die() {
@@ -408,12 +411,45 @@ install_precheck_environment() {
     "$python" -c 'import klayout' >/dev/null 2>&1 || die "$EX_TOOL" \
         "klayout did not install into $precheck_venv_dir"
     info "precheck environment ready"
+}
 
-    # Upstream's precheck also wants a pinned native KLayout and Magic from its
-    # default.nix, which pip cannot supply. Precheck is a later step than bootstrap, so
-    # this is reported and never fatal; scripts/flow.sh postcheck re-checks it.
-    command -v nix-shell >/dev/null 2>&1 || \
+# Upstream's precheck also wants a pinned native KLayout and Magic from its default.nix,
+# which pip cannot supply. Precheck is a later step than bootstrap, so this is reported
+# and never fatal; scripts/flow.sh postcheck re-checks it.
+#
+# Probe the daemon rather than the binary. An installed nix-shell whose daemon socket the
+# user cannot open fails every evaluation, and a distro Nix restricts that socket to a
+# group it does not add anyone to, so "nix-shell is on PATH" says nothing about whether
+# precheck can run. Finding that out here costs a subprocess; finding it out in postcheck
+# costs the whole hardening run that precedes it.
+check_precheck_nix() {
+    step "Checking Nix for the TT precheck"
+
+    if ! command -v nix-shell >/dev/null 2>&1; then
         warn "nix-shell not found; the TT precheck needs Nix for its pinned KLayout and Magic"
+        return 0
+    fi
+
+    local probe
+    if probe=$(nix-store --version 2>&1); then
+        info "${probe%$'\n'*}"
+        return 0
+    fi
+
+    warn "nix-shell is installed but Nix is not usable; the TT precheck will fail"
+    info "  $probe"
+
+    # The group-permission case is worth naming: the fix is one command, and the symptom
+    # (a permission error on a socket the daemon is happily serving) reads like a broken
+    # install rather than a missing group membership.
+    local socket_group
+    if [[ $probe == *daemon-socket* && $probe == *"Permission denied"* ]] \
+        && socket_group=$(stat -c '%G' /nix/var/nix/daemon-socket 2>/dev/null); then
+        info "  The daemon socket is group-restricted to '$socket_group'. Join it with:"
+        info "    sudo usermod -aG $socket_group \$USER"
+        info "    # then log out and back in, so this shell also keeps its other groups"
+    fi
+    return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -483,6 +519,7 @@ fetch_support_tools
 fetch_pdk
 install_flow_environment
 install_precheck_environment
+check_precheck_nix
 pull_container_image
 write_env_file
 
@@ -496,4 +533,7 @@ fi
 
 step "Summary"
 info "the toolchain matches toolchain.lock"
+if [[ $warnings -gt 0 ]]; then
+    info "$warnings warning(s) above; a later step can still fail on them"
+fi
 info "source $env_file, or just run scripts/flow.sh"
