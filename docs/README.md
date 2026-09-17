@@ -9,7 +9,9 @@
   implementation sequencing, and boundaries for future third-party flow adapters.
   Use this for architecture and scope decisions.
 - [Program-memory contract](program-memory-contract.md): authoritative behavior,
-  verification obligations, and planned project integration for `Single_port_ram`.
+  verification obligations, and project integration for `Single_port_ram`.
+- [Registered memory example](memory-example.md): PDK-free simulation,
+  implementation elaboration, selection outcomes, and optional generated RTL test.
 - [Comment and formatting guidelines](comment_guidelines.md): header, doc comment,
   alignment and error message conventions, with a table of reference files in `lib/`
   for each kind of example.

@@ -1,10 +1,8 @@
 # Program memory contract (`Single_port_ram`)
 
-Status: behavioral contract with accepted architecture updates, 2026-09-16.
+Status: behavioral contract with P1 implementation evidence, 2026-09-17.
 Normative for `lib/single_port_ram.mli`. This document decides behaviour; the
-interface and implementation must follow it. The context-taking API described
-below is planned: the current interface has not yet been migrated and `create`
-remains unimplemented.
+interface and implementation must follow it. The context-taking API is implemented.
 
 The [architecture plan](architecture.md) defines project ownership, resource
 selection, registration, and build outputs. This document defines this memory's
@@ -274,8 +272,8 @@ the flow adapter validates and renders the views needed for its operation.
 
 | Backend | Status | Notes |
 | --- | --- | --- |
-| Behavioural model | not written | Diagnostic poison per section 5.1; reference for defined behavior |
-| Generic flop implementation | not written | Synthesisable, no macro; explicitly selected or explicitly allowed as fallback |
+| Behavioural model | implemented, P1 | Diagnostic poison per section 5.1; reference for defined behavior |
+| Generic flop implementation | implemented, P1 | Synthesizable, no macro; explicitly selected or explicitly allowed as fallback |
 | IHP CMOS5L macro | **blocked — see below** | Requires a macro that exists, is permitted, and can hold on disable |
 
 The macro backend must not be started yet. It is not known whether a usable
@@ -346,10 +344,9 @@ consumer separately verifies that it never depends on those unspecified values.
 
 Resource construction takes the temporary `Elaboration_context` belonging to one
 project elaboration, registers the resource, and continues to return read data.
-The intended signature is:
+The implemented signature is:
 
 ```ocaml
-(* Planned API; Elaboration_context is not implemented yet. *)
 val create
   :  Elaboration_context.t
   -> ?name:string
@@ -388,9 +385,9 @@ readback, fetch, reset, and recovery never depend on unspecified values.
 
 1. ~~How should the context and `Scope.t` cooperate on stable hierarchical naming?~~
    Resolved in [ASIC P0.2](phase_plan.md#3-p0--project-and-elaboration-foundations):
-   the context carries the current scope, so the planned `create` signature needs
-   no scope argument; identity is the scope path plus the explicit instance name.
-   P1.1 still decides the RAM's default name when `?name` is omitted.
+   the context carries the current scope, so `create` needs no scope argument;
+   identity is the scope path plus the instance name. The default name is `ram`;
+   callers give distinct explicit names to multiple RAMs in one scope.
 2. Which memory width/depth and instruction packing serve the emulator? The
    128/256-word and 16/32-bit candidates need firmware-size, cycle-count, and
    mapped/placed-area evidence. `Config.storage_bits` feeds that comparison;

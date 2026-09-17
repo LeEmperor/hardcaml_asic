@@ -13,10 +13,9 @@ tasks, dependencies, and completion criteria.
 The [program-memory contract](docs/program-memory-contract.md) specifies the
 first resource, `Single_port_ram`.
 
-The project lifecycle (declaration, elaboration context, resource registration and
-implementation selection policy, immutable build) is implemented and tested
-([phase plan P0](docs/phase_plan.md#3-p0--project-and-elaboration-foundations)).
-`Single_port_ram.create` is still a stub; memory implementations, target
-resolution, and flow adapters are planned. The first complete path will use
-explicitly selected flop storage; physical SRAM support requires a separate
-capability investigation.
+The project lifecycle and registered single-port RAM are implemented and tested
+([phase plan P0–P1](docs/phase_plan.md)). The RAM has a diagnostic behavioral
+model and explicitly selected synthesizable flop storage; run the
+[memory example](docs/memory-example.md) without a PDK. Target resolution,
+bundle emission, and flow execution are planned. Physical SRAM support requires
+a separate capability investigation.

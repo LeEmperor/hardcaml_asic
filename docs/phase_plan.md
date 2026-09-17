@@ -1,8 +1,7 @@
 # hardcaml_asic phase plan
 
-Status: working implementation plan, 2026-09-16. P0 tasks have evidence; later
-tasks are open. The existing RAM configuration code is a starting point, not evidence
-that the resource or project workflow is complete.
+Status: working implementation plan, 2026-09-17. P0 and P1 tasks have evidence;
+P2–P5 and the separate SRAM investigation remain open.
 
 ## 1. Purpose and use
 
@@ -41,10 +40,11 @@ depth, and latency and exposed address/storage sizes; `Single_port_ram.create` w
 a stub without the planned elaboration context. No project/context/build API,
 memory implementation, technology binding, or flow adapter existed.
 
-After P0, the project lifecycle, elaboration context, resource identity, selection
-policy, and immutable build exist and are tested with a fixture resource
-(`dune build` and `dune runtest` pass). `Single_port_ram.create` is still a stub
-(P1.1); no target resolution (P2), emission (P3), or flow execution (P4) exists.
+After P1, the project lifecycle, elaboration context, resource identity, selection
+policy, immutable build, and registered single-port RAM exist. The behavioral
+model and explicit flop implementation pass contract checks, including a generated
+RTL simulation. No target resolution (P2), bundle emission (P3), or flow execution
+(P4) exists.
 
 ## 2. Phase map and dependencies
 
@@ -166,25 +166,40 @@ prerequisite for exercising the lifecycle with a fixture.
 Follow the [memory contract](program-memory-contract.md); this plan does not
 introduce new memory semantics.
 
-- [ ] **P1.1 — Migrate the RAM constructor.** Add the planned context argument,
+- [x] **P1.1 — Migrate the RAM constructor.** Add the planned context argument,
   validate signal widths and configuration, select an implementation, and register
   every instance, including flops. Continue returning read data. Evidence: real
   RAM elaboration records the requested shape, stable identity, and selection;
   invalid ports and unsupported requests fail with instance-specific diagnostics.
   Update the `.mli` and example call sites together.
-- [ ] **P1.2 — Implement the behavioral model.** Provide latency-one reads,
+  *Done:* [`Single_port_ram.create`](../lib/single_port_ram.mli) checks every port,
+  registers the contract and identity, and follows the context's selection.
+  [`test_single_port_ram.ml`](../test/test_single_port_ram.ml) checks the
+  inventory, repeatability, invalid ports, and unsupported requests.
+- [x] **P1.2 — Implement the behavioral model.** Provide latency-one reads,
   whole-word writes, and disabled-output hold. Initialize the simulation model
   with diagnostic poison and poison post-write output; diagnose enabled
   out-of-range access. Evidence: cycle traces check each operation, unwritten
   reads, disabled writes, and hold after both reads and writes. The testbench
   tracks validity; no validity/reset port is added to the primitive.
-- [ ] **P1.3 — Implement explicit synthesizable flop storage.** Satisfy the same
+  *Done:* `Simulation` elaboration initializes words with alternating-bit poison
+  and injects poison after writes and enabled out-of-range accesses. The
+  [contract trace](../test/test_single_port_ram.ml) checks unwritten reads,
+  disabled writes, hold, and non-power-of-two address bounds.
+- [x] **P1.3 — Implement explicit synthesizable flop storage.** Satisfy the same
   defined behavior without simulation poison logic, an initialization guarantee,
   or a bulk reset. Use the selection policy rather than silent inference fallback.
   Evidence: elaboration produces functional RTL and a flop selection record;
   generated-RTL simulation verifies writes, latency, and hold. Keep behavioral
   and synthesis source roles separate from the start.
-- [ ] **P1.4 — Run one contract conformance suite.** Use an independent scoreboard
+  *Done:* one register per word with decoded whole-word write enable and a
+  registered read output. The [test](../test/test_single_port_ram.ml) verifies
+  selection/source records and that generated flop Verilog has no
+  initialization. [`memory_example_tb.v`](../test/memory_example_tb.v) checks
+  generated RTL using Icarus Verilog 12.0. The reusable
+  [runner](../test/run_rtl_sim.sh) works with installed `iverilog`/`vvp` or
+  explicit executable paths; ordinary Dune checks do not require Icarus.
+- [x] **P1.4 — Run one contract conformance suite.** Use an independent scoreboard
   tracking written locations, contents, latency, and output definedness. Cover
   consecutive operations, write/read sequences, disabled writes, non-power-of-two
   depth, and hold after defined and unspecified outputs. Compare defined values
@@ -192,16 +207,28 @@ introduce new memory semantics.
   poison and invalid-access diagnostics are behavioral-model checks only.
   Evidence: the suite passes for both implementations, including generated RTL
   for the flop path, without requiring agreement on unspecified values.
-- [ ] **P1.5 — Demonstrate portable resource usage.** Add a small library-owned
+  *Done:* [`test_single_port_ram.ml`](../test/test_single_port_ram.ml) applies
+  an independent written-location/output-definedness scoreboard to both
+  elaborations, checks each backend's own held output, and tests behavioral
+  poison and invalid-address diagnostics separately. The generated RTL
+  testbench repeats defined write/read/hold cases against the Verilog output.
+- [x] **P1.5 — Demonstrate portable resource usage.** Add a small library-owned
   memory example using one design constructor for behavioral and implementation
   elaborations. Its stimulus writes complete words before checking readback and
   tracks acceptance/validity outside the RAM. Evidence: build and simulation
   commands work without a PDK, inventory is repeatable, and a macro-required
   request fails unless a permitted fallback is selected and recorded.
+  *Done:* [`memory_example.ml`](../examples/memory_example.ml) uses one design
+  constructor in both modes, tracks written words outside RAM, and demonstrates
+  explicit flops, rejected exact macro selection, and recorded fallback. Commands
+  are in the [memory example guide](memory-example.md).
 
 **Exit gate / M1:** `create` is functional, both implementations pass conformance,
 and the registered example works without an ASIC installation. This establishes
 portable resource usage, not SRAM macro support or physical area/timing results.
+
+*Gate met, 2026-09-17:* `dune build`, `dune runtest`, the
+[library example](memory-example.md), and the generated-flop-RTL testbench pass.
 
 ## 5. P2 — Target, timing, and configuration resolution
 
