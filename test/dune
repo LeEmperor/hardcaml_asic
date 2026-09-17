@@ -19,3 +19,8 @@
  (deps check_bundle.py tt_bundle_tb.v ../dune-project (source_tree ../lib) (source_tree ../examples))
  (action
   (run python3 %{dep:check_bundle.py} %{exe:../examples/tt_bundle_example.exe} %{workspace_root})))
+
+(rule
+ (alias runtest)
+ (deps test_phase4.py ../scripts/phase4.py)
+ (action (run python3 %{dep:test_phase4.py})))
