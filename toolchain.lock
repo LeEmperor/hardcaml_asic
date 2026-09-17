@@ -1,0 +1,36 @@
+# Pinned external inputs for the TT/CMOS5L flow, as data for scripts/toolchain.sh.
+#
+# Careful: this file is NOT the authority. The authority is the OCaml source, which is
+# what ends up in an emitted bundle and what scripts/phase4.py preflight checks the
+# installed collateral against:
+#
+#   support_tools_revision : lib/target.ml, Inputs.reference_cmos5l_6x4;
+#   pdk_revision           : lib/target.ml, Inputs.reference_cmos5l_6x4;
+#   librelane_version      : lib/bundle.ml, the "requested_tools" object;
+#   python                 : lib/bundle.ml, the "requested_tools" object;
+#
+# This file exists because scripts/toolchain.sh is plain shell that has to provision the
+# toolchain before anything can be built, so it cannot ask the library what to fetch.
+# test/check_bundle.py asserts every value here equals the emitted manifest's
+# "requested_tools", so the copy cannot drift: change a pin in lib/ without changing it
+# here and `dune runtest` fails, naming both values.
+#
+# The repository and branch fields have no counterpart in the manifest. A bundle pins
+# revisions, not where to get them, on purpose: the same declaration means the same thing
+# on any machine and behind any mirror. Only the fetch needs a URL.
+#
+# The branch is a fetch hint, not a pin. Both revisions are fetched by exact hash and
+# verified after checkout; the branch head has already moved past the support-tools
+# revision, so it is never what gets checked out.
+
+support_tools_repository=https://github.com/TinyTapeout/tt-support-tools.git
+support_tools_branch=ihp-sg13cmos5l
+support_tools_revision=da63c9927411e3aca350977d653d24bbf5bca972
+
+pdk=ihp-sg13cmos5l
+pdk_repository=https://github.com/IHP-GmbH/IHP-Open-PDK.git
+pdk_branch=main
+pdk_revision=2bbec755dc67ca3db0261c3d6163e15735d66710
+
+librelane_version=3.1.0.dev3
+python=3.11

@@ -27,10 +27,11 @@
 #   OUT          holds one bundle and its runs                   (.../p4-$KIND)
 #   BUNDLE       the emitted bundle                              ($OUT/bundle)
 #   RUNS         run storage, one directory per attempt          ($OUT/runs)
-#   TT           tt-support-tools checkout
-#   PDK          PDK root (IHP sg13cmos5l)
-#   FLOW_PY      python of the LibreLane venv
-#   PRECHECK_PY  python of the TT precheck venv
+#   TOOLCHAIN    what ./bootstrap.sh provisioned                   (.toolchain)
+#   TT           tt-support-tools checkout            ($TOOLCHAIN/tt)
+#   PDK          PDK root (IHP sg13cmos5l)            ($TOOLCHAIN/pdk)
+#   FLOW_PY      python of the LibreLane venv         ($TOOLCHAIN/.venv/bin/python)
+#   PRECHECK_PY  python of the TT precheck venv       ($TOOLCHAIN/.venv-precheck/...)
 #   TESTBENCH    gate-level wrapper testbench   (test/tt_bundle_tb.v)
 #   RUN          an existing run directory for steps after "run"
 #   ALLOW_PYTHON_MISMATCH  0 to require the bundle's exact Python minor version (1)
@@ -48,15 +49,28 @@
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+repo_root=$(pwd)
 
 KIND=${KIND:-observable}
 STAGE=${STAGE:-full}
 
-# Installed collateral; see docs/phase4-execution.md.
-TT=${TT:-/home/wayne/devel/jane/tt-support-tools-cmos5l}
-PDK=${PDK:-/home/wayne/devel/jane/scaf/tinytapeout/pdk}
-FLOW_PY=${FLOW_PY:-/home/wayne/devel/jane/scaf/.venv/bin/python}
-PRECHECK_PY=${PRECHECK_PY:-/home/wayne/devel/jane/scaf/.venv-precheck/bin/python}
+# Installed collateral. ./bootstrap.sh provisions all of it under $TOOLCHAIN and writes
+# toolchain-env.sh there; sourcing that is how this script learns where it went, so the
+# two stay in step when the toolchain moves. Every assignment inside it yields to a value
+# already in the environment, so "TT=... scripts/flow.sh" still wins over the generated
+# file, and the fallbacks below cover a toolchain that was never bootstrapped.
+#
+# Absolute paths throughout: phase4.py resolves some of these against its own working
+# directory, and a run directory is not this one.
+TOOLCHAIN=${TOOLCHAIN:-$repo_root/.toolchain}
+if [ -f "$TOOLCHAIN/toolchain-env.sh" ]; then
+  . "$TOOLCHAIN/toolchain-env.sh"
+fi
+
+TT=${TT:-$TOOLCHAIN/tt}
+PDK=${PDK:-$TOOLCHAIN/pdk}
+FLOW_PY=${FLOW_PY:-$TOOLCHAIN/.venv/bin/python}
+PRECHECK_PY=${PRECHECK_PY:-$TOOLCHAIN/.venv-precheck/bin/python}
 
 # Where this invocation writes; OUT holds one bundle and its runs.
 OUT=${OUT:-/home/wayne/devel/jane/p4-$KIND}
@@ -86,6 +100,16 @@ need_run() {
   echo "flow: run directory $RUN" >&2
 }
 
+# Everything from "preflight" on needs the provisioned toolchain. phase4.py reports a
+# missing checkout perfectly well, but it reports it as a bad argument; when the whole
+# toolchain is absent the answer is one command, so say that instead.
+need_toolchain() {
+  [ -d "$TT" ] && [ -d "$PDK" ] && [ -x "$FLOW_PY" ] && return 0
+  echo "flow: toolchain not provisioned under $TOOLCHAIN; run ./bootstrap.sh" >&2
+  echo "flow: (or ./bootstrap.sh --check to see which parts are missing)" >&2
+  return 2
+}
+
 step_build() {
   say "build and tests"
   dune build
@@ -106,12 +130,14 @@ step_emit() {
 }
 
 step_preflight() {
+  need_toolchain
   say "preflight"
   python3 scripts/phase4.py preflight "$BUNDLE" \
     --support-tools "$TT" --pdk-root "$PDK" --python "$FLOW_PY" "${mismatch[@]}"
 }
 
 step_run() {
+  need_toolchain
   say "run --stage $STAGE (long)"
   local record
   # phase4.py prints the run.json path as its last stdout line, even on failure;
@@ -125,6 +151,7 @@ step_run() {
 }
 
 step_postcheck() {
+  need_toolchain
   need_run
   say "postcheck: TT precheck and gate-level simulation"
   python3 scripts/phase4.py postcheck "$RUN" \

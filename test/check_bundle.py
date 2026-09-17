@@ -37,6 +37,36 @@ def simulate(directory, kind, bench):
         run("vvp", str(output))
 
 
+def toolchain_lock(source_root, requested):
+    """Assert toolchain.lock still agrees with the pins the bundle was built from.
+
+    scripts/toolchain.sh provisions the flow before anything in this repository can be
+    built, so it is plain shell and cannot ask the library what to fetch; it reads
+    toolchain.lock instead. That makes the lockfile a second place each revision is
+    written down. This check is the only thing keeping it honest: "requested_tools" comes
+    straight from lib/target.ml and lib/bundle.ml, so a pin changed in one place and not
+    the other fails here, naming both values.
+
+    The repository and branch entries have no counterpart in a manifest and are not
+    checked. A bundle pins revisions, not where to fetch them from, on purpose.
+    """
+    pins = {}
+    for line in (source_root / "toolchain.lock").read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            key, _, value = line.partition("=")
+            pins[key] = value
+    for lock_key, manifest_key in (("support_tools_revision", "support_tools_revision"),
+                                   ("pdk_revision", "pdk_revision"),
+                                   ("librelane_version", "librelane"),
+                                   ("python", "python")):
+        assert pins[lock_key] == requested[manifest_key], (
+            "toolchain.lock %s=%s, manifest requested_tools %s=%s; the lockfile is a copy "
+            "of lib/, update it" %
+            (lock_key, pins[lock_key], manifest_key, requested[manifest_key]))
+    return pins
+
+
 def main(executable, source_root):
     with tempfile.TemporaryDirectory(prefix="asic-bundle-test-") as temp:
         base = pathlib.Path(temp)
@@ -64,6 +94,9 @@ def main(executable, source_root):
         assert (mem / "manifest.json").read_bytes() == (mem_repeat / "manifest.json").read_bytes()
         assert mem_manifest["identity"] == repeat_manifest["identity"]
         assert mem_manifest["source_revision"] == obs_manifest["source_revision"]
+        pins = toolchain_lock(source_root, obs_manifest["requested_tools"])
+        assert pins["pdk"] == obs_manifest["target"]["technology"]
+        assert obs_manifest["requested_tools"] == mem_manifest["requested_tools"]
 
         for directory, data, kind in ((obs, obs_manifest, "observable"),
                                       (mem, mem_manifest, "memory")):
@@ -161,7 +194,8 @@ def main(executable, source_root):
                                   str(source)), capture_output=True, text=True)
         assert missing.returncode != 0
         assert "source input is missing" in missing.stderr
-        print("bundle determinism, provenance, staging, hashes, and RTL passed")
+        print("bundle determinism, provenance, staging, hashes, RTL and "
+              "toolchain.lock passed")
 
 
 if __name__ == "__main__":

@@ -20,9 +20,12 @@ scripts/report.py "$RUN"             # a specific run directory
 scripts/report.py --runs "$RUNS"     # the newest run under a run store
 ```
 
-Every path is an overridable environment variable (`TT`, `PDK`, `FLOW_PY`,
-`PRECHECK_PY`, `OUT`, `BUNDLE`, `RUNS`, `KIND`, `STAGE`, `TESTBENCH`); the
-defaults are the reference setup below. `flow.sh` takes the run directory from
+Every path is an overridable environment variable (`TOOLCHAIN`, `TT`, `PDK`,
+`FLOW_PY`, `PRECHECK_PY`, `OUT`, `BUNDLE`, `RUNS`, `KIND`, `STAGE`, `TESTBENCH`).
+The defaults come from `.toolchain/toolchain-env.sh`, which `./bootstrap.sh`
+writes and `flow.sh` sources; anything already set in the environment wins over
+it, so `TT=... scripts/flow.sh` still points the run at another checkout.
+`flow.sh` takes the run directory from
 the `run.json` path `phase4.py` prints, since run ids are random hex and do not
 sort by time. `report.py` prints timing per corner, signoff checks, the TT
 precheck rows, and what the post-CTS resizer did about hold; it exits nonzero
@@ -32,26 +35,56 @@ scripts only drive them.
 
 ## Environment
 
-Provision the revisions recorded by `manifest.json` explicitly. The reference
-application's `tinytapeout/scripts/bootstrap-toolchain.sh` can prepare its
-support-tools checkout, PDK, and LibreLane environment; use its output paths as
-arguments below. The bundle itself has no sibling-checkout dependency. The
-runner uses Dockerized LibreLane by default and needs an accessible Docker daemon.
-It copies the pinned floorplan into its per-run staging directory so the
-container can resolve `dir::../tt/...`. It reads PDK views from `PDK_ROOT`.
-
-For an existing reference-application checkout, the setup is explicit:
+`./bootstrap.sh` provisions everything the flow needs, pinned by
+`toolchain.lock`, and nothing else on the machine:
 
 ```sh
-REFERENCE_APP=/absolute/path/to/reference-application
-"$REFERENCE_APP/tinytapeout/scripts/bootstrap-toolchain.sh"
-"$REFERENCE_APP/tinytapeout/scripts/bootstrap-toolchain.sh" --check
-docker pull ghcr.io/librelane/librelane:3.1.0.dev3
+./bootstrap.sh                  # converge both layers
+./bootstrap.sh --check          # report the state of both, change nothing
+./bootstrap.sh --install-deps   # also install missing packages into the opam switch
 ```
 
-The second command is read-only; `scripts/phase4.py preflight` then checks the
-particular emitted bundle and installed files. A clean setup need only fetch the
-container image once. Preflight never fetches or installs it.
+It has two layers, each its own script because they fail for unrelated reasons.
+`scripts/ocaml-deps.sh` checks the shared `5.2.0+ox` opam switch and the packages
+the dune files name; it reports rather than installs unless `--install-deps` is
+given, because that switch is shared with every other Hardcaml checkout on the
+machine. `scripts/toolchain.sh` then creates, under `.toolchain/`:
+
+| Path | What |
+| --- | --- |
+| `.toolchain/tt` | tt-support-tools, detached at `support_tools_revision` |
+| `.toolchain/pdk` | IHP-Open-PDK, detached at `pdk_revision`; this is `PDK_ROOT` (~1.3 GB) |
+| `.toolchain/.venv` | `librelane` at `librelane_version` |
+| `.toolchain/.venv-precheck` | the TT precheck requirements, which cannot share `.venv` |
+| `.toolchain/toolchain-env.sh` | generated; `flow.sh` reads it, a shell can source it |
+
+Both checkouts are fetched by exact hash with `--depth 1`, never by branch: the
+support-tools branch head has already moved past the pinned revision, so a
+shallow clone of the branch would not contain it. `git rev-parse HEAD` in each is
+the pinned revision itself, which is what preflight compares against.
+
+There is no dependency on a sibling checkout, in either direction. The pins are
+this repository's own, in `lib/target.ml` and `lib/bundle.ml`; `toolchain.lock`
+is a copy of them for the shell, and `test/check_bundle.py` fails `dune runtest`
+if the two ever disagree.
+
+Bootstrapping prepares an environment. It does not prove the design hardens,
+meets timing, or passes precheck: those are `scripts/flow.sh` and its own exit
+codes. `scripts/phase4.py preflight` then checks the particular emitted bundle
+against the installed files, and never fetches or installs anything itself.
+
+The runner uses Dockerized LibreLane by default and needs an accessible Docker
+daemon. A client installed but unreachable usually means the socket is
+root-owned and you are not in the `docker` group yet:
+
+```sh
+sudo groupadd -f docker && sudo usermod -aG docker "$USER"
+newgrp docker                                   # or log out and back in
+sudo snap disable docker && sudo snap enable docker   # snap installs only
+```
+
+The runner copies the pinned floorplan into its per-run staging directory so the
+container can resolve `dir::../tt/...`. It reads PDK views from `PDK_ROOT`.
 
 From this repository root, after emitting a bundle as in
 [bundle emission](bundle-emission.md):
