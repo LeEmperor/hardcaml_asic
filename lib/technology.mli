@@ -10,8 +10,8 @@
    request, so a lookup never has to choose.
 
    Capability describes what is possible. Project policy ({!Resource_policy}) decides what
-   is acceptable, and {!Selection} is where the two meet. Tile geometry, layers, corners and
-   library views are resolved in phase P2 and are not represented yet. *)
+   is acceptable, and {!Selection} is where the two meet. Tile geometry, layers, corners
+   and library views are resolved in phase P2 and are not represented yet. *)
 
 open! Core
 

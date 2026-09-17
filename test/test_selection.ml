@@ -297,12 +297,12 @@ let%expect_test "malformed technology capability and selectors are rejected" =
   require_does_raise (fun () -> instance "core/left/");
   [%expect
     {|
-    ("ambiguous technology capability: more than one mapping for a request"
+    ("ambiguous technology capability: more than one mapping for a request; keep one mapping per request"
      (technology fixture-tech)
      (request ((kind fixture_store) (contract ((width 8))))))
     ("subtree selector must be a nonempty '/'-separated scope path"
      (selector core//left))
-    ("resource identity components must be identifiers"
+    ("resource identity components must be identifiers; use only [A-Za-z0-9_], not starting with a digit"
      (component "")
      (path (core left))
      (name ""))

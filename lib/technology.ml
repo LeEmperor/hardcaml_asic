@@ -5,9 +5,9 @@
    this process build exactly, and which files come with it?";
 
    It is a name plus a list of mappings from a Resource_request to a hard macro.
-   Selection.select asks it for a mapping through [exact_mapping] to decide between a macro
-   and flops, and Elaboration_context.sources_of asks again to turn the chosen macro's
-   collateral into Resource_record sources;
+   Selection.select asks it for a mapping through [exact_mapping] to decide between a
+   macro and flops, and Elaboration_context.sources_of asks again to turn the chosen
+   macro's collateral into Resource_record sources;
 
    It does NOT know what the project will accept, that is Resource_policy's job; Selection
    is where the two meet. It also does NOT describe tile geometry, layers or corners yet;
@@ -54,7 +54,7 @@ end
 (* A technology hard macro;
 
    name       : the macro's name; this is what Selection.Implementation.Macro records;
-   collateral : every file that comes with it -> see expect tests (test/test_selection.ml);
+   collateral : every file that comes with it -> see expect tests;
 *)
 module Macro = struct
   type t =
@@ -84,17 +84,17 @@ type t =
   }
 [@@deriving sexp_of]
 
-(* Build a technology; raises rather than returning Or_error since technologies are fixed
-   values declared at module level (see [ihp_sg13cmos5l]), where there is nothing to thread
-   an error through;
+(* Build a technology; raises rather than returning Or_error since technologies are
+   fixed values declared at module level (see [ihp_sg13cmos5l]), where there is nothing
+   to thread an error through;
 
-   The one check: the same request cannot appear in two mappings. This is rejected even if
-   both mappings name the same macro, since [exact_mapping] returns the first match and a
-   second one would never be reachable;
+   The one check: the same request cannot appear in two mappings. Without it
+   [exact_mapping] would silently return whichever mapping came first, so the macro chosen
+   would depend on list order;
 
-   Careful: the check uses Resource_request.compare, so it inherits the field order pitfall
-   described on [exact_mapping]; two requests whose contracts differ only in field order
-   are both accepted here -> see expect tests (test/test_selection.ml);
+   Careful: the check uses Resource_request.compare, so it inherits the field order
+   pitfall described on [exact_mapping]; two requests whose contracts differ only in
+   field order are both accepted here;
 *)
 let create_exn ~name ~resource_mappings =
   (match
@@ -125,10 +125,10 @@ let ihp_sg13cmos5l = create_exn ~name:"ihp-sg13cmos5l" ~resource_mappings:[]
    Careful: the contract is a Sexp.t compared structurally, so field ORDER is part of the
    match. A mapping built from [%sexp { width : int; depth : int }] gives
    ((width 8) (depth 4)), and a request built from [%sexp { depth : int; width : int }]
-   gives ((depth 4) (width 8)); they describe the same memory but do not match. This is
-   silent: under Exact_or_flop_fallback the resource quietly becomes a Flop_fallback, and
-   only Exact turns it into an error. Build every contract for a resource kind from one
-   [%sexp { ... }] expression so the order always agrees;
+   gives ((depth 4) (width 8)); they describe the same memory but do not match. Nothing
+   raises for this: under Exact_or_flop_fallback the resource becomes a Flop_fallback
+   that only the inventory shows, and only Exact turns it into an error. Build every
+   contract for a resource kind from one [%sexp { ... }] expression so the order agrees;
 *)
 let exact_mapping t request =
   List.find t.resource_mappings ~f:(fun mapping ->
