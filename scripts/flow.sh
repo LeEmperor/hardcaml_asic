@@ -1,27 +1,49 @@
 #!/usr/bin/env bash
 # End-to-end TT/LibreLane flow for one example bundle: emit, preflight, run,
-# postcheck, collect, report.
-#
-# Every path is an environment variable with a default, so a plain
-# "scripts/flow.sh" reproduces the reference setup and
-# "OUT=/tmp/try KIND=memory scripts/flow.sh" runs a different one. The run
-# directory is taken from the run.json path phase4.py prints, never from
-# "ls | tail -1": run ids are random hex, so they do not sort by time.
+# postcheck, collect, report. Wraps scripts/phase4.py, which stays the interface;
+# scripts/report.py prints the summary. See docs/phase4-execution.md.
 #
 # Usage:
-#   scripts/flow.sh [step ...]
+#   scripts/flow.sh [step ...]          # no step means all of them, in order
+#   scripts/flow.sh --help
+#
+# Typical use, with a fresh output directory per bundle:
+#   OUT=/home/wayne/devel/jane/p4-observable-minmax scripts/flow.sh
+#   OUT=... scripts/flow.sh postcheck collect report   # pick up after a finished run
+#   export OUT=...; scripts/flow.sh                    # or set it once for the shell
 #
 # Steps, in order, all of them when none is named:
 #   build      dune build && dune runtest
-#   emit       dune exec the example into $BUNDLE (must not exist yet)
+#   emit       dune exec the example into $BUNDLE
 #   preflight  phase4.py preflight, read-only
 #   run        phase4.py run --stage $STAGE (the long one), sets $RUN
-#   postcheck  phase4.py postcheck: TT precheck + gate-level sim
+#   postcheck  phase4.py postcheck: TT precheck + gate-level simulation
 #   collect    phase4.py collect into $RUN/results.json
-#   report     scripts/report.py, the human summary
+#   report     scripts/report.py, the human summary; nonzero exit on any problem
+#
+# Environment, all optional; the defaults are the reference setup:
+#   KIND         observable | memory, the example to emit        (observable)
+#   STAGE        synthesis | full, how far the flow runs         (full)
+#   OUT          holds one bundle and its runs                   (.../p4-$KIND)
+#   BUNDLE       the emitted bundle                              ($OUT/bundle)
+#   RUNS         run storage, one directory per attempt          ($OUT/runs)
+#   TT           tt-support-tools checkout
+#   PDK          PDK root (IHP sg13cmos5l)
+#   FLOW_PY      python of the LibreLane venv
+#   PRECHECK_PY  python of the TT precheck venv
+#   TESTBENCH    gate-level wrapper testbench   (test/tt_bundle_tb.v)
+#   RUN          an existing run directory for steps after "run"
+#   ALLOW_PYTHON_MISMATCH  0 to require the bundle's exact Python minor version (1)
+#
+# Careful: "emit" refuses to write into a $BUNDLE directory that has any entry
+# (Bundle.write, lib/bundle.ml), so a second full run into the same $OUT fails
+# there. Use a new $OUT, or "rm -rf $BUNDLE" first. Run directories are fine:
+# each attempt gets its own id under $RUNS.
 #
 # A step after "run" needs a run directory. It reuses the one this invocation
-# produced, else $RUN from the environment, else the newest under $RUNS.
+# produced, else $RUN from the environment, else the newest under $RUNS. The run
+# directory always comes from the run.json path phase4.py prints, never from
+# "ls | tail -1": run ids are random hex, so they do not sort by time.
 
 set -euo pipefail
 
@@ -72,6 +94,12 @@ step_build() {
 
 step_emit() {
   say "emit bundle into $BUNDLE"
+  # Bundle.write refuses a nonempty directory; say so here rather than letting the
+  # example fail with its own message halfway down a seven-step run.
+  if [ -d "$BUNDLE" ] && [ -n "$(ls -A "$BUNDLE" 2>/dev/null)" ]; then
+    echo "flow: $BUNDLE already has files; use a new OUT or: rm -rf $BUNDLE" >&2
+    return 2
+  fi
   mkdir -p "$OUT"
   dune exec "examples/tt_bundle_example.exe" -- "$KIND" "$BUNDLE"
   cat "$BUNDLE/constraints/top.sdc"
@@ -116,12 +144,22 @@ step_report() {
   python3 scripts/report.py "$RUN"
 }
 
+# --help prints this file's header comment, so the usage text has one home
+for argument in "$@"; do
+  case "$argument" in
+    -h|--help)
+      sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+  esac
+done
+
 steps=("$@")
 [ ${#steps[@]} -gt 0 ] || steps=(build emit preflight run postcheck collect report)
 
 for step in "${steps[@]}"; do
   case "$step" in
     build|emit|preflight|run|postcheck|collect|report) "step_$step" ;;
-    *) echo "flow: unknown step: $step" >&2; exit 2 ;;
+    *) echo "flow: unknown step: $step (try --help)" >&2; exit 2 ;;
   esac
 done

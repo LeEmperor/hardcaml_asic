@@ -38,7 +38,8 @@ OUTPUT/
   src/config.json           resolved LibreLane settings
   src/<top>.v               synthesis RTL
   simulation/<top>.v        separately elaborated behavioral simulation RTL
-  constraints/top.sdc       typed clock and optional min/max I/O delays
+  constraints/top.sdc       typed clock, target constraint environment, and
+                            optional min/max I/O delays
   inputs/...                exact copies of declared generator source inputs
   manifest.json             schema version 1, identity and SHA-256 inventory
 ```
@@ -55,6 +56,45 @@ prerequisites for phase 4. The bundle itself needs none of them. TT's
 originate from the same declaration and must agree with `src/config.json`.
 LibreLane's [PnR and signoff SDC variables](https://librelane.readthedocs.io/en/latest/usage/timing_closure/index.html)
 consume the generated timing file.
+
+## Generated SDC
+
+Because `PNR_SDC_FILE` and `SIGNOFF_SDC_FILE` point at `constraints/top.sdc`,
+LibreLane's `FALLBACK_SDC` never runs, so this file is the whole timing
+environment. It is written in a fixed order, with every number formatted to
+round-trip exactly, so the same declaration always produces the same bytes:
+
+```tcl
+create_clock -name clk -period 20.833333333333336 [get_ports {clk}]
+set_clock_uncertainty 0.25 [get_clocks {clk}]
+set_clock_transition 0.14999999999999999 [get_clocks {clk}]
+set_timing_derate -early 0.94999999999999996
+set_timing_derate -late 1.05
+set_max_fanout 10 [current_design]
+set_driving_cell -lib_cell sg13cmos5l_buf_4 -pin X [get_ports {ena rst_n ui_in uio_in}]
+set_driving_cell -lib_cell sg13cmos5l_buf_4 -pin X [get_ports {clk}]
+set_load 0.0060000000000000001 [get_ports {uio_oe uio_out uo_out}]
+set_input_delay -max 1 -clock clk [get_ports {ena}]
+set_input_delay -min 0 -clock clk [get_ports {ena}]
+...
+```
+
+The clock and the per-port delays come from the project declaration; everything
+between them comes from the resolved target's constraint environment and is
+documented in [the target reference](target-reference.md). `set_load` is in the
+Liberty `capacitive_load_unit`, which is picofarads for sg13cmos5l, so the 6 fF
+`OUTPUT_CAP_LOAD` is divided by 1000 exactly as `base.sdc` does. The six
+LibreLane variables behind those lines are also emitted into `src/config.json`
+as `Target`-owned settings, so synthesis — which reads `SYNTH_DRIVING_CELL`,
+`OUTPUT_CAP_LOAD` and `MAX_FANOUT_CONSTRAINT` outside the SDC — optimises
+against the same environment that timing analysis assumes. All of them, plus
+`IO_DELAY_CONSTRAINT`, `SYNTH_CLK_DRIVING_CELL`, `MAX_TRANSITION_CONSTRAINT` and
+`MAX_CAPACITANCE_CONSTRAINT`, are protected keys: a raw override of one would
+either do nothing or move synthesis away from what the SDC analyses.
+
+No `set_propagated_clock` or `unset_propagated_clock` appears, on purpose.
+LibreLane's `read_current_sdc` greps the file for both and, finding neither,
+unpropagates clocks for pre-CTS analysis and propagates them afterwards.
 
 The two RTL source sets have separate paths and are compiled independently.
 For the memory example, the synthesis set contains flop storage without

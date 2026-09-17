@@ -6,6 +6,30 @@ unique run directory for each attempt, executes LibreLane, and collects results
 from either new or existing run directories. It does not install tools or change
 `manifest.json`.
 
+## Running it
+
+`scripts/flow.sh` runs the whole sequence with the reference paths already
+filled in, and `scripts/report.py` summarizes a finished run. Both take the
+place of assembling the `phase4.py` command lines by hand:
+
+```sh
+scripts/flow.sh                      # build, emit, preflight, run, postcheck, collect, report
+scripts/flow.sh report               # just the summary, on the newest run under $RUNS
+OUT=/tmp/try KIND=memory scripts/flow.sh
+scripts/report.py "$RUN"             # a specific run directory
+scripts/report.py --runs "$RUNS"     # the newest run under a run store
+```
+
+Every path is an overridable environment variable (`TT`, `PDK`, `FLOW_PY`,
+`PRECHECK_PY`, `OUT`, `BUNDLE`, `RUNS`, `KIND`, `STAGE`, `TESTBENCH`); the
+defaults are the reference setup below. `flow.sh` takes the run directory from
+the `run.json` path `phase4.py` prints, since run ids are random hex and do not
+sort by time. `report.py` prints timing per corner, signoff checks, the TT
+precheck rows, and what the post-CTS resizer did about hold; it exits nonzero
+when a check fails, when a run did not complete, or when a timing mode was left
+unconstrained. The `phase4.py` subcommands below remain the interface; the two
+scripts only drive them.
+
 ## Environment
 
 Provision the revisions recorded by `manifest.json` explicitly. The reference

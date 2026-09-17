@@ -30,6 +30,32 @@ cell pins, and routing from `Metal2` through `Metal4` for this TT project.
 The resolver records the nominal standard-cell Liberty reference under that
 same PDK revision.
 
+`Target.Inputs.constraints` adopts the timing and drive environment from the
+same pinned PDK revision, read off its own LibreLane standard-cell
+configuration,
+[`libs.tech/librelane/sg13cmos5l_stdcell/config.tcl`](https://github.com/IHP-GmbH/IHP-Open-PDK/blob/2bbec755dc67ca3db0261c3d6163e15735d66710/ihp-sg13cmos5l/libs.tech/librelane/config.tcl):
+
+| Constraint | Adopted value | LibreLane variable |
+| --- | --- | --- |
+| Driving cell | `sg13cmos5l_buf_4` pin `X` | `SYNTH_DRIVING_CELL` |
+| Output load | 6 fF | `OUTPUT_CAP_LOAD` |
+| Maximum fanout | 10 cells | `MAX_FANOUT_CONSTRAINT` |
+| Clock uncertainty | 0.25 ns | `CLOCK_UNCERTAINTY_CONSTRAINT` |
+| Clock transition | 0.15 ns | `CLOCK_TRANSITION_CONSTRAINT` |
+| Timing derate | 5% | `TIME_DERATING_CONSTRAINT` |
+
+These are the pinned PDK's values, not values characterised for this process;
+upstream's own comment on the last four is "a bit random ... from sky130".
+`Target.resolve` checks that the driving cell and pin are nonblank and contain
+no `/`, that the load, uncertainty and transition are finite and nonnegative,
+that the fanout is positive, and that the derate is below 100% so the early
+multiplier stays positive. It does **not** check that the driving cell exists in
+the standard-cell Liberty: this module opens no file, so a cell that does not
+exist resolves here and is first caught when OpenSTA reads the SDC, or by the
+P4 environment preflight. A project that needs different values passes its own
+`Target.Inputs.constraints`; that is the only supported route, because every
+LibreLane variable above is protected against raw overrides.
+
 The `6x4` pair is the only resolved combination so far. Other tile constructors
 remain available for declarations used by P0/P1 examples, but attempting to
 resolve them fails until their floorplans and revisions are adopted. Physical
@@ -75,11 +101,30 @@ The pinned `src/config.json` declares only `CLOCK_PORT` and `CLOCK_PERIOD` as
 timing inputs; it has no reviewed board-specific I/O delay values. Those
 delays therefore remain optional declarations rather than fabricated defaults.
 
+Everything else the SDC applies is environment rather than project intent, so
+it comes from the resolved target's constraint environment above and not from a
+declaration. Setting `PNR_SDC_FILE` and `SIGNOFF_SDC_FILE` means LibreLane's
+`FALLBACK_SDC` (`librelane/scripts/base.sdc`) never runs, and that script is
+the only place LibreLane applies clock uncertainty and transition, timing
+derate, the driving cell, the output load and the maximum fanout. The emitted
+SDC therefore applies all six itself; without them a path from an input pad
+through a buffer to a flip-flop is analysed with no input slew, no on-chip
+variation margin and no uncertainty, hold appears met, and the post-CTS resizer
+finds nothing to repair. The emitted SDC deliberately writes no
+`set_propagated_clock`: LibreLane's `read_current_sdc` greps the file for it and
+applies ideal clocks before CTS and propagated clocks afterwards when it finds
+neither, which is the behaviour each step wants. It also writes no
+`set_max_transition` or `set_max_capacitance`, because the pinned PDK leaves
+`MAX_TRANSITION_CONSTRAINT` and `MAX_CAPACITANCE_CONSTRAINT` unset and the
+Liberty's own limits then apply.
+
 | Configuration fact | Owner | Override rule |
 | --- | --- | --- |
 | Top name and generated RTL list | Elaborated design and P3 source set | Protected |
 | Clock port and period | Typed clock | Protected |
 | Die area, floorplan, PDK, cell library, routing maximum, power pins | Resolved target | Protected |
+| Driving cell, output load, maximum fanout, clock uncertainty and transition, timing derate | Resolved target constraint environment | Protected; change it through `Target.Inputs.constraints` |
+| `MAX_TRANSITION_CONSTRAINT`, `MAX_CAPACITANCE_CONSTRAINT`, `IO_DELAY_CONSTRAINT`, `SYNTH_CLK_DRIVING_CELL` | Emitted SDC | Protected; the SDC is the only authority, and a raw override would apply to synthesis only |
 | `MACROS` | Registered resources | Raw override rejected; no CMOS5L macro is supported |
 | `FP_SIZING`, `RUN_LINTER` | Initial adapter defaults | Reasoned override allowed |
 | Other LibreLane settings such as density, margins, PDN pitch, and checks | Reasoned override | Recorded with key, strict JSON value, and reason |

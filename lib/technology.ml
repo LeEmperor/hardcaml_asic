@@ -146,6 +146,63 @@ module Cmos5l = struct
     [@@deriving compare, equal, sexp_of]
   end
 
+  (* The environment the standard cells are analysed in: what drives the design's inputs,
+     what its outputs drive, and how much margin timing analysis keeps;
+
+     driving_cell          : the cell that stands in for whatever drives a top-level
+                             input, the clock included; without one an input has no slew
+                             and the first gate on the path looks faster than it is;
+     driving_cell_pin      : the output pin of [driving_cell] that does the driving;
+                             LibreLane spells the pair "<cell>/<pin>" in
+                             SYNTH_DRIVING_CELL, this record keeps the halves apart so
+                             neither can contain the separator;
+     output_cap_load_ff    : the capacitance every top-level output is assumed to drive,
+                             in femtofarads, the unit LibreLane's OUTPUT_CAP_LOAD uses;
+     max_fanout            : how many cells one net may drive before synthesis and CTS
+                             have to buffer it;
+     clock_uncertainty_ns  : jitter and skew margin taken off every capturing edge;
+     clock_transition_ns   : the slew assumed on the clock, which matters before CTS has
+                             built a tree to derive one from;
+     time_derating_percent : how far cell and net delays are stretched for late paths and
+                             shrunk for early ones, to cover on-chip variation;
+
+     Every value is read off the pinned PDK's own LibreLane standard-cell configuration,
+     libs.tech/librelane/sg13cmos5l_stdcell/config.tcl, at the PDK revision a Target pins
+     (see docs/target-reference.md). They are recorded here rather than left to LibreLane
+     because this project supplies its own SDC: setting PNR_SDC_FILE stops LibreLane's
+     FALLBACK_SDC from running, and that script is the only place these variables reach
+     timing analysis.
+
+     Careful: upstream's own comment on the last four is "FIXME: A bit random ... from
+     sky130". They are the pinned values, NOT values characterised for this process; a
+     project with a reason to differ passes its own through Target.Inputs.
+  *)
+  module Constraints = struct
+    type t =
+      { driving_cell          : string
+      ; driving_cell_pin      : string
+      ; output_cap_load_ff    : float
+      ; max_fanout            : int
+      ; clock_uncertainty_ns  : float
+      ; clock_transition_ns   : float
+      ; time_derating_percent : float
+      }
+    [@@deriving compare, equal, sexp_of]
+
+    (* grab the output load in the unit set_load takes;
+
+       Why the conversion: set_load is read in the Liberty's capacitive_load_unit, which
+       is (1, pf) for every sg13cmos5l standard-cell view, while [output_cap_load_ff] is
+       in femtofarads. LibreLane's base.sdc divides by the same 1000 for the same reason.
+       A technology whose Liberty declared another unit would need its own factor here.
+    *)
+    let output_cap_load_pf t = t.output_cap_load_ff /. 1000.
+
+    (* grab the driving cell as LibreLane's "<cell>/<pin>" spelling; what synthesis reads
+       out of SYNTH_DRIVING_CELL, and what Resolved_build derives that setting from *)
+    let driving_cell_setting t = t.driving_cell ^ "/" ^ t.driving_cell_pin
+  end
+
   open View.Role
 
   let corner = "nom_typ_1p20V_25C"
@@ -167,6 +224,19 @@ module Cmos5l = struct
         Standard_cell_liberty
         (stdcell ^ "/lib/sg13cmos5l_stdcell_typ_1p20V_25C.lib")
     ]
+  ;;
+
+  (* The pinned constraint environment, and the default Target.Inputs carries; the values
+     the PDK's standard-cell LibreLane configuration sets at the pinned revision *)
+  let constraints =
+    { Constraints.driving_cell = "sg13cmos5l_buf_4"
+    ; driving_cell_pin         = "X"
+    ; output_cap_load_ff       = 6.0
+    ; max_fanout               = 10
+    ; clock_uncertainty_ns     = 0.25
+    ; clock_transition_ns      = 0.15
+    ; time_derating_percent    = 5.0
+    }
   ;;
 end
 

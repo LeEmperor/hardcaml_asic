@@ -83,6 +83,39 @@ def main(executable, source_root):
             sdc = (directory / "constraints/top.sdc").read_text()
             assert ("create_clock -name clk -period " +
                     format(config["CLOCK_PERIOD"], ".17g")) in sdc
+            # The constraint environment: without these the flow analyses an input path
+            # with no slew, no variation margin and no uncertainty, so hold looks met and
+            # the post-CTS resizer repairs nothing. LibreLane's base.sdc would have
+            # applied them, but PNR_SDC_FILE stops it from running at all.
+            assert ("set_clock_uncertainty " +
+                    format(config["CLOCK_UNCERTAINTY_CONSTRAINT"], ".17g") +
+                    " [get_clocks {clk}]") in sdc
+            assert ("set_clock_transition " +
+                    format(config["CLOCK_TRANSITION_CONSTRAINT"], ".17g") +
+                    " [get_clocks {clk}]") in sdc
+            derate = config["TIME_DERATING_CONSTRAINT"] / 100.0
+            assert ("set_timing_derate -early " + format(1 - derate, ".17g")) in sdc
+            assert ("set_timing_derate -late " + format(1 + derate, ".17g")) in sdc
+            assert ("set_max_fanout %d [current_design]" %
+                    config["MAX_FANOUT_CONSTRAINT"]) in sdc
+            cell, pin = config["SYNTH_DRIVING_CELL"].split("/")
+            drive = "set_driving_cell -lib_cell %s -pin %s [get_ports " % (cell, pin)
+            assert (drive + "{ena rst_n ui_in uio_in}]") in sdc
+            assert (drive + "{clk}]") in sdc
+            # set_load is read in the Liberty capacitive_load_unit (pF); OUTPUT_CAP_LOAD
+            # is in fF, the same conversion base.sdc does.
+            assert ("set_load " + format(config["OUTPUT_CAP_LOAD"] / 1000.0, ".17g") +
+                    " [get_ports {uio_oe uio_out uo_out}]") in sdc
+            # LibreLane's read_current_sdc greps for these and picks ideal clocks pre-CTS
+            # and propagated clocks afterwards when it finds neither.
+            assert "propagated_clock" not in sdc
+            # Every key the SDC now owns must be unreachable by a raw override.
+            for key in ("CLOCK_UNCERTAINTY_CONSTRAINT", "CLOCK_TRANSITION_CONSTRAINT",
+                        "TIME_DERATING_CONSTRAINT", "SYNTH_DRIVING_CELL",
+                        "OUTPUT_CAP_LOAD", "MAX_FANOUT_CONSTRAINT"):
+                owner = next(entry["owner"] for entry in data["resolved_settings"]
+                             if entry["key"] == key)
+                assert owner == "Target", (key, owner)
             if kind == "observable":
                 for port in ("ena", "rst_n", "ui_in"):
                     assert ("set_input_delay -max 1 -clock clk [get_ports {" +

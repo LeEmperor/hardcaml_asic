@@ -102,6 +102,14 @@ module Inputs : sig
     ; technology_views : Technology.Cmos5l.View.t list
     (** One view per {!Technology.Cmos5l.View.Role.t}, each at a relative path; the
         Liberty view at {!Technology.Cmos5l.corner}, and no other view with a corner. *)
+    ; constraints : Technology.Cmos5l.Constraints.t
+    (** The timing and drive environment the emitted SDC applies, defaulting to
+        {!Technology.Cmos5l.constraints}. This is the only supported way to change one:
+        every LibreLane key that would otherwise set it is protected, so it cannot be
+        reached by a raw {!Flow.Librelane.Override.t}. Checked for a nameable driving
+        cell, a finite nonnegative load, uncertainty and transition, a positive fanout and
+        a derate below 100%; whether the driving cell exists in the Liberty is NOT checked
+        here. *)
     }
   [@@deriving sexp_of]
 
@@ -133,6 +141,8 @@ module Resolved : sig
     ; corner : string (** The nominal timing corner. *)
     ; views : Reference.t list
     (** Every PDK view, in the order {!Inputs.technology_views} lists them. *)
+    ; constraints : Technology.Cmos5l.Constraints.t
+    (** The checked timing and drive environment, from {!Inputs.constraints}. *)
     }
   [@@deriving sexp_of]
 end

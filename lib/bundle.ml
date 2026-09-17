@@ -172,22 +172,69 @@ let read_input ~source_root path =
       In_channel.read_all full))
 ;;
 
-(* Render constraints/top.sdc; one clock plus a max and a min line per declared I/O delay;
+(* Render constraints/top.sdc; the clock, the target's constraint environment, and a max
+   and a min line per declared I/O delay;
 
    The clock name and port are both hardcoded to "clk"; that is safe because
    Resolved_build.validate_timing only accepts exactly one clock, on "clk". Delays arrive
-   already sorted by port from the same function, so the file is deterministic;
+   already sorted by port from the same function, and the port lists below are sorted
+   here, so the file is deterministic;
 
    Numbers print with "%.17g", enough digits to round trip any float exactly, so the SDC
    period is the same number as CLOCK_PERIOD in config.json (test/check_bundle.py checks
-   this) rather than a rounded neighbour;
+   this) rather than a rounded neighbour. A consequence: a value with no exact binary
+   form prints all of it, so a 5% derate writes -early 0.94999999999999996, which is the
+   number the flow would have used either way;
 
-   Both bounds are always written. A "-max" line alone leaves hold unconstrained, so STA
-   finds no hold paths and the resizer inserts no hold buffers (see Timing);
+   Both delay bounds are always written. A "-max" line alone leaves hold unconstrained, so
+   STA finds no hold paths and the resizer inserts no hold buffers (see Timing);
+
+   WHY the environment lines are here at all: Bundle.config sets PNR_SDC_FILE and
+   SIGNOFF_SDC_FILE to this file, which stops LibreLane's FALLBACK_SDC (base.sdc) from
+   ever running, and that script is the only place LibreLane applies uncertainty,
+   transition, derate, driving cell, load and fanout. Without them a path through an
+   input buffer has no input slew, no variation margin and no uncertainty, and hold is
+   analysed optimistically: the reference observable design closed hold at +0.01 ns
+   without these lines and at -0.24 ns with them, which is the violation the post-CTS
+   resizer is supposed to repair.
+
+   Deliberately absent: set_propagated_clock. LibreLane's read_current_sdc
+   (scripts/openroad/common/io.tcl) greps this file for "set_propagated_clock" and
+   "unset_propagated_clock", and applies the right one per step when it finds neither:
+   ideal clocks for pre-CTS analysis, propagated clocks after CTS. Writing either here
+   would pin every step to one of them.
+
+   Also absent: set_max_transition and set_max_capacitance. The pinned PDK leaves
+   MAX_TRANSITION_CONSTRAINT and MAX_CAPACITANCE_CONSTRAINT unset, so base.sdc would not
+   have written them either, and the Liberty's own limits apply.
 *)
 let sdc (resolved : Resolved_build.t) =
 
   let number value = Printf.sprintf "%.17g" value in
+  let constraints = resolved.target.constraints in
+
+  (* The ports of one direction as a sorted "a b c" list for get_ports; taken from the
+     wrapper interface Resolved_build.validate_interface has already matched the design
+     against, so every name here is a real port *)
+  let ports names = String.concat ~sep:" " (List.sort names ~compare:String.compare) in
+
+  (* Every input but the clock; the clock gets its own driving cell line, as base.sdc
+     does, since a technology may characterise a different cell for it *)
+  let signal_inputs =
+    List.filter_map Resolved_build.expected_inputs ~f:(fun (name, _) ->
+      Option.some_if (not (String.equal name "clk")) name)
+  in
+
+  let outputs = List.map Resolved_build.expected_outputs ~f:fst in
+
+  (* One "set_driving_cell" line for a get_ports list *)
+  let driving_cell port_list =
+    Printf.sprintf
+      "set_driving_cell -lib_cell %s -pin %s [get_ports {%s}]\n"
+      constraints.driving_cell
+      constraints.driving_cell_pin
+      port_list
+  in
 
   (* The "-max" then "-min" "set_<direction>_delay" lines for one resolved delay *)
   let delay direction ({ port; minimum; maximum } : Resolved_build.Delay_ns.t) =
@@ -202,11 +249,32 @@ let sdc (resolved : Resolved_build.t) =
     line "-max" maximum ^ line "-min" minimum
   in
 
-  Printf.sprintf
-    "create_clock -name clk -period %s [get_ports {clk}]\n"
-    (number resolved.clock_period_ns)
-  ^ (List.map resolved.input_delays_ns ~f:(delay "input") |> String.concat)
-  ^ (List.map resolved.output_delays_ns ~f:(delay "output") |> String.concat)
+  (* The derate multipliers; a percentage either side of 1, the same arithmetic base.sdc
+     does, and why [constraint_problems] keeps the percentage below 100 *)
+  let derate = constraints.time_derating_percent /. 100. in
+
+  String.concat
+    [ Printf.sprintf
+        "create_clock -name clk -period %s [get_ports {clk}]\n"
+        (number resolved.clock_period_ns)
+    ; Printf.sprintf
+        "set_clock_uncertainty %s [get_clocks {clk}]\n"
+        (number constraints.clock_uncertainty_ns)
+    ; Printf.sprintf
+        "set_clock_transition %s [get_clocks {clk}]\n"
+        (number constraints.clock_transition_ns)
+    ; Printf.sprintf "set_timing_derate -early %s\n" (number (1. -. derate))
+    ; Printf.sprintf "set_timing_derate -late %s\n" (number (1. +. derate))
+    ; Printf.sprintf "set_max_fanout %d [current_design]\n" constraints.max_fanout
+    ; driving_cell (ports signal_inputs)
+    ; driving_cell (ports [ "clk" ])
+    ; Printf.sprintf
+        "set_load %s [get_ports {%s}]\n"
+        (number (Technology.Cmos5l.Constraints.output_cap_load_pf constraints))
+        (ports outputs)
+    ; List.map resolved.input_delays_ns ~f:(delay "input") |> String.concat
+    ; List.map resolved.output_delays_ns ~f:(delay "output") |> String.concat
+    ]
 ;;
 
 (* Render the Tiny Tapeout info.yaml; project metadata, pinout and the single source file;

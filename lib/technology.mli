@@ -97,12 +97,56 @@ module Cmos5l : sig
     [@@deriving compare, equal, sexp_of]
   end
 
+  (** The environment timing analysis assumes around the design: what drives its inputs,
+      what its outputs drive, and how much margin it keeps.
+
+      These are needed because the project supplies its own SDC. Setting [PNR_SDC_FILE]
+      stops LibreLane's [FALLBACK_SDC] from running, and that script is the only place
+      LibreLane's own [CLOCK_UNCERTAINTY_CONSTRAINT], [CLOCK_TRANSITION_CONSTRAINT],
+      [TIME_DERATING_CONSTRAINT], [SYNTH_DRIVING_CELL], [OUTPUT_CAP_LOAD] and
+      [MAX_FANOUT_CONSTRAINT] would reach timing analysis. {!Bundle.sdc} renders these
+      instead, and {!Resolved_build} emits the matching configuration keys so synthesis
+      analyses the same environment.
+
+      Careful: the values in {!constraints} are the pinned PDK's, not values characterised
+      for this process; upstream calls four of them "a bit random ... from sky130". *)
+  module Constraints : sig
+    type t =
+      { driving_cell : string
+      (** Cell standing in for whatever drives a top-level input, clock included. Must
+          contain no ["/"]. *)
+      ; driving_cell_pin : string
+      (** Output pin of [driving_cell]. Must contain no ["/"]. *)
+      ; output_cap_load_ff : float
+      (** Capacitance each top-level output drives, in femtofarads. *)
+      ; max_fanout : int (** Cells one net may drive; positive. *)
+      ; clock_uncertainty_ns : float (** Jitter and skew margin per edge; nonnegative. *)
+      ; clock_transition_ns : float (** Slew assumed on the clock; nonnegative. *)
+      ; time_derating_percent : float
+      (** On-chip variation margin, as a percentage below 100 so the early multiplier
+          stays positive. *)
+      }
+    [@@deriving compare, equal, sexp_of]
+
+    (** [output_cap_load_ff] in the unit [set_load] takes, which is the Liberty
+        [capacitive_load_unit]: picofarads for every sg13cmos5l view. *)
+    val output_cap_load_pf : t -> float
+
+    (** The driving cell in LibreLane's ["<cell>/<pin>"] spelling, as [SYNTH_DRIVING_CELL]
+        wants it. *)
+    val driving_cell_setting : t -> string
+  end
+
   val pdk : string
   val corner : string
   val routing_layers : string list
   val top_routing_layer : string
   val standard_cell_power_pins : string * string
   val views : View.t list
+
+  (** The constraint environment of the pinned PDK's standard-cell LibreLane
+      configuration; the default {!Target.Inputs} carries. *)
+  val constraints : Constraints.t
 end
 
 (** The mapping whose request equals [request], or [None].

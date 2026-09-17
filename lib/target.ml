@@ -127,6 +127,10 @@ end
    die_area_um            : die bounds; should agree with tile_sizes.yaml at
                             [support_tools_revision];
    technology_views       : the PDK views to reference, relative to the PDK checkout;
+   constraints            : the timing and drive environment Bundle.sdc renders and
+                            Resolved_build emits configuration keys for; read off the
+                            PDK's own standard-cell LibreLane configuration at
+                            [pdk_revision], see Technology.Cmos5l.Constraints;
 
    Transparent on purpose, so a caller pinning different revisions can start from
    [reference_cmos5l_6x4] and override fields with { base with ... } -> see
@@ -145,6 +149,7 @@ module Inputs = struct
     ; floorplan_sha256       : string
     ; die_area_um            : Rectangle_um.t
     ; technology_views       : Technology.Cmos5l.View.t list
+    ; constraints            : Technology.Cmos5l.Constraints.t
     }
   [@@deriving sexp_of]
 
@@ -164,6 +169,7 @@ module Inputs = struct
         "b46d9a0ee8352160e48dbc8312f092f985629061df736c7f46d58686535a76f4"
     ; die_area_um            = { x_min = 0.; y_min = 0.; x_max = 1289.28; y_max = 710.64 }
     ; technology_views       = Technology.Cmos5l.views
+    ; constraints            = Technology.Cmos5l.constraints
     }
   ;;
 end
@@ -182,6 +188,9 @@ end
    top_routing_layer        : the highest of [routing_layers]; the flow's routing maximum;
    corner                   : the nominal timing corner;
    views                    : every PDK view, in the order Inputs listed them;
+   constraints              : the checked timing and drive environment, copied from
+                              Inputs; Bundle.sdc renders it into constraints/top.sdc and
+                              Resolved_build derives the matching LibreLane settings;
 
    Careful: only [resolve] builds one in this library, but the mli does NOT make the type
    private, so a Resolved.t built by hand skips every check in this module.
@@ -199,6 +208,7 @@ module Resolved = struct
     ; top_routing_layer        : string
     ; corner                   : string
     ; views                    : Reference.t list
+    ; constraints              : Technology.Cmos5l.Constraints.t
     }
   [@@deriving sexp_of]
 end
@@ -243,6 +253,57 @@ let valid_relative_path path =
     && not (String.equal part "."))
 ;;
 
+(* Everything wrong with a constraint environment, as one sentence each; empty when it is
+   usable. Returning the reasons rather than a bool so [validate_inputs] can say which
+   value is the problem, not just that one of seven is;
+
+   driving cell    : both halves nonblank and free of "/", so LibreLane's "<cell>/<pin>"
+                     spelling splits back into exactly these two;
+   load            : finite and nonnegative; a negative load is not a capacitance;
+   fanout          : positive; zero would forbid every net;
+   uncertainty     : finite and nonnegative; a negative one would hand setup free time;
+   clock transition: finite and nonnegative, same reason;
+   derate          : finite, nonnegative and below 100, so the early multiplier
+                     1 - derate/100 stays positive; at 100 every early path takes no time
+                     at all, and above it delays go negative;
+
+   NOT checked: whether [driving_cell] is a cell the technology's Liberty actually
+   defines, or whether [driving_cell_pin] is one of its output pins. This module opens no
+   file, so a cell that does not exist validates fine here and is first caught when
+   OpenSTA reads the SDC; checking it against an installed PDK is P4 preflight work.
+*)
+let constraint_problems (constraints : Technology.Cmos5l.Constraints.t) =
+  let blank value = String.is_empty (String.strip value) in
+  let slashed value = String.is_substring value ~substring:"/" in
+  let named value = (not (blank value)) && not (slashed value) in
+  let usable value = Float.is_finite value && Float.(value >= 0.) in
+  List.filter_opt
+    [ Option.some_if
+        (not (named constraints.driving_cell && named constraints.driving_cell_pin))
+        "driving cell and pin must be nonblank and contain no \"/\""
+
+    ; Option.some_if
+        (not (usable constraints.output_cap_load_ff))
+        "output capacitive load must be finite and nonnegative"
+
+    ; Option.some_if (constraints.max_fanout <= 0) "maximum fanout must be positive"
+
+    ; Option.some_if
+        (not (usable constraints.clock_uncertainty_ns))
+        "clock uncertainty must be finite and nonnegative"
+
+    ; Option.some_if
+        (not (usable constraints.clock_transition_ns))
+        "clock transition must be finite and nonnegative"
+
+    ; Option.some_if
+        (not
+           (usable constraints.time_derating_percent
+            && Float.(constraints.time_derating_percent < 100.)))
+        "timing derate must be finite and at least 0% but below 100%"
+    ]
+;;
+
 (* Check a set of target inputs before anything is built from them; returns Or_error
    rather than raising since [resolve] is itself an Or_error step that
    Project.elaborate_for_flow tags on the way out;
@@ -257,6 +318,8 @@ let valid_relative_path path =
    malformed views : every view path is relative, the Liberty view is at exactly
                      Technology.Cmos5l.corner, and no other view has a corner; all bad
                      views are reported together;
+   constraints     : the timing and drive environment is usable, see
+                     [constraint_problems]; every problem is reported together;
 
    Every check runs even when others fail, so one call reports every problem.
 
@@ -361,6 +424,16 @@ let validate_inputs (inputs : Inputs.t) =
        else
          Or_error.error_s
            [%message "malformed CMOS5L view references" (malformed_views : t list)])
+
+    ; (match constraint_problems inputs.constraints with
+       | [] -> Ok ()
+       | problems ->
+         Or_error.error_s
+           [%message
+             "unusable timing constraint environment; correct the values named below"
+               (problems : string list)
+               ~constraints:
+                 (inputs.constraints : Technology.Cmos5l.Constraints.t)])
     ]
 ;;
 
@@ -435,6 +508,7 @@ let resolve ?(inputs = Inputs.reference_cmos5l_6x4) ({ harness; technology } : t
     ; top_routing_layer        = Technology.Cmos5l.top_routing_layer
     ; corner                   = Technology.Cmos5l.corner
     ; views
+    ; constraints              = inputs.constraints
     }
 
   (* Every other pair: other tile sizes on CMOS5L, and any other technology;

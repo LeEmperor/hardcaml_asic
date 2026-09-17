@@ -162,16 +162,61 @@ let%expect_test "reference wrapper and resolved flow facts" =
     {|
     (CLOCK_PERIOD
      CLOCK_PORT
+     CLOCK_TRANSITION_CONSTRAINT
+     CLOCK_UNCERTAINTY_CONSTRAINT
      DESIGN_NAME
      DIE_AREA
      FP_DEF_TEMPLATE
      FP_SIZING
      GND_PIN
+     MAX_FANOUT_CONSTRAINT
+     OUTPUT_CAP_LOAD
      PDK
      RT_MAX_LAYER
      RUN_LINTER
      STD_CELL_LIBRARY
+     SYNTH_DRIVING_CELL
+     TIME_DERATING_CONSTRAINT
      VDD_PIN)
+    |}]
+;;
+
+let%expect_test "the constraint environment reaches the settings as target facts" =
+  let resolved = resolve () |> ok_exn in
+  List.iter
+    [ "SYNTH_DRIVING_CELL"
+    ; "OUTPUT_CAP_LOAD"
+    ; "MAX_FANOUT_CONSTRAINT"
+    ; "CLOCK_UNCERTAINTY_CONSTRAINT"
+    ; "CLOCK_TRANSITION_CONSTRAINT"
+    ; "TIME_DERATING_CONSTRAINT"
+    ]
+    ~f:(fun key ->
+      print_s
+        [%sexp
+          (List.find_exn resolved.settings ~f:(fun setting ->
+             String.equal setting.key key)
+           : Resolved_build.Setting.t)]);
+  [%expect
+    {|
+    ((key   SYNTH_DRIVING_CELL)
+     (value "\"sg13cmos5l_buf_4/X\"")
+     (owner Target))
+    ((key   OUTPUT_CAP_LOAD)
+     (value 6.0)
+     (owner Target))
+    ((key   MAX_FANOUT_CONSTRAINT)
+     (value 10)
+     (owner Target))
+    ((key   CLOCK_UNCERTAINTY_CONSTRAINT)
+     (value 0.25)
+     (owner Target))
+    ((key   CLOCK_TRANSITION_CONSTRAINT)
+     (value 0.15)
+     (owner Target))
+    ((key   TIME_DERATING_CONSTRAINT)
+     (value 5.0)
+     (owner Target))
     |}]
 ;;
 
@@ -310,6 +355,17 @@ let%expect_test "LibreLane override provenance and protected assignments" =
     ; "DIE_AREA"
     ; "PNR_SDC_FILE"
     ; "EXTRA_LEFS"
+      (* The constraint environment: the SDC is its only authority, so none of these may
+         be set by hand, whether LibreLane still reads it (the first four) or no longer
+         reads it at all now that PNR_SDC_FILE replaces base.sdc *)
+    ; "SYNTH_DRIVING_CELL"
+    ; "OUTPUT_CAP_LOAD"
+    ; "MAX_FANOUT_CONSTRAINT"
+    ; "MAX_TRANSITION_CONSTRAINT"
+    ; "CLOCK_UNCERTAINTY_CONSTRAINT"
+    ; "CLOCK_TRANSITION_CONSTRAINT"
+    ; "TIME_DERATING_CONSTRAINT"
+    ; "IO_DELAY_CONSTRAINT"
     ]
     ~f:(fun key ->
       error_contains

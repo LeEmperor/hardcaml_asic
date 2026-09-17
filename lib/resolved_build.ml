@@ -483,8 +483,25 @@ let validate_capabilities build target =
    clock    : CLOCK_PORT, CLOCK_PERIOD;
    resource : MACROS, EXTRA_LEFS, EXTRA_GDS_FILES, EXTRA_LIBS, EXTRA_VERILOG_MODELS,
               SYNTH_BLACKBOXES; macro collateral, which is not supported yet;
+   timing   : SYNTH_DRIVING_CELL, SYNTH_CLK_DRIVING_CELL, OUTPUT_CAP_LOAD,
+              MAX_FANOUT_CONSTRAINT, MAX_TRANSITION_CONSTRAINT,
+              MAX_CAPACITANCE_CONSTRAINT, CLOCK_UNCERTAINTY_CONSTRAINT,
+              CLOCK_TRANSITION_CONSTRAINT, TIME_DERATING_CONSTRAINT,
+              IO_DELAY_CONSTRAINT; the constraint environment, owned by the resolved
+              target and written into the SDC by Bundle.sdc;
 
    Anything containing "SDC" is protected too, see [protected_key].
+
+   WHY the timing keys are protected rather than merely unused: with PNR_SDC_FILE set,
+   LibreLane's base.sdc never runs, so the four purely analytical ones
+   (CLOCK_UNCERTAINTY_CONSTRAINT, CLOCK_TRANSITION_CONSTRAINT, TIME_DERATING_CONSTRAINT,
+   IO_DELAY_CONSTRAINT) reach nothing at all and an override of one would silently do
+   nothing. The others are worse: synthesis reads SYNTH_DRIVING_CELL and OUTPUT_CAP_LOAD
+   straight out of the configuration (it writes its own small ABC SDC from them), and ABC
+   reads MAX_FANOUT_CONSTRAINT and MAX_TRANSITION_CONSTRAINT, so an override would change
+   what synthesis optimises for while [Bundle.sdc] still analysed the target's values.
+   A project that needs different values passes them through Target.Inputs, where they are
+   checked and recorded as Target owned -> see Technology.Cmos5l.Constraints.
 
    Careful: this list is separate from what [resolve_settings] derives. A new derived
    setting whose key is not added here can be silently replaced by an override; that is
@@ -516,6 +533,16 @@ let protected_keys =
   ; "EXTRA_VERILOG_MODELS"
   ; "SYNTH_BLACKBOXES"
   ; "FP_PIN_ORDER_CFG"
+  ; "SYNTH_DRIVING_CELL"
+  ; "SYNTH_CLK_DRIVING_CELL"
+  ; "OUTPUT_CAP_LOAD"
+  ; "MAX_FANOUT_CONSTRAINT"
+  ; "MAX_TRANSITION_CONSTRAINT"
+  ; "MAX_CAPACITANCE_CONSTRAINT"
+  ; "CLOCK_UNCERTAINTY_CONSTRAINT"
+  ; "CLOCK_TRANSITION_CONSTRAINT"
+  ; "TIME_DERATING_CONSTRAINT"
+  ; "IO_DELAY_CONSTRAINT"
   ]
 ;;
 
@@ -549,11 +576,24 @@ let protected_key key =
 
    Careful: DIE_AREA prints each bound with "%.12g", so a coordinate with more than 12
    significant digits is rounded in the config; real TT die areas are far from that.
+
+   Six of the Target settings restate the constraint environment Bundle.sdc renders. They
+   are derived rather than left out because LibreLane reads three of them outside the SDC
+   (SYNTH_DRIVING_CELL and OUTPUT_CAP_LOAD in synthesis, MAX_FANOUT_CONSTRAINT in ABC), so
+   omitting them would let synthesis optimise against the PDK's values while analysis used
+   the target's. The other three reach nothing while PNR_SDC_FILE is set; they are written
+   anyway so config.json states the same environment the SDC applies, and so they still
+   agree if a later LibreLane reads them. Every one of the ten keys involved is protected
+   -> see [protected_keys].
 *)
 let resolve_settings build target clock_period_ns =
 
   let mk key value owner : Setting.t = { key; value; owner } in
   let rect = target.Target.Resolved.die_area_um in
+
+  (* The target's constraint environment; the same record Bundle.sdc renders, so the six
+     settings derived from it below state exactly what the SDC applies *)
+  let environment = target.constraints in
 
   (* Step 1; CLOCK_PORT can be "clk" outright since [validate_timing] already required
      it; FP_DEF_TEMPLATE is still support-tools relative, Bundle.config rewrites it *)
@@ -579,6 +619,15 @@ let resolve_settings build target clock_period_ns =
     ; mk "STD_CELL_LIBRARY" (`String "sg13cmos5l_stdcell") Target
     ; mk "CLOCK_PORT" (`String "clk") Clock
     ; mk "CLOCK_PERIOD" (`Float clock_period_ns) Clock
+    ; mk
+        "SYNTH_DRIVING_CELL"
+        (`String (Technology.Cmos5l.Constraints.driving_cell_setting environment))
+        Target
+    ; mk "OUTPUT_CAP_LOAD" (`Float environment.output_cap_load_ff) Target
+    ; mk "MAX_FANOUT_CONSTRAINT" (`Int environment.max_fanout) Target
+    ; mk "CLOCK_UNCERTAINTY_CONSTRAINT" (`Float environment.clock_uncertainty_ns) Target
+    ; mk "CLOCK_TRANSITION_CONSTRAINT" (`Float environment.clock_transition_ns) Target
+    ; mk "TIME_DERATING_CONSTRAINT" (`Float environment.time_derating_percent) Target
     ; mk "FP_SIZING" (`String "absolute") Default
     ; mk "RUN_LINTER" (`Int 1) Default
     ]

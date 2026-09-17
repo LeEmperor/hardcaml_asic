@@ -117,6 +117,69 @@ let%expect_test "reference technology identity cannot be forged" =
     {| "ihp-sg13cmos5l is a reserved reference technology; use Technology.ihp_sg13cmos5l" |}]
 ;;
 
+let%expect_test "the pinned constraint environment resolves onto the target" =
+  let resolved = Target.resolve reference_target |> ok_exn in
+  print_s [%sexp (resolved.constraints : Technology.Cmos5l.Constraints.t)];
+  [%expect
+    {|
+    ((driving_cell          sg13cmos5l_buf_4)
+     (driving_cell_pin      X)
+     (output_cap_load_ff    6)
+     (max_fanout            10)
+     (clock_uncertainty_ns  0.25)
+     (clock_transition_ns   0.15)
+     (time_derating_percent 5))
+    |}];
+  (* The load converts into the Liberty's picofarad capacitive_load_unit for set_load *)
+  require
+    (Float.equal
+       (Technology.Cmos5l.Constraints.output_cap_load_pf resolved.constraints)
+       0.006);
+  print_endline
+    (Technology.Cmos5l.Constraints.driving_cell_setting resolved.constraints);
+  [%expect {| sg13cmos5l_buf_4/X |}]
+;;
+
+let%expect_test "an unusable constraint environment is rejected with every reason" =
+  let base = Target.Inputs.reference_cmos5l_6x4 in
+  let inputs constraints = { base with constraints } in
+  List.iter
+    [ inputs { base.constraints with driving_cell = "sg13cmos5l_buf_4/X" }
+    ; inputs
+        { base.constraints with
+          output_cap_load_ff    = -1.
+        ; max_fanout            = 0
+        ; clock_uncertainty_ns  = Float.nan
+        ; clock_transition_ns   = -0.1
+        ; time_derating_percent = 100.
+        }
+    ]
+    ~f:(fun inputs ->
+      match Target.resolve ~inputs reference_target with
+      | Ok _ -> failwith "an unusable constraint environment unexpectedly resolved"
+      | Error error -> print_endline (Error.to_string_hum error));
+  [%expect
+    {|
+    ("unusable timing constraint environment; correct the values named below"
+     (problems ("driving cell and pin must be nonblank and contain no \"/\""))
+     (constraints
+      ((driving_cell sg13cmos5l_buf_4/X) (driving_cell_pin X)
+       (output_cap_load_ff 6) (max_fanout 10) (clock_uncertainty_ns 0.25)
+       (clock_transition_ns 0.15) (time_derating_percent 5))))
+    ("unusable timing constraint environment; correct the values named below"
+     (problems
+      ("output capacitive load must be finite and nonnegative"
+       "maximum fanout must be positive"
+       "clock uncertainty must be finite and nonnegative"
+       "clock transition must be finite and nonnegative"
+       "timing derate must be finite and at least 0% but below 100%"))
+     (constraints
+      ((driving_cell sg13cmos5l_buf_4) (driving_cell_pin X)
+       (output_cap_load_ff -1) (max_fanout 0) (clock_uncertainty_ns NAN)
+       (clock_transition_ns -0.1) (time_derating_percent 100))))
+    |}]
+;;
+
 let%expect_test "missing or malformed target inputs fail before use" =
   let base = Target.Inputs.reference_cmos5l_6x4 in
   let missing_view =

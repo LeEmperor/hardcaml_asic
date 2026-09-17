@@ -23,7 +23,8 @@ wrapper boundary, and timing/configuration ownership. The
 [bundle guide](docs/bundle-emission.md) emits TT/LibreLane inputs for observable
 and registered-memory examples. The [Phase 4 execution guide](docs/phase4-execution.md)
 provides external preflight, isolated LibreLane runs, structured result collection,
-and postchecks. [Mapped synthesis evidence](evidence/p4/memory-synthesis/README.md)
+and postchecks; `scripts/flow.sh` runs that sequence end to end and
+`scripts/report.py` summarizes a finished run (`--help` on either). [Mapped synthesis evidence](evidence/p4/memory-synthesis/README.md)
 exists for the registered-memory example; the full physical exit gate remains open.
 Physical SRAM support requires
 a separate capability investigation.
