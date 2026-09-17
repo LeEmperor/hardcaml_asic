@@ -5,12 +5,11 @@
    design get dropped into?"; for now that is only Tiny Tapeout;
 
    Target pairs it with a technology, and Build carries it through so adapters can render
-   harness specific outputs later (for example the TT info.yaml tiles field). Nothing
-   reads inside it yet.
+   harness specific outputs later (for example the TT info.yaml tiles field).
 
-   It does NOT know the top-level interface a harness requires, its geometry or its
-   submission metadata; resolving those is P2 work. It does NOT describe the process
-   either, that is Technology's job.
+   Top-level port and submission-metadata validation live in Resolved_build. Concrete
+   geometry is resolved with the technology and pinned support-tools inputs by Target.
+   The harness does not describe the process; that is Technology's job.
 *)
 
 open! Core
@@ -19,12 +18,11 @@ open! Core
 
 (* Everything specific to the Tiny Tapeout harness; *)
 module Tiny_tapeout = struct
-  (* How many Tiny Tapeout tiles the design occupies; the constructors mirror the tile
-     sizes TT accepts in info.yaml, T1x1 -> "1x1" through T8x2 -> "8x2";
+  (* How many Tiny Tapeout tiles the design occupies. Target resolution checks whether
+     a selected technology and pinned support-tools revision have this floorplan;
 
-     Only sizes TT actually offers are constructors, so an unsupported size cannot be
-     declared at all. The physical size of a tile depends on the technology as well, so
-     no geometry is attached here; that is resolved per harness and technology pair in P2.
+     These constructors represent sizes known to this declaration API, not a promise that
+     every pinned target supports each size. Geometry is resolved per target pair.
 
      enumerate is derived, but nothing walks the sizes yet.
   *)
@@ -37,7 +35,19 @@ module Tiny_tapeout = struct
       | T4x2
       | T6x2
       | T8x2
+      | T6x4
     [@@deriving compare, equal, enumerate, sexp_of]
+
+    let to_string = function
+      | T1x1 -> "1x1"
+      | T1x2 -> "1x2"
+      | T2x2 -> "2x2"
+      | T3x2 -> "3x2"
+      | T4x2 -> "4x2"
+      | T6x2 -> "6x2"
+      | T8x2 -> "8x2"
+      | T6x4 -> "6x4"
+    ;;
   end
 end
 

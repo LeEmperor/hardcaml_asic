@@ -10,8 +10,8 @@
    macro's collateral into Resource_record sources;
 
    It does NOT know what the project will accept, that is Resource_policy's job; Selection
-   is where the two meet. It also does NOT describe tile geometry, layers or corners yet;
-   those arrive in phase P2.
+   is where the two meet. The pinned CMOS5L standard-cell view/routing description below
+   is separate from resource mappings and has no SRAM capability.
 *)
 
 open! Core
@@ -97,6 +97,11 @@ type t =
    field order are both accepted here;
 *)
 let create_exn ~name ~resource_mappings =
+  if String.equal name "ihp-sg13cmos5l"
+  then
+    raise_s
+      [%message
+        "ihp-sg13cmos5l is a reserved reference technology; use Technology.ihp_sg13cmos5l"];
   (match
      List.find_a_dup resource_mappings ~compare:(fun (a : Resource_mapping.t) b ->
        Resource_request.compare a.request b.request)
@@ -114,7 +119,56 @@ let create_exn ~name ~resource_mappings =
 
 (* IHP SG13 CMOS5L standard cells; no mappings, so every resource under it is flops or a
    selection error, depending on policy; *)
-let ihp_sg13cmos5l = create_exn ~name:"ihp-sg13cmos5l" ~resource_mappings:[]
+let ihp_sg13cmos5l = { name = "ihp-sg13cmos5l"; resource_mappings = [] }
+
+(* Pinned CMOS5L standard-cell description. These are references within the PDK,
+   not files loaded during elaboration. The PDK configuration is the authority for
+   the full set of flow variables; this inventory records the views the first
+   adapter must be able to locate. None of these views is an SRAM macro. *)
+module Cmos5l = struct
+  module View = struct
+    module Role = struct
+      type t =
+        | Pdk_configuration
+        | Technology_lef
+        | Standard_cell_lef
+        | Standard_cell_gds
+        | Standard_cell_verilog
+        | Standard_cell_liberty
+      [@@deriving compare, equal, sexp_of]
+    end
+
+    type t =
+      { role : Role.t
+      ; path : string
+      ; corner : string option
+      }
+    [@@deriving compare, equal, sexp_of]
+  end
+
+  open View.Role
+
+  let corner = "nom_typ_1p20V_25C"
+  let routing_layers = [ "Metal2"; "Metal3"; "Metal4" ]
+  let top_routing_layer = "Metal4"
+  let pdk = "ihp-sg13cmos5l"
+  let stdcell = "libs.ref/sg13cmos5l_stdcell"
+  let standard_cell_power_pins = "VDD", "VSS"
+
+  let views =
+    let view ?corner role path = { View.role; path; corner } in
+    [ view Pdk_configuration "libs.tech/librelane/config.tcl"
+    ; view Technology_lef (stdcell ^ "/lef/sg13cmos5l_tech.lef")
+    ; view Standard_cell_lef (stdcell ^ "/lef/sg13cmos5l_stdcell.lef")
+    ; view Standard_cell_gds (stdcell ^ "/gds/sg13cmos5l_stdcell.gds")
+    ; view Standard_cell_verilog (stdcell ^ "/verilog/sg13cmos5l_stdcell.v")
+    ; view
+        ~corner
+        Standard_cell_liberty
+        (stdcell ^ "/lib/sg13cmos5l_stdcell_typ_1p20V_25C.lib")
+    ]
+  ;;
+end
 
 (* The main sauce here for technologies; given a request, return the mapping for exactly
    that request, if the technology has one;

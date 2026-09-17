@@ -13,9 +13,14 @@ tasks, dependencies, and completion criteria.
 The [program-memory contract](docs/program-memory-contract.md) specifies the
 first resource, `Single_port_ram`.
 
-The project lifecycle and registered single-port RAM are implemented and tested
-([phase plan P0–P1](docs/phase_plan.md)). The RAM has a diagnostic behavioral
+The project lifecycle, registered single-port RAM, validated TT/CMOS5L
+target and flow configuration, and deterministic bundle emission are implemented
+and tested ([phase plan P0–P3](docs/phase_plan.md)). The RAM has a diagnostic behavioral
 model and explicitly selected synthesizable flop storage; run the
-[memory example](docs/memory-example.md) without a PDK. Target resolution,
-bundle emission, and flow execution are planned. Physical SRAM support requires
+[memory example](docs/memory-example.md) without a PDK. The
+[target reference](docs/target-reference.md) records the supported `6x4` pair,
+wrapper boundary, and timing/configuration ownership. The
+[bundle guide](docs/bundle-emission.md) emits TT/LibreLane inputs for observable
+and registered-memory examples. Flow execution remains planned.
+Physical SRAM support requires
 a separate capability investigation.

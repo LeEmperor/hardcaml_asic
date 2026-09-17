@@ -12,6 +12,11 @@
   verification obligations, and project integration for `Single_port_ram`.
 - [Registered memory example](memory-example.md): PDK-free simulation,
   implementation elaboration, selection outcomes, and optional generated RTL test.
+- [TT/CMOS5L target reference](target-reference.md): pinned `6x4` geometry,
+  floorplan, technology views, source revisions, wrapper interface, and
+  timing/configuration ownership for P2.
+- [Bundle emission](bundle-emission.md): P3 commands, TT staging layout,
+  manifest/source sets, and verification boundary.
 - [Comment and formatting guidelines](comment_guidelines.md): header, doc comment,
   alignment and error message conventions, with a table of reference files in `lib/`
   for each kind of example.

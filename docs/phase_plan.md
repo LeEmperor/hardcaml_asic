@@ -1,7 +1,7 @@
 # hardcaml_asic phase plan
 
-Status: working implementation plan, 2026-09-17. P0 and P1 tasks have evidence;
-P2–P5 and the separate SRAM investigation remain open.
+Status: working implementation plan, 2026-09-17. P0–P3 have evidence;
+P4–P5 and the separate SRAM investigation remain open.
 
 ## 1. Purpose and use
 
@@ -43,8 +43,10 @@ memory implementation, technology binding, or flow adapter existed.
 After P1, the project lifecycle, elaboration context, resource identity, selection
 policy, immutable build, and registered single-port RAM exist. The behavioral
 model and explicit flop implementation pass contract checks, including a generated
-RTL simulation. No target resolution (P2), bundle emission (P3), or flow execution
-(P4) exists.
+RTL simulation. No target resolution, bundle emission (P3), or flow execution
+(P4) existed at that checkpoint. P2 now provides a separate validated
+`Resolved_build` boundary for TT/LibreLane emission. P3 now emits TT bundles;
+flow execution and results (P4) remain open.
 
 ## 2. Phase map and dependencies
 
@@ -82,8 +84,8 @@ The useful intermediate milestones are:
    fixture, resolving naming and selection interfaces through that example.
 2. P1.1–P1.3: connect the real RAM constructor and make behavioral/flop memory
    work. Start the P1.4 conformance suite alongside those implementations.
-3. P2.1–P2.4: bind the reference target and implement the actual constraint and
-   override subset needed by its existing flow.
+3. P2.1–P2.5: bind the reference target and implement the actual interface,
+   constraint, override, and adapter capability subset needed by its existing flow.
 4. P3.1–P3.4: emit and validate the first complete bundle; begin P5.1/P5.2 adoption.
 5. P4 and the remaining P5 tasks: execute, collect evidence, fix integration
    failures, and reproduce the consumer path from its recorded dependencies.
@@ -150,8 +152,8 @@ OCaml interfaces here without freezing a broad public framework.
   *Done:* [`Build`](../lib/build.mli) is abstract and inspectable (`sexp_of_t`),
   holding metadata, mode, target selection, declared clocks, the resource
   inventory, and adapter identity/operation/settings (LibreLane overrides with
-  required reasons). The target is the declared selection; resolved target fields
-  arrive with P2.1 and validated constraints with P2.3. Evidence: the lifecycle
+  required reasons). The target is the declared selection; P2 resolution returns
+  a separate `Resolved_build` with target and validated constraints. Evidence: the lifecycle
   build print and retained-context test in
   [`test_lifecycle.ml`](../test/test_lifecycle.ml).
 
@@ -237,39 +239,77 @@ portable resource usage, not SRAM macro support or physical area/timing results.
 [toolchain lock](../../scaf/tinytapeout/toolchain.lock) as reference inputs;
 record the revisions actually adopted rather than assuming upstream defaults.
 
-- [ ] **P2.1 — Implement separate TT harness and CMOS5L technology descriptions.**
+- [x] **P2.1 — Implement separate TT harness and CMOS5L technology descriptions.**
   Resolve supported combinations, tile geometry, floorplan templates, power
   connections, and permitted routing layers. Record library/view references and
   revisions with their roles and applicable corners. Evidence: the reference
   combination resolves deterministically; unsupported combinations or missing
   required target inputs fail. Resolution does not fetch or bootstrap a PDK.
-- [ ] **P2.2 — Validate the elaborated top-level interface.** Check required
+  *Done:* [`Target.resolve`](../lib/target.mli) accepts the pinned `6x4` TT / CMOS5L
+  pair and returns geometry, DEF reference and hash, power pins, routing range,
+  corner, and role-labelled PDK views. [`Technology.Cmos5l`](../lib/technology.mli)
+  holds standard-cell views separately from resource capability, with no SRAM
+  mapping. [`test_target.ml`](../test/test_target.ml) checks repeatability,
+  unsupported pairs, and missing/malformed target inputs. The adopted revisions
+  and source references are in the [target reference](target-reference.md).
+- [x] **P2.2 — Validate the elaborated top-level interface.** Check required
   names, widths, directions, and metadata against the harness. Evidence: the
   reference wrapper passes and malformed interfaces fail with precise diagnostics.
   Wrapper reset/disable behavior and pin arbitration remain consumer logic.
-- [ ] **P2.3 — Implement the first typed constraint subset.** Inventory the clocks
+  *Done:* [`Resolved_build.validate_interface`](../lib/resolved_build.ml) checks
+  the TT wrapper's exact input/output names, directions, and widths, including
+  Hardcaml phantom inputs; TT metadata requires a nonblank author/description and
+  all 24 [pin descriptions](../lib/pinout.ml). The TT-shaped Hardcaml wrapper and
+  malformed width/direction/metadata cases are in
+  [`test_resolved_build.ml`](../test/test_resolved_build.ml).
+- [x] **P2.3 — Implement the first typed constraint subset.** Inventory the clocks
   and timing assumptions required by the reference flow, settle endpoint identity
   and unit conversion, then implement that subset and its validation. Evidence:
   declared clocks resolve against the elaborated interface; malformed units or
   endpoints and unsupported intent fail; every required reference constraint has
   an identified owner and rendering path. Do not expand to all SDC commands.
-- [ ] **P2.4 — Resolve flow defaults and overrides.** Add LibreLane key/JSON/reason
+  *Done:* [`Clock`](../lib/clock.ml) uses a floating span to retain the 48 MHz
+  fractional-nanosecond period. [`Timing`](../lib/timing.ml) declares optional
+  maximum I/O delays; [`Resolved_build`](../lib/resolved_build.ml) requires one
+  clock on `clk`, validates endpoint direction and finite nonnegative delays,
+  rejects duplicates/additional clocks, and converts to nanoseconds and hertz.
+  The [target reference](target-reference.md#validated-ttlibrelane-build) assigns
+  `CLOCK_PORT`/`CLOCK_PERIOD`, TT `clock_hz`, and future SDC rendering to their
+  owners. Tests cover 48 MHz, invalid endpoints, and malformed delays.
+- [x] **P2.4 — Resolve flow defaults and overrides.** Add LibreLane key/JSON/reason
   overrides tied to the adapter. Distinguish defaults from generated source lists,
   clocks, target geometry, power, and resource-owned collateral. Evidence: the
   reference project's required settings are representable, permitted overrides
   retain provenance, and conflicting protected assignments fail. A raw `MACROS`
   setting cannot silently replace registered resources.
-- [ ] **P2.5 — Validate adapter capabilities.** Define the initial supported
+  *Done:* [`Flow`](../lib/flow.ml) rejects malformed keys, non-JSON values, and
+  missing reasons. [`Resolved_build`](../lib/resolved_build.ml) produces sorted
+  settings owned by design, target, clock, default, or reasoned override. Tests
+  cover the pinned consumer's configurable keys and conflicts on generated
+  sources, target facts, clocks, SDC paths, and `MACROS`.
+- [x] **P2.5 — Validate adapter capabilities.** Define the initial supported
   operation and required constraints/source/view roles separately from technology
   resource capability. Evidence: unsupported adapter/target/operation combinations,
   unavailable required views, and settings for the wrong adapter are rejected
   before runnable inputs are emitted. A future operation can have different
   outputs without making GDS a mandatory field of every result.
+  *Done:* `Project.elaborate_for_flow` combines implementation elaboration and
+  validation. LibreLane synthesis and hardening have separate required view
+  roles; hardening requires cell GDS, synthesis does not. Simulation builds,
+  missing views, missing synthesis source roles, and macro selections fail at
+  this boundary. A LibreLane setting belongs to the LibreLane adapter by type;
+  there is no other adapter in this initial API. The capability cases are in
+  [`test_resolved_build.ml`](../test/test_resolved_build.ml).
 
 **Exit gate:** the reference target and required configuration resolve from one
 declaration, interface/constraint checks pass, and unsupported or conflicting
 requests fail before emission. No physical SRAM capability is inferred from
 standard-cell technology support or the presence of a PDK.
+
+*Gate met, 2026-09-17:* `dune build` and `dune runtest` pass, including TT-shaped
+wrapper validation, target/view failures, clock conversion, configuration
+ownership, and adapter capability checks. No bundle or physical-tool result is
+claimed; those are P3/P4.
 
 ## 6. P3 — Deterministic build bundle
 
@@ -277,18 +317,31 @@ standard-cell technology support or the presence of a PDK.
 The [build artifact rules](architecture.md#7-build-artifacts-and-provenance) govern
 the output; exact staging paths follow the pinned TT tools.
 
-- [ ] **P3.1 — Emit RTL and explicit source sets.** Render the named top and
+- [x] **P3.1 — Emit RTL and explicit source sets.** Render the named top and
   dependencies from the finalized build. Separate synthesis sources, simulation
   sources/models, and any required wrappers or black boxes. Evidence: each source
   set compiles independently, no duplicate module definitions occur, and the flop
   example's synthesis bundle contains no behavioral poison initialization.
-- [ ] **P3.2 — Render constraints and TT flow inputs.** Generate SDC, resolved
+  *Done:* [`Bundle.render`](../lib/bundle.mli) emits the flattened implementation
+  top under `src/` and the separately elaborated behavioral model under
+  `simulation/`. Each manifest source set names one path. The
+  [bundle regression](../test/check_bundle.py) compiles and simulates both sets
+  independently with [Icarus testbench](../test/tt_bundle_tb.v), and checks the
+  synthesis memory RTL has no behavioral initialization.
+- [x] **P3.2 — Render constraints and TT flow inputs.** Generate SDC, resolved
   LibreLane configuration, and TT metadata from the declaration/build. Populate
   source lists, top, tiles, clock information, author/description, and pin meanings
   from their owning fields. Evidence: generated files agree on names, paths, and
   units and satisfy the pinned staging/configuration checks; no second editable
   metadata source or undocumented manual patch is needed.
-- [ ] **P3.3 — Emit immutable provenance.** Define the initial manifest format
+  *Done:* [`Bundle`](../lib/bundle.ml) writes typed clock and optional maximum
+  I/O delays to SDC, sorted resolved settings plus protected source/SDC paths to
+  `src/config.json`, and `info.yaml` from the same metadata, pinout, clock, top,
+  and source list. The directory and `dir::` paths follow the pinned TT
+  `project.py:create_user_config` layout. The regression checks top/source/clock
+  agreement, `6x4` die area, and rendered delays. The
+  [emission guide](bundle-emission.md) describes the staging boundary.
+- [x] **P3.3 — Emit immutable provenance.** Define the initial manifest format
   and its version, including source revision plus dirty/untracked input hashes,
   generated RTL, selected resources, source roles, collateral/target revisions,
   adapter/operation, resolved settings, override reasons, and requested tools.
@@ -296,21 +349,45 @@ the output; exact staging paths follow the pinned TT tools.
   identical inputs yield identical ordered bundle/manifest content; changed input
   content changes identity, including uncommitted changes. Run timestamps and
   actual execution details belong to separate records.
-- [ ] **P3.4 — Provide one documented emission command.** Add a small CLI/example
+  *Done:* `manifest.json` schema 1 has a SHA-256 identity, ordered file hashes,
+  source revision, Git status and copied bytes for each declared source input,
+  source sets, resource requests/selections/roles, target references/revisions,
+  resolved setting ownership and override reasons, adapter/operation, and pinned
+  requested tool versions. The flop path has no macro collateral; standard-cell
+  PDK views remain external revision/path references for P4 preflight, while the
+  floorplan has a pinned hash. The regression proves stable manifests and changed
+  identity for tracked edits and new untracked inputs.
+- [x] **P3.4 — Provide one documented emission command.** Add a small CLI/example
   entry point for the observable design and memory example. It emits the bundle
   without launching EDA tools and diagnoses unavailable inputs. Evidence: the
   documented commands recreate the bundle in a clean output directory using
   declared inputs and do not depend on the workspace's sibling checkout names.
-- [ ] **P3.5 — Verify the complete emitted example.** Exercise declaration,
+  *Done:* [`tt_bundle_example.ml`](../examples/tt_bundle_example.ml) provides
+  `observable` and `memory` commands in the [guide](bundle-emission.md), with an
+  optional explicit source root. It uses no sibling checkout path. Missing source
+  inputs and nonempty output directories fail; the regression covers the former.
+- [x] **P3.5 — Verify the complete emitted example.** Exercise declaration,
   registration, target resolution, emission, and generated-RTL simulation together.
   Check that output files match their recorded hashes and that source/collateral
   references resolve. Evidence: both examples have reproducible generation and
   functional RTL checks, with targeted regression coverage for ownership errors.
+  *Done:* [`dune runtest`](../test/dune) emits both declarations in a temporary
+  Git repository, checks every bundle/source hash and referenced source path,
+  repeats emission byte-for-byte, and runs the synthesis and simulation RTL
+  benches when Icarus is installed. It checks the flop selection and the absence
+  of a macro collateral requirement. Configuration ownership error cases remain
+  in [`test_resolved_build.ml`](../test/test_resolved_build.ml). External PDK file
+  availability is the explicit P4.1 preflight, not an ordinary bundle test.
 
 **Exit gate / M2:** an independent script can consume complete, validated inputs
 for the registered flop-memory example. Emission and simulation work without
 running physical tools. A generated configuration alone does not establish that
 the physical flow accepts it; that evidence is P4.
+
+*Gate met, 2026-09-17:* `dune build` and `dune runtest` pass. The independent
+bundle checker consumes both emitted examples, verifies hashes and TT file/path
+agreement, and simulates both source sets with Icarus on this machine. P4 still
+owns installed PDK checks and physical-tool acceptance.
 
 ## 7. P4 — Execution, results, and physical integration
 

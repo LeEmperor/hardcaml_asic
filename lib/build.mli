@@ -5,14 +5,14 @@
 
    A build can be inspected without running any tool. It keeps portable design intent
    (metadata, target selection, clocks, resource inventory) separate from adapter
-   settings. It is NOT a LibreLane configuration; adapters render one from it (P3).
+   settings. It is NOT a LibreLane configuration; {!Bundle.render} renders one.
 
    Nothing can be added to a build after finalization: the elaboration context that
    produced it is closed. A failed elaboration produces no build at all.
 
-   The TT/LibreLane resolution result is a separate {!Resolved_build.t}; emission
-   and provenance (P3) are not yet present. The circuit is flattened for now;
-   hierarchical RTL emission is a P3 decision.
+   The TT/LibreLane resolution result is a separate {!Resolved_build.t}. The
+   bundle renderer consumes that validated result and emits flattened RTL and
+   provenance. Hierarchical RTL emission is deferred.
 *)
 
 open! Core

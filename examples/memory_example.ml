@@ -53,7 +53,7 @@ let make_project requirement =
     ~design:(module Design)
     ~target:{ harness = Tiny_tapeout { tiles = T1x1 }; technology = Technology.ihp_sg13cmos5l }
     ~flow:(Flow.librelane Hardening)
-    ~clocks:[ { port = "clock"; period = Time_ns.Span.of_int_ns 20 } ]
+    ~clocks:[ { port = "clock"; period = Time_float.Span.of_ns 20. } ]
     ~policy
     ()
   |> Or_error.ok_exn

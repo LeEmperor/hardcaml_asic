@@ -538,7 +538,7 @@ let validate_list clocks =
   (* Who is invalid out of the clock defs? *)
   let invalid =
     List.filter clocks ~f:(fun { port; period } ->
-      String.is_empty port || Time_ns.Span.( <= ) period Time_ns.Span.zero)
+      String.is_empty port || Time_float.Span.( <= ) period Time_float.Span.zero)
   in
 
   (* Are there any dups? *)

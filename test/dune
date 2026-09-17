@@ -13,3 +13,9 @@
  (libraries core expect_test_helpers_core hardcaml hardcaml_asic)
  (preprocess
   (pps ppx_hardcaml ppx_jane)))
+
+(rule
+ (alias runtest)
+ (deps check_bundle.py tt_bundle_tb.v ../dune-project (source_tree ../lib) (source_tree ../examples))
+ (action
+  (run python3 %{dep:check_bundle.py} %{exe:../examples/tt_bundle_example.exe} %{workspace_root})))

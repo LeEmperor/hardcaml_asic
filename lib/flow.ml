@@ -4,8 +4,8 @@
 (* Flow adapter selection, requested operation and adapter-specific settings.
 
    LibreLane overrides are a LibreLane representation, not the core project model.
-   Protected-key conflicts and default resolution are P2 work; declaration validation here
-   only rejects overrides that cannot be meaningful. *)
+   Resolved_build checks protected-key conflicts and resolves defaults. Declaration
+   validation here rejects malformed keys, non-JSON values, and missing reasons. *)
 
 open! Core
 
@@ -34,8 +34,28 @@ module Librelane = struct
 
   let validate { overrides } =
     let blank s = String.is_empty (String.strip s) in
+    let valid_key key =
+      let letter c = Char.(c >= 'A' && c <= 'Z') in
+      let digit c = Char.(c >= '0' && c <= '9') in
+      match String.to_list key with
+      | [] -> false
+      | first :: rest ->
+        (letter first || Char.equal first '_')
+        && List.for_all rest ~f:(fun c -> letter c || digit c || Char.equal c '_')
+    in
+    let rec strict_json : Yojson.Safe.t -> bool = function
+      | `Null | `Bool _ | `Int _ | `String _ -> true
+      | `Float value -> Float.is_finite value
+      | `List values -> List.for_all values ~f:strict_json
+      | `Assoc fields ->
+        Option.is_none
+          (List.find_a_dup fields ~compare:(fun (a, _) (b, _) -> String.compare a b))
+        && List.for_all fields ~f:(fun (_, value) -> strict_json value)
+      | `Intlit _ | `Tuple _ | `Variant _ -> false
+    in
     let invalid =
-      List.filter overrides ~f:(fun (o : Override.t) -> blank o.key || blank o.reason)
+      List.filter overrides ~f:(fun (o : Override.t) ->
+        not (valid_key o.key) || blank o.reason || not (strict_json o.value))
     in
     let duplicate =
       List.find_a_dup overrides ~compare:(fun (a : Override.t) b ->
@@ -47,7 +67,7 @@ module Librelane = struct
          | _ :: _ ->
            Or_error.error_s
              [%message
-               "LibreLane overrides need a key and a nonempty reason"
+               "LibreLane overrides need an uppercase key, strict JSON value, and nonempty reason"
                  (invalid : Override.t list)])
       ; (match duplicate with
          | None -> Ok ()

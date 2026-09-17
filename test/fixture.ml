@@ -132,7 +132,7 @@ let project
     ~design
     ~target:{ harness = Tiny_tapeout { tiles = T1x1 }; technology }
     ~flow
-    ~clocks:[ { port = "clock"; period = Time_ns.Span.of_int_ns 20 } ]
+    ~clocks:[ { port = "clock"; period = Time_float.Span.of_ns 20. } ]
     ~policy
     ()
 ;;

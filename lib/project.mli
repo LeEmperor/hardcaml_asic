@@ -14,8 +14,9 @@
    v}
 
    Elaboration never invokes an external tool. Each call is independent: a failed
-   elaboration leaves nothing behind for the next one. Target resolution and top-level
-   interface/constraint validation (P2) will run at finalization.
+   elaboration leaves nothing behind for the next one. [elaborate_for_flow]
+   applies target, interface, constraint, and adapter validation to an
+   implementation build before flow emission.
 *)
 
 open! Core
@@ -67,6 +68,8 @@ val create
   -> target:Target.t
   -> flow:Flow.t
   -> ?clocks:Clock.t list
+  -> ?pinout:Pinout.t
+  -> ?timing:Timing.t
   -> policy:Resource_policy.t
   -> unit
   -> t Or_error.t
@@ -76,4 +79,8 @@ val name : t -> string
 
 (* Of a type t, retrieve an elaboration mode item and return a build error shape; *)
 val elaborate : t -> mode:Elaboration_mode.t -> Build.t Or_error.t
+
+(** Elaborate the selected implementation and validate the TT/LibreLane target,
+    wrapper, timing, metadata, and configuration before emission. *)
+val elaborate_for_flow : ?inputs:Target.Inputs.t -> t -> Resolved_build.t Or_error.t
 [@@@ocamlformat "enable"]

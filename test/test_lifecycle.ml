@@ -32,6 +32,10 @@ let%expect_test "declaration to finalized implementation build" =
      (clocks ((
        (port   clock)
        (period 20ns))))
+     (pinout ())
+     (timing (
+       (input_delays  ())
+       (output_delays ())))
      (resources (
        ((id left/buf)
         (request ((kind fixture_store) (contract ((width 8)))))
@@ -282,7 +286,7 @@ let%expect_test "invalid declarations produce diagnostics before elaboration" =
     {|
     (Error (
       ("invalid project declaration" (name fixture))
-      ("LibreLane overrides need a key and a nonempty reason"
+      ("LibreLane overrides need an uppercase key, strict JSON value, and nonempty reason"
        (invalid ((
          (key    PL_TARGET_DENSITY_PCT)
          (value  60)

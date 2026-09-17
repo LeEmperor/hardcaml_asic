@@ -27,6 +27,8 @@ type t =
   ; target    : Target.t
   ; flow      : Flow.t
   ; clocks    : Clock.t list
+  ; pinout    : Pinout.t
+  ; timing    : Timing.t
   ; policy    : Resource_policy.t
   }
 
@@ -37,6 +39,8 @@ let create
     ~target
     ~flow
     ?(clocks = [])
+    ?(pinout = [])
+    ?(timing = Timing.empty)
     ~policy ()
   =
   (* Glorified validation function on all of the inputs;
@@ -77,6 +81,8 @@ let create
   ; target
   ; flow
   ; clocks
+  ; pinout
+  ; timing
   ; policy
   }
 ;;
@@ -139,6 +145,8 @@ let elaborate t ~mode =
       ~target:t.target
       ~flow:t.flow
       ~clocks:t.clocks
+      ~pinout:t.pinout
+      ~timing:t.timing
       ~resources
       ~circuit
 
@@ -149,5 +157,11 @@ let elaborate t ~mode =
       For example, a Project.t is the only person that is *supposed* to make a Built.t and own an Context.t
       "Private" simply tells other people *you really shouldn't be touching this*.
   *)
+;;
+
+let elaborate_for_flow ?inputs t =
+  let%bind.Or_error build = elaborate t ~mode:Elaboration_mode.Implementation in
+  Resolved_build.resolve ?inputs build
+  |> Or_error.tag_s ~tag:[%message "flow resolution failed" ~project:t.name]
 ;;
 [@@@ocamlformat "enable"]

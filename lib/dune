@@ -5,6 +5,6 @@
 
 (library
  (name hardcaml_asic)
- (libraries core hardcaml yojson)
+ (libraries core hardcaml yojson cryptokit unix)
  (preprocess
   (pps ppx_jane)))

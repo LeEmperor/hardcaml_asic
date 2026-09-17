@@ -8,8 +8,8 @@
    it unchanged so harness specific outputs (for example the TT info.yaml) are rendered
    from this one declaration rather than maintained separately next to it;
 
-   It does NOT render any harness output, that is the harness integration's job, and it
-   does NOT yet describe pins; pin meanings arrive with P2.
+   It does NOT render any harness output, that is the harness integration's job. TT
+   pin meanings are declared separately in Project.pinout and validated with it.
 *)
 
 open! Core

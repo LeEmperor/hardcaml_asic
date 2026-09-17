@@ -11,7 +11,7 @@
 
    Capability describes what is possible. Project policy ({!Resource_policy}) decides what
    is acceptable, and {!Selection} is where the two meet. Tile geometry, layers, corners
-   and library views are resolved in phase P2 and are not represented yet. *)
+   and library views are described separately by {!Cmos5l} for target resolution. *)
 
 open! Core
 
@@ -64,12 +64,46 @@ type t = private
     Raises, with the technology name and the request, if two mappings claim the same
     request: selection would be ambiguous. Requests are compared exactly, so two contracts
     that mean the same thing but are written differently are NOT caught (see
-    {!exact_mapping}). *)
+    {!exact_mapping}). The name [ihp-sg13cmos5l] is reserved for the built-in
+    reference technology. *)
 val create_exn : name:string -> resource_mappings:Resource_mapping.t list -> t
 
 (** IHP SG13 CMOS5L standard cells. No resource mappings: no SRAM macro has been
     established for this technology (see docs/program-memory-contract.md section 8). *)
 val ihp_sg13cmos5l : t
+
+(** Standard-cell views and routing limits for the pinned CMOS5L reference. Paths
+    are relative to the [ihp-sg13cmos5l] PDK directory. Presence and suitability
+    for a requested flow operation are checked separately; this description does
+    not claim an SRAM capability. *)
+module Cmos5l : sig
+  module View : sig
+    module Role : sig
+      type t =
+        | Pdk_configuration
+        | Technology_lef
+        | Standard_cell_lef
+        | Standard_cell_gds
+        | Standard_cell_verilog
+        | Standard_cell_liberty
+      [@@deriving compare, equal, sexp_of]
+    end
+
+    type t =
+      { role : Role.t
+      ; path : string
+      ; corner : string option
+      }
+    [@@deriving compare, equal, sexp_of]
+  end
+
+  val pdk : string
+  val corner : string
+  val routing_layers : string list
+  val top_routing_layer : string
+  val standard_cell_power_pins : string * string
+  val views : View.t list
+end
 
 (** The mapping whose request equals [request], or [None].
 
