@@ -10,9 +10,9 @@
    Nothing can be added to a build after finalization: the elaboration context that
    produced it is closed. A failed elaboration produces no build at all.
 
-   Not yet present: the resolved target and validated constraints (P2), and emitted
-   artifacts and provenance (P3). The circuit is flattened for now; hierarchical RTL
-   emission is a P3 decision.
+   The TT/LibreLane resolution result is a separate {!Resolved_build.t}; emission
+   and provenance (P3) are not yet present. The circuit is flattened for now;
+   hierarchical RTL emission is a P3 decision.
 *)
 
 open! Core
@@ -29,14 +29,17 @@ val metadata : t -> Metadata.t
 (** The mode passed to {!Project.elaborate}. *)
 val mode : t -> Elaboration_mode.t
 
-(** The declared harness and technology selection. Nothing has checked that the pair is
-    compatible yet (P2). *)
+(** The declared harness and technology selection. Use {!Resolved_build.resolve}
+    or {!Project.elaborate_for_flow} for a checked TT/LibreLane target. *)
 val target : t -> Target.t
 
 val flow : t -> Flow.t
 
-(** The declared clocks. Their ports are not yet checked against the circuit (P2). *)
+(** The declared clocks. Their ports are checked by {!Resolved_build.resolve}. *)
 val clocks : t -> Clock.t list
+
+val pinout : t -> Pinout.t
+val timing : t -> Timing.t
 
 (** Ordered by {!Resource_id.compare}, independent of registration order. *)
 val resources : t -> Resource_record.t list
@@ -54,6 +57,8 @@ module Private : sig
     -> target:Target.t
     -> flow:Flow.t
     -> clocks:Clock.t list
+    -> pinout:Pinout.t
+    -> timing:Timing.t
     -> resources:Resource_record.t list
     -> circuit:Circuit.t
     -> t

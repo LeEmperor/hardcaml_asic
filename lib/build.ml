@@ -10,8 +10,8 @@
    prints it through [sexp_of_t] (the lifecycle expect tests do this).
 
    It does NOT validate anything; every field arrives already checked, by Project.create
-   (metadata, clocks, flow) or by the elaboration context (resources). It does NOT resolve
-   the target or emit files either, that is P2 and P3 work.
+   (metadata, clocks, flow) or by the elaboration context (resources). The separate
+   Resolved_build boundary validates this build for TT/LibreLane before P3 emission.
 *)
 
 open! Core
@@ -27,6 +27,8 @@ open! Hardcaml
    target       : the declared harness and technology selection, NOT a resolved target;
    flow         : adapter identity, operation and adapter settings;
    clocks       : declared clocks, not yet resolved against the circuit's ports;
+   pinout       : descriptive TT pin meanings from the declaration;
+   timing       : typed I/O delay intent from the declaration;
    resources    : the resource inventory, sorted by identity in [Private.create];
    circuit      : the flattened Hardcaml circuit returned by the design constructor;
 *)
@@ -37,6 +39,8 @@ type t =
   ; target       : Target.t
   ; flow         : Flow.t
   ; clocks       : Clock.t list
+  ; pinout       : Pinout.t
+  ; timing       : Timing.t
   ; resources    : Resource_record.t list
   ; circuit      : Circuit.t
   }
@@ -47,7 +51,7 @@ type t =
    Careful: the field order here is the order the lifecycle expect test prints, [top] sits
    right after [project_name]. Reordering is harmless but shows up as an expect diff.
 *)
-let sexp_of_t { project_name; metadata; mode; target; flow; clocks; resources; circuit } =
+let sexp_of_t { project_name; metadata; mode; target; flow; clocks; pinout; timing; resources; circuit } =
   let top = Circuit.name circuit in
   [%sexp
     { project_name : string
@@ -57,6 +61,8 @@ let sexp_of_t { project_name; metadata; mode; target; flow; clocks; resources; c
     ; target       : Target.t
     ; flow         : Flow.t
     ; clocks       : Clock.t list
+    ; pinout       : Pinout.t
+    ; timing       : Timing.t
     ; resources    : Resource_record.t list
     }]
 ;;
@@ -78,6 +84,8 @@ let flow t = t.flow
 
 (* grab the declared clocks *)
 let clocks t = t.clocks
+let pinout t = t.pinout
+let timing t = t.timing
 
 (* grab the resource inventory; already sorted by identity, see [Private.create] *)
 let resources t = t.resources
@@ -105,6 +113,8 @@ module Private = struct
       ~target
       ~flow
       ~clocks
+      ~pinout
+      ~timing
       ~resources (* in whatever order the context hands them over *)
       ~circuit
     =
@@ -112,7 +122,7 @@ module Private = struct
       List.sort resources ~compare:(fun (a : Resource_record.t) b ->
         Resource_id.compare a.id b.id)
     in
-    { project_name; metadata; mode; target; flow; clocks; resources; circuit }
+    { project_name; metadata; mode; target; flow; clocks; pinout; timing; resources; circuit }
   ;;
 end
 [@@@ocamlformat "enable"]
