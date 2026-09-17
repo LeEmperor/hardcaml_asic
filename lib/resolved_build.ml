@@ -68,6 +68,21 @@ module Setting = struct
   ;;
 end
 
+(* One validated I/O delay in nanoseconds, the form Bundle.sdc renders;
+
+   port    : the top-level port, already known to exist in the stated direction;
+   minimum : the earliest change in ns; finite and no greater than [maximum];
+   maximum : the latest settle in ns; finite and nonnegative;
+*)
+module Delay_ns = struct
+  type t =
+    { port    : string
+    ; minimum : float
+    ; maximum : float
+    }
+  [@@deriving sexp_of]
+end
+
 (* The resolved build itself; the build plus everything checked and derived for the flow;
 
    build            : the Implementation build it was resolved from, unchanged;
@@ -75,8 +90,8 @@ end
    clock            : the one primary clock, already known to be on "clk";
    clock_period_ns  : [clock]'s period in nanoseconds, fractions kept;
    clock_hz         : 1e9 /. [clock_period_ns];
-   input_delays_ns  : (port, maximum ns) per input delay, sorted by port;
-   output_delays_ns : (port, maximum ns) per output delay, sorted by port;
+   input_delays_ns  : one Delay_ns.t per input delay, sorted by port;
+   output_delays_ns : one Delay_ns.t per output delay, sorted by port;
    settings         : derived settings merged with the overrides, sorted by key, one per
                       key;
 
@@ -90,8 +105,8 @@ type t =
   ; clock            : Clock.t
   ; clock_period_ns  : float
   ; clock_hz         : float
-  ; input_delays_ns  : (string * float) list
-  ; output_delays_ns : (string * float) list
+  ; input_delays_ns  : Delay_ns.t list
+  ; output_delays_ns : Delay_ns.t list
   ; settings         : Setting.t list
   }
 
@@ -226,20 +241,23 @@ let validate_interface circuit =
 let span_ns span = Time_float.Span.to_sec span *. 1e9
 
 (* Resolve the declared clock and I/O delays against the elaborated ports; returns the
-   clock, its period in nanoseconds and both delay lists as (port, maximum ns), sorted by
-   port; returns Or_error rather than raising since [resolve] binds it after its other
-   checks;
+   clock, its period in nanoseconds and both delay lists as Delay_ns.t, sorted by port;
+   returns Or_error rather than raising since [resolve] binds it after its other checks;
 
    1. exactly one clock, on "clk" -> otherwise error, and no delay is checked at all;
    2. per delay list, every delay whose maximum is not finite or is negative -> error;
-   3. otherwise, every delay on "clk" or on a port not in that direction -> error;
-   4. a port delayed more than once in the same list -> error; only the first repeat
+   3. otherwise, every delay whose minimum is not finite or exceeds its maximum -> error;
+   4. otherwise, every delay on "clk" or on a port not in that direction -> error;
+   5. a port delayed more than once in the same list -> error; only the first repeat
       found is reported;
-   5. no errors -> sort by port and convert each maximum to nanoseconds;
+   6. no errors -> sort by port and convert both bounds to nanoseconds;
 
-   Steps 2 to 4 run for both lists, and every problem found is reported in one combined
-   error. Steps 2 and 3 are one if/else chain, so a delay with both a bad maximum and a
-   bad port only reports the maximum.
+   Steps 2 to 5 run for both lists, and every problem found is reported in one combined
+   error. Steps 2 to 4 are one if/else chain, so a delay with a bad bound and a bad port
+   only reports the bound.
+
+   A negative minimum is accepted on purpose: it is how SDC models an output feeding a
+   receiver with a hold time, or an input that may change before the clock edge.
 
    NOT checked: a maximum longer than the clock period, and a delay on a phantom input
    (those are real wrapper ports, see [ports]); both are accepted as declared.
@@ -263,12 +281,13 @@ let validate_timing build =
   let period_ns = span_ns clock.period in
   let timing = Build.timing build in
 
-  (* Steps 2 to 5 for one direction; [actual] is that direction's (name, width) ports *)
+  (* Steps 2 to 6 for one direction; [actual] is that direction's (name, width) ports *)
   let check_delays direction actual delays =
 
-    (* Steps 2 and 3; one error per bad delay *)
+    (* Steps 2 to 4; one error per bad delay *)
     let errors =
       List.filter_map delays ~f:(fun (delay : Timing.Delay.t) ->
+        let minimum_ns = span_ns delay.minimum in
         let maximum_ns = span_ns delay.maximum in
         if (not (Float.is_finite maximum_ns)) || Float.(maximum_ns < 0.)
         then
@@ -276,6 +295,14 @@ let validate_timing build =
             (Or_error.error_s
                [%message
                  "timing delay must be finite and nonnegative"
+                   (direction : string)
+                   (delay : Timing.Delay.t)])
+        else if (not (Float.is_finite minimum_ns)) || Float.(minimum_ns > maximum_ns)
+        then
+          Some
+            (Or_error.error_s
+               [%message
+                 "timing delay minimum must be finite and no greater than its maximum"
                    (direction : string)
                    (delay : Timing.Delay.t)])
         else if String.equal delay.port "clk"
@@ -291,7 +318,7 @@ let validate_timing build =
         else None)
     in
 
-    (* Step 4; compares [port] only, so the same port with two maximums is a duplicate *)
+    (* Step 5; compares [port] only, so the same port with two bounds is a duplicate *)
     let duplicate =
       List.find_a_dup delays ~compare:(fun a b -> String.compare a.port b.port)
     in
@@ -309,10 +336,14 @@ let validate_timing build =
         :: errors
     in
 
-    (* Step 5 *)
+    (* Step 6 *)
     let%map.Or_error () = Or_error.combine_errors_unit errors in
     List.sort delays ~compare:(fun a b -> String.compare a.port b.port)
-    |> List.map ~f:(fun delay -> delay.port, span_ns delay.maximum)
+    |> List.map ~f:(fun (delay : Timing.Delay.t) ->
+      { Delay_ns.port = delay.port
+      ; minimum       = span_ns delay.minimum
+      ; maximum       = span_ns delay.maximum
+      })
   in
 
   (* let%map ... and combines the errors of both lists, rather than stopping at inputs *)

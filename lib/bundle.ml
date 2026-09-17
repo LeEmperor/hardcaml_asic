@@ -172,7 +172,7 @@ let read_input ~source_root path =
       In_channel.read_all full))
 ;;
 
-(* Render constraints/top.sdc; one clock plus a max delay per declared I/O delay;
+(* Render constraints/top.sdc; one clock plus a max and a min line per declared I/O delay;
 
    The clock name and port are both hardcoded to "clk"; that is safe because
    Resolved_build.validate_timing only accepts exactly one clock, on "clk". Delays arrive
@@ -181,18 +181,25 @@ let read_input ~source_root path =
    Numbers print with "%.17g", enough digits to round trip any float exactly, so the SDC
    period is the same number as CLOCK_PERIOD in config.json (test/check_bundle.py checks
    this) rather than a rounded neighbour;
+
+   Both bounds are always written. A "-max" line alone leaves hold unconstrained, so STA
+   finds no hold paths and the resizer inserts no hold buffers (see Timing);
 *)
 let sdc (resolved : Resolved_build.t) =
 
   let number value = Printf.sprintf "%.17g" value in
 
-  (* One "set_<direction>_delay" line for a (port, maximum ns) pair *)
-  let delay direction (port, maximum) =
-    Printf.sprintf
-      "set_%s_delay -max %s -clock clk [get_ports {%s}]\n"
-      direction
-      (number maximum)
-      port
+  (* The "-max" then "-min" "set_<direction>_delay" lines for one resolved delay *)
+  let delay direction ({ port; minimum; maximum } : Resolved_build.Delay_ns.t) =
+    let line bound value =
+      Printf.sprintf
+        "set_%s_delay %s %s -clock clk [get_ports {%s}]\n"
+        direction
+        bound
+        (number value)
+        port
+    in
+    line "-max" maximum ^ line "-min" minimum
   in
 
   Printf.sprintf
