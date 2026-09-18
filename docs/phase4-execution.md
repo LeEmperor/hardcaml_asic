@@ -33,6 +33,26 @@ when a check fails, when a run did not complete, or when a timing mode was left
 unconstrained. The `phase4.py` subcommands below remain the interface; the two
 scripts only drive them.
 
+`flow.sh` ends with a summary: how long each step took, the end-to-end wall
+time, and the absolute path of every record and log the invocation produced —
+bundle, preflight report, run record, execution log, results, postcheck record
+and log, precheck reports, and the LibreLane run directory. It prints from an
+`EXIT` trap, so a failed or interrupted flow still ends by saying where its
+diagnostics are, and a step that was killed mid-way is listed as `did not
+finish` rather than given a misleading duration. For scale, the reference
+observable bundle is roughly 24 minutes to harden and 8 more to postcheck.
+
+`$OUT` — one bundle and its runs — defaults to `../p4-$KIND`, **outside this
+repository**, and should stay outside it. A completed `full` run directory is
+around 235 MB of OpenROAD, Magic, and KLayout output: ODB and DEF snapshots per
+step, fill insertion, GDS streamout, SPICE extraction. That is tool output, not
+a result, and it does not belong in a git working tree. What belongs in the
+repository is the curated record under [`evidence/`](../evidence): the manifest,
+preflight, run, postcheck, and results JSON, plus the logs and signoff reports
+the acceptance criteria are actually read from — under 200 KB for the run it
+describes. Curate it by hand when a gate closes; the run store is scratch and
+can be deleted once its evidence is extracted.
+
 ## Environment
 
 `./bootstrap.sh` provisions everything the flow needs, pinned by
@@ -77,7 +97,7 @@ RUNS=/absolute/path/to/run-storage
 
 python3 scripts/phase4.py preflight "$BUNDLE" \
   --support-tools "$SUPPORT_TOOLS" --pdk-root "$PDK_ROOT" \
-  --python "$FLOW_PYTHON"
+  --python "$FLOW_PYTHON" --output "$RUNS/preflight.json"
 
 python3 scripts/phase4.py run "$BUNDLE" \
   --support-tools "$SUPPORT_TOOLS" --pdk-root "$PDK_ROOT" \
@@ -95,6 +115,14 @@ version and permits an intentional compatibility run. It does not change the
 requested version in the build manifest. A run prints its `run.json` path even
 if it fails. Its `execution.log` and partial `project/runs/asic` contents remain
 available, and retries receive distinct IDs.
+
+`preflight` prints its report as JSON on stdout, and `--output` writes the same
+report to a file. Use it: the report is the record of why a run was allowed to
+start — every external file hash, the actual tool and container versions, and
+any version waivers — and stdout from a seven-step flow does not survive as
+evidence. `flow.sh` passes it by default and, once the run directory exists,
+copies the report into it as `preflight.json`, so an attempt is self-contained.
+The report is the same structure `run.json` stores under `environment`.
 
 After a completed full run, check TT's layout rules and simulate the final
 gate-level netlist with the observable wrapper testbench:
@@ -140,3 +168,14 @@ unmapped instances and synthesis errors, a standard-cell mapping inventory, and
 the memory bundle's explicit flop selection. A completed full LibreLane run alone
 does not close P4.5: retain the TT precheck and gate-level wrapper check alongside
 the physical reports before marking that gate complete.
+
+Both gates now have records:
+[`evidence/p4/memory-synthesis`](../evidence/p4/memory-synthesis/README.md) for
+P4.4 and
+[`evidence/p4/observable-physical`](../evidence/p4/observable-physical/README.md)
+for P4.5, which closes P4's exit gate. Each is a directory of the small
+immutable records — manifest, preflight, run, postcheck, results — plus an
+archive of the logs and reports its claims are read from, and a note stating the
+result and any waivers. Follow that shape for a new gate. Note that the P4.5 run
+used this repository's own example: it proves the physical path, and it is
+deliberately not reusable as P5.4 consumer-adoption evidence.

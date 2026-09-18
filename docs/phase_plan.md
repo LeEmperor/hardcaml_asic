@@ -1,7 +1,7 @@
 # hardcaml_asic phase plan
 
-Status: working implementation plan, 2026-09-17. P0–P3 and P4.1–P4.4 have
-evidence; P4.5, P5, and the separate SRAM investigation remain open.
+Status: working implementation plan, 2026-09-18. P0–P4 have evidence and P4's
+exit gate is satisfied; P5 and the separate SRAM investigation remain open.
 
 ## 1. Purpose and use
 
@@ -441,13 +441,24 @@ not required to close this phase.
   synthesis check errors were zero. The manifest records explicit flops with no
   macro collateral. The Python launcher/container versions differ from the
   bundle's request and are disclosed in the preflight record.
-- [ ] **P4.5 — Prove the small physical path.** Run the adopted-bundle observable
+- [x] **P4.5 — Prove the small physical path.** Run the adopted-bundle observable
   design through hardening, required physical checks, TT precheck, and gate-level
   wrapper verification. Record constraints, timing outcomes, and check status.
   Evidence: the small design meets its declared acceptance criteria, with commands,
   inputs, logs, and reports sufficient for reproduction. This can use the emulator's
   adopted observable design and count jointly with P5 evidence; a second identical
   physical run is not required merely because two plans reference it.
+  *Done:* the [observable physical record](../evidence/p4/observable-physical/README.md)
+  links the build/run identities, the immutable manifest, preflight, run,
+  postcheck, and structured results, with logs and signoff reports archived
+  beside them. `tt_um_asic_observable` hardened onto the pinned TT 6x4
+  `ihp-sg13cmos5l` tile at 48 MHz: timing passes on all three reported corners
+  (worst setup 15.882 ns, worst hold 0.148 ns, no violations, no unconstrained
+  mode), antenna/DRC/LVS pass, TT precheck passes all nine rows, and gate-level
+  simulation of the final netlist against `test/tt_bundle_tb.v` passes.
+  Inferred latches, unmapped instances, and synthesis errors are zero.
+  This run used the library's own example, so it is P4.5 evidence only; P5.4
+  still needs the consumer's adopted design.
 
 **Exit gate:** the memory example has successful mapped synthesis, the small
 observable design has the physical/check evidence above, and both retain build/run

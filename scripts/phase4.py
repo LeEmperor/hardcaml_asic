@@ -501,6 +501,9 @@ def main():
         p.add_argument("--python", required=True, type=Path)
         p.add_argument("--allow-python-mismatch", action="store_true")
         p.add_argument("--native", action="store_true", help="Use locally installed EDA tools")
+        if name == "preflight":
+            p.add_argument("--output", type=Path,
+                           help="Write the report here as well as to stdout")
         if name == "run":
             p.add_argument("--runs", required=True, type=Path)
             p.add_argument("--stage", choices=("synthesis", "full"), default="synthesis")
@@ -519,6 +522,11 @@ def main():
             result = preflight(args.bundle.resolve(), args.support_tools, args.pdk_root,
                                args.python, args.allow_python_mismatch, args.native)
             print(json.dumps(result, indent=2, sort_keys=True))
+            # The same report as a file, so a run's evidence can keep it: the
+            # report is the reason a run was allowed to start, and stdout from a
+            # seven-step flow does not survive as a record.
+            if args.output:
+                save(args.output, result)
             return 0 if result["ready"] else 1
         if args.action == "run":
             signal.signal(signal.SIGTERM, interrupt_on_terminate)

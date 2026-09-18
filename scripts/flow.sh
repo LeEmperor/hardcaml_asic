@@ -21,6 +21,11 @@
 #   collect    phase4.py collect into $RUN/results.json
 #   report     scripts/report.py, the human summary; nonzero exit on any problem
 #
+# Whatever the steps do, the last thing printed is a summary: how long each step
+# took, the end-to-end wall time, and the absolute path of every record and log
+# the invocation produced. It prints on failure too, so an interrupted run still
+# says where its diagnostics are.
+#
 # Environment, all optional; the defaults are the reference setup:
 #   KIND         observable | memory, the example to emit        (observable)
 #   STAGE        synthesis | full, how far the flow runs         (full)
@@ -87,6 +92,82 @@ RUN=${RUN:-}
 
 say() { printf '\n== %s\n' "$1" >&2; }
 
+# Wall time. SECONDS counts from the start of this shell, which is the start of
+# the flow, so step durations and the end-to-end number come from one source.
+step_names=()
+step_seconds=()
+
+# 1h 02m 03s / 23m 47s / 12s: the leading unit is dropped until it is nonzero,
+# because a seven-hour hardening run and a one-second collect share this column.
+format_duration() {
+  local total=$1
+  if [ "$total" -ge 3600 ]; then
+    printf '%dh %02dm %02ds' $((total / 3600)) $((total % 3600 / 60)) $((total % 60))
+  elif [ "$total" -ge 60 ]; then
+    printf '%dm %02ds' $((total / 60)) $((total % 60))
+  else
+    printf '%ds' "$total"
+  fi
+}
+
+# Every step goes through here, so the summary has a row even for the step that
+# failed: its duration is how long it ran before giving up.
+run_step() {
+  local step=$1 started=$SECONDS status=0
+  step_names+=("$step")
+  step_seconds+=(-1)
+  "step_$step" || status=$?
+  step_seconds[${#step_seconds[@]} - 1]=$((SECONDS - started))
+  return $status
+}
+
+# One line of the summary's path list, skipped when the file is not there: a
+# failed run has no results.json, and naming a path that does not exist reads as
+# an instruction to go look at it.
+summary_path() {
+  [ -e "$2" ] || return 0
+  printf '  %-16s %s\n' "$1" "$2" >&2
+}
+
+# Printed from an EXIT trap, so it is genuinely the last output whether the flow
+# finished, failed a step, or was interrupted.
+summary() {
+  local status=$?
+  [ ${#step_names[@]} -gt 0 ] || return $status
+
+  say "summary"
+  local index
+  for index in "${!step_names[@]}"; do
+    if [ "${step_seconds[index]}" -lt 0 ]; then
+      printf '  %-28s %s\n' "${step_names[index]}" 'did not finish' >&2
+    else
+      printf '  %-28s %10s\n' "${step_names[index]}" \
+        "$(format_duration "${step_seconds[index]}")" >&2
+    fi
+  done
+  printf '  %-28s %10s\n' 'end to end' "$(format_duration $SECONDS)" >&2
+
+  printf '\n' >&2
+  summary_path bundle "$BUNDLE"
+  summary_path preflight "$OUT/preflight.json"
+  if [ -n "$RUN" ]; then
+    summary_path run "$RUN"
+    summary_path 'run record' "$RUN/run.json"
+    summary_path 'execution log' "$RUN/execution.log"
+    summary_path results "$RUN/results.json"
+    summary_path 'flow outputs' "$RUN/project/runs/asic"
+    local check
+    for check in "$RUN"/checks/*/; do
+      summary_path 'postcheck' "${check}postcheck.json"
+      summary_path 'postcheck log' "${check}postcheck.log"
+      summary_path 'precheck reports' "${check}tt/precheck/reports/results.md"
+    done
+  fi
+
+  printf '\n  %s\n' "exit status $status" >&2
+  return $status
+}
+
 # The newest run under $RUNS, by modification time
 latest_run() {
   local newest
@@ -132,8 +213,14 @@ step_emit() {
 step_preflight() {
   need_toolchain
   say "preflight"
+  # --output as well as stdout: the preflight report is the record of why this
+  # run was allowed to start, and it is the P4 evidence shape (every external
+  # hash, the actual tool versions, and any recorded version waivers). Seven
+  # steps of scrollback is not a place to keep it.
+  mkdir -p "$OUT"
   python3 scripts/phase4.py preflight "$BUNDLE" \
-    --support-tools "$TT" --pdk-root "$PDK" --python "$FLOW_PY" "${mismatch[@]}"
+    --support-tools "$TT" --pdk-root "$PDK" --python "$FLOW_PY" "${mismatch[@]}" \
+    --output "$OUT/preflight.json"
 }
 
 step_run() {
@@ -148,6 +235,11 @@ step_run() {
   [ -f "$record" ] || { echo "flow: no run.json printed" >&2; return 1; }
   RUN=$(dirname "$record")
   echo "flow: run directory $RUN" >&2
+  # phase4.py owns the run directory's own records; this is the one thing it
+  # cannot write, because preflight ran before the directory existed. Copying it
+  # in makes the attempt self-contained, which is what gets archived as evidence.
+  [ -f "$OUT/preflight.json" ] && cp "$OUT/preflight.json" "$RUN/preflight.json"
+  return 0
 }
 
 step_postcheck() {
@@ -184,9 +276,17 @@ done
 steps=("$@")
 [ ${#steps[@]} -gt 0 ] || steps=(build emit preflight run postcheck collect report)
 
+# Validate the whole list before running anything: a typo in the last step is
+# worth catching before, not after, a hardening run.
 for step in "${steps[@]}"; do
   case "$step" in
-    build|emit|preflight|run|postcheck|collect|report) "step_$step" ;;
+    build|emit|preflight|run|postcheck|collect|report) ;;
     *) echo "flow: unknown step: $step (try --help)" >&2; exit 2 ;;
   esac
+done
+
+trap summary EXIT
+
+for step in "${steps[@]}"; do
+  run_step "$step"
 done
