@@ -12,10 +12,9 @@
 # happen only with --install, and only ever add: nothing here upgrades, downgrades or
 # recompiles a package another checkout depends on.
 #
-# The dependency list is written out below rather than read from an opam file, because
-# this repository has no opam file; its dependencies live in the (libraries ...) and
-# (pps ...) fields of lib/dune, test/dune and examples/dune. Adding a hardcaml_asic.opam
-# only to hold the list would change how dune treats the project for no other gain.
+# This repository has a generated opam package for consumers. The bootstrap check
+# still names all repo build/test dependencies, including examples and test libraries,
+# because it checks the shared switch without installing the package into it.
 #
 # Careful: the list has to be updated by hand when a dune file gains a library. The cost
 # of missing one is a clear dune error at build time ("Library X not found"), not a wrong

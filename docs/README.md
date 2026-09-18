@@ -17,6 +17,8 @@
   timing/configuration ownership for P2.
 - [Bundle emission](bundle-emission.md): P3 commands, TT staging layout,
   manifest/source sets, and verification boundary.
+- [Consumer installation](consumer-installation.md): one-package Dune/opam setup,
+  revision pinning, external collateral resolution, and separate-project check.
 - [Bootstrapping the toolchain](bootstrap.md): `./bootstrap.sh`, its two layers
   and options, what lands in `.toolchain/`, overriding paths, where the pins live
   and how drift is caught, and what to do when a check fails. Start here on a new

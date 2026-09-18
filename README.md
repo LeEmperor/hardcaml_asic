@@ -31,8 +31,9 @@ wrapper boundary, and timing/configuration ownership. The
 and registered-memory examples. The [Phase 4 execution guide](docs/phase4-execution.md)
 provides external preflight, isolated LibreLane runs, structured result collection,
 and postchecks; `./bootstrap.sh` provisions the pinned toolchain into `.toolchain/`,
-`scripts/flow.sh` runs that sequence end to end, and
-`scripts/report.py` summarizes a finished run (`--help` on any of them). [Mapped synthesis evidence](evidence/p4/memory-synthesis/README.md)
+`scripts/flow.sh` runs that sequence end to end,
+`scripts/report.py` summarizes a finished run, and `scripts/archive.py` writes
+one out as an evidence directory (`--help` on any of them). [Mapped synthesis evidence](evidence/p4/memory-synthesis/README.md)
 exists for the registered-memory example; the full physical exit gate remains open.
 Physical SRAM support requires
 a separate capability investigation.

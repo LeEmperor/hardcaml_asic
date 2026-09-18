@@ -29,3 +29,8 @@
  (alias runtest)
  (deps test_report.py ../scripts/report.py ../scripts/phase4.py)
  (action (run python3 %{dep:test_report.py})))
+
+(rule
+ (alias runtest)
+ (deps test_archive.py ../scripts/archive.py ../scripts/phase4.py)
+ (action (run python3 %{dep:test_archive.py})))

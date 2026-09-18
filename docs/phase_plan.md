@@ -479,12 +479,19 @@ store-consumer logic (P3.1a) is complete, and must land before its P3 exits.
 P5.1 and P5.5 can proceed independently; P5.2–P5.4, and therefore M3, wait on
 that trigger. Do not substitute a library-owned fixture for the consumer evidence.
 
-- [ ] **P5.1 — Make the library consumable from a separate project.** Establish
+- [x] **P5.1 — Make the library consumable from a separate project.** Establish
   the Dune/package installation or pinned dependency mechanism needed by the
   consumer, with version/revision and collateral resolution instructions. Keep
   one initial library package. Evidence: a separately built consumer resolves and
   links the library without relying on a checkout named `../hardcaml_asic`.
   Registry publication is not required.
+  *Done:* [`dune-project`](../dune-project), [`lib/dune`](../lib/dune), and the
+  generated [`hardcaml_asic.opam`](../hardcaml_asic.opam) install one versioned
+  package. [`test/package_consumer_smoke.sh`](../test/package_consumer_smoke.sh)
+  installs to an isolated prefix, builds an unrelated Dune consumer under `/tmp`,
+  and runs it successfully. [`Consumer installation`](consumer-installation.md)
+  gives exact-revision pin and collateral instructions, plus the evidence and
+  uncommitted-source limitation of this check.
 - [ ] **P5.2 — Support emulator P0.6 adoption.** Replace its duplicate configuration
   authority with a declaration for the existing observable design and emulator-owned
   wrapper. Generate target, clock, metadata, source sets, and reasoned overrides.

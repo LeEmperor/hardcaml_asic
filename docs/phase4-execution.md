@@ -179,3 +179,36 @@ archive of the logs and reports its claims are read from, and a note stating the
 result and any waivers. Follow that shape for a new gate. Note that the P4.5 run
 used this repository's own example: it proves the physical path, and it is
 deliberately not reusable as P5.4 consumer-adoption evidence.
+
+### Building one
+
+`scripts/archive.py` writes that shape from a finished run directory:
+
+```sh
+scripts/archive.py RUN_DIR --list                       # the selection, writes nothing
+scripts/archive.py RUN_DIR --output evidence/p4/NAME    # records, reports.tar.gz, archive.json
+```
+
+It copies the immutable records out, tars the logs and reports an acceptance
+decision is read from together with `final/gds` and `final/nl`, and writes
+`archive.json` naming every member, every absence, and the hashes it verified.
+For the P4.5 run that is 111 files, 8.5 MB uncompressed, 0.65 MB archived,
+against a 235 MB run directory.
+
+The final GDS and netlist are included on purpose. Everything else in the archive
+is evidence that a check passed; those two are the run's actual output, the only
+inputs to a precheck or gate-level rerun that cannot be regenerated without
+hardening again, and together they cost about 500 KB compressed. The compiled
+simulator (`checks/*/gate.out`) and the intermediate stage directories — `odb`,
+`mag`, `mag_gds` — stay out: they are rebuildable and nothing reads them.
+
+Every hash the run already pinned is re-checked on the way in: the staged
+manifest against `run.json`, and the GDS, netlist and testbench against
+`postcheck.json`. A mismatch writes nothing and exits nonzero, so an evidence
+directory cannot quietly hold bytes other than the ones the run consumed. An
+absent or empty input is reported rather than skipped, which is how a synthesis
+stage run archives without pretending it has a layout.
+
+The archiver does not write the `README.md` beside the records. That note is the
+human account of what the run showed, and a generated stand-in would read as
+though someone had checked the result.
