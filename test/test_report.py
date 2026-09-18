@@ -4,6 +4,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -103,7 +104,11 @@ class ReportTest(unittest.TestCase):
         for name in ("aaa", "zzz"):
             (runs / name).mkdir(parents=True)
             (runs / name / "run.json").write_text("{}")
-        (runs / "aaa").touch()
+        # Filesystem timestamps are coarse enough that two directories created
+        # in the same tick can tie, so make "aaa" newer explicitly rather than
+        # by touching it.
+        newer = (runs / "zzz").stat().st_mtime_ns + 1_000_000_000
+        os.utime(runs / "aaa", ns=(newer, newer))
         self.assertEqual(report.newest_run(runs).name, "aaa")
 
 

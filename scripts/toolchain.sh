@@ -151,6 +151,52 @@ read_lockfile() {
     info "toolchain root $TOOLCHAIN"
 }
 
+# Does the group list $2 contain the group $1? The lists come from `id -nG`, which is
+# space-separated and unordered, so the surrounding spaces are what keep "docker" from
+# matching "docker-users".
+has_group() { [[ " $2 " == *" $1 "* ]]; }
+
+# Why a socket the user was told to gain access to is still refusing them. Three states
+# look identical in the error text and want opposite advice, so they are separated here:
+# `id -nG` reports the credentials this process is actually running with, while
+# `id -nG "$USER"` re-reads the group database. They disagree precisely when usermod has
+# already run and every process in this login session predates it -- the state where
+# repeating the usermod advice sends people in circles, because the membership is already
+# on disk and only a fresh set of credentials can pick it up.
+#
+# The advice goes to stdout one line per line, unindented, because the two callers route
+# it differently: info indents by two more spaces, die by seven. $2 overrides the command
+# that joins the group, since Docker's group may not exist yet and joining it is then two
+# commands; $3 adds a command to check the daemon with when the group is not the problem.
+group_gap_advice() {
+    local group=$1
+    local join=${2:-"sudo usermod -aG $group \$USER"}
+    local daemon_check=${3:-}
+
+    if ! has_group "$group" "$(id -nG "$USER" 2>/dev/null)"; then
+        echo "Join '$group' with:"
+        echo "  $join"
+        echo "  exec sg $group bash      # then pick it up without logging out"
+        return 0
+    fi
+
+    if has_group "$group" "$(id -nG 2>/dev/null)"; then
+        echo "You are in '$group' and so is this shell, so the refusal is not about groups."
+        [[ -z $daemon_check ]] || echo "  $daemon_check"
+        return 0
+    fi
+
+    # Groups are set once by PAM at login and inherited across fork(), so nothing in an
+    # existing session re-reads them. Restarting a shell, or tmux, under that session
+    # inherits the stale set and looks like the fix failing.
+    echo "You are already in '$group'; this login session predates the change and still"
+    echo "carries the old group set. Pick it up with either of:"
+    echo "  exec sg $group bash          # this shell, keeping its other groups"
+    echo "  # a brand-new SSH connection  (restarting tmux is not enough: a new server"
+    echo "  #   forked from this session inherits the same stale credentials, and ssh"
+    echo "  #   ControlMaster will silently reuse the old session too)"
+}
+
 # ---------------------------------------------------------------------------
 # Host prerequisites: what this script cannot install for you
 # ---------------------------------------------------------------------------
@@ -198,14 +244,43 @@ check_prerequisites() {
     fi
 
     # An installed client with an unreachable daemon is the common case after a fresh
-    # install: the socket is root-owned and the user is not in the docker group yet. The
-    # fix is a group change, so say so rather than reporting "docker is missing".
+    # install: the socket is root-owned and the user is not in its group yet. The fix is a
+    # group change, so say so rather than reporting "docker is missing". Which of the three
+    # group states applies is worth separating for the same reason it is in
+    # check_precheck_nix, and the socket answers a question the group names cannot: a
+    # socket that does not exist means the daemon is down, not that a group is missing.
     if ! "$container" info >/dev/null 2>&1; then
+        local socket_group="" advice=()
+        if [[ $container == docker ]]; then
+            socket_group=$(stat -c '%G' /var/run/docker.sock 2>/dev/null) || socket_group=""
+        fi
+
+        if [[ -n $socket_group && $socket_group != root ]]; then
+            advice=("Its socket is group-restricted to '$socket_group'.")
+            mapfile -t -O "${#advice[@]}" advice < <(group_gap_advice "$socket_group" \
+                "sudo groupadd -f $socket_group && sudo usermod -aG $socket_group \$USER" \
+                "systemctl status $container")
+        elif [[ $container == docker ]]; then
+            advice=("Start it, or add yourself to its socket group:"
+                "  sudo groupadd -f docker && sudo usermod -aG docker \$USER"
+                "  exec sg docker bash      # or open a new login session")
+        else
+            # Rootless Podman gates its socket on the user, not a group, so none of the
+            # Docker advice transfers.
+            advice=("Start it, or rerun with --no-container to skip the container steps.")
+        fi
+
+        # A snap-installed Docker keeps its own view of the user's groups and picks a
+        # change up only when the snap restarts, so the advice above is incomplete for it
+        # in exactly the group cases. Naming it only when that Docker is the one installed
+        # keeps it out of the way of everyone else.
+        if [[ $container == docker ]] && snap list docker >/dev/null 2>&1; then
+            advice+=("Docker here is a snap, which also needs:"
+                "  sudo snap disable docker && sudo snap enable docker")
+        fi
+
         die "$EX_PREREQ" "$container is installed but its daemon is not reachable" \
-            "Start it, or add yourself to the docker group:" \
-            "  sudo groupadd -f docker && sudo usermod -aG docker \$USER" \
-            "  newgrp docker      # or log out and back in" \
-            "A snap-installed Docker also needs: sudo snap disable docker && sudo snap enable docker"
+            "${advice[@]}"
     fi
     info "$container $("$container" info --format '{{.ServerVersion}}' 2>/dev/null)"
 }
@@ -480,9 +555,10 @@ check_precheck_nix() {
     local socket_group
     if [[ $probe == *daemon-socket* && $probe == *"Permission denied"* ]] \
         && socket_group=$(stat -c '%G' /nix/var/nix/daemon-socket 2>/dev/null); then
-        info "  The daemon socket is group-restricted to '$socket_group'. Join it with:"
-        info "    sudo usermod -aG $socket_group \$USER"
-        info "    # then log out and back in, so this shell also keeps its other groups"
+        info "  The daemon socket is group-restricted to '$socket_group'."
+        local line
+        while IFS= read -r line; do info "  $line"; done \
+            < <(group_gap_advice "$socket_group" "" "systemctl status nix-daemon")
     fi
     return 0
 }

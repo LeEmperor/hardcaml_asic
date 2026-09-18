@@ -39,7 +39,10 @@ def newest_run(runs):
     candidates = [path for path in runs.iterdir() if (path / "run.json").is_file()]
     if not candidates:
         raise SystemExit(f"report: no run directory under {runs}")
-    return max(candidates, key=lambda path: path.stat().st_mtime)
+    # st_mtime_ns avoids the float rounding st_mtime has at current epoch
+    # values; the name breaks the tie when two runs share a timestamp, so the
+    # choice never depends on directory order.
+    return max(candidates, key=lambda path: (path.stat().st_mtime_ns, path.name))
 
 
 def results_for(run_dir):
