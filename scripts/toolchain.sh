@@ -211,6 +211,28 @@ check_prerequisites() {
 }
 
 # ---------------------------------------------------------------------------
+# Is $dir the top level of its own git repository? A bare `-d $dir/.git` test is not
+# enough. An interrupted `git init` or fetch leaves behind a .git directory whose HEAD is
+# empty, which git does not recognise as a repository at all; discovery then walks *up*,
+# and every later `git -C "$dir"` silently operates on the enclosing checkout instead.
+# That is not hypothetical: it repointed this repository's own origin at the PDK and
+# detached its HEAD onto a PDK commit. Nothing below aims a git command at $dir until
+# this has returned true.
+is_own_repo() {
+    local dir=$1
+    [[ -d $dir/.git ]] || return 1
+    GIT_DIR="$dir/.git" GIT_WORK_TREE="$dir" git rev-parse --git-dir >/dev/null 2>&1
+}
+
+# Every git command aimed at a pinned checkout goes through here. Setting GIT_DIR and
+# GIT_WORK_TREE explicitly turns repository discovery off, so a damaged or half-built
+# .git fails loudly against $dir instead of quietly resolving to a parent repository.
+repo_git() {
+    local dir=$1
+    shift
+    GIT_DIR="$dir/.git" GIT_WORK_TREE="$dir" git "$@"
+}
+
 # Pinned checkouts
 # ---------------------------------------------------------------------------
 # Bring one checkout to one exact revision, idempotently. Fetches by hash with --depth 1,
@@ -220,7 +242,7 @@ fetch_pinned() {
     local dir=$1 repository=$2 revision=$3 branch=$4 label=$5
     local actual=""
 
-    [[ -d $dir/.git ]] && actual=$(git -C "$dir" rev-parse HEAD 2>/dev/null || true)
+    is_own_repo "$dir" && actual=$(repo_git "$dir" rev-parse HEAD 2>/dev/null || true)
 
     if [[ $actual == "$revision" ]]; then
         info "$label at ${revision:0:12} (present)"
@@ -231,7 +253,7 @@ fetch_pinned() {
         # Careful: never move a checkout with work in it. This directory is ours by
         # convention, but a reader may well have edited the PDK or support tools to debug
         # a run, and losing that silently to a bootstrap is not a tradeoff worth making.
-        if [[ -n $(git -C "$dir" status --porcelain 2>/dev/null) ]]; then
+        if [[ -n $(repo_git "$dir" status --porcelain 2>/dev/null) ]]; then
             die "$EX_MISMATCH" "$dir is at ${actual:0:12}, not ${revision:0:12}, and is dirty" \
                 "Commit, stash or discard the changes there, then rerun." \
                 "Nothing was changed."
@@ -253,23 +275,36 @@ fetch_pinned() {
         "$label is not at ${revision:0:12} and --offline was given"
 
     mkdir -p "$dir"
-    [[ -d $dir/.git ]] || git init --quiet "$dir"
-    git -C "$dir" remote remove origin 2>/dev/null || true
-    git -C "$dir" remote add origin "$repository"
+
+    # A .git that exists but is not a repository is the wreckage of an interrupted run,
+    # and rerunning has to clear it rather than build on top of it. Discarding it is free:
+    # $dir holds provisioned state, re-fetchable by definition, and this line is only
+    # reached once the dirty check above found no work to lose.
+    if [[ -d $dir/.git ]] && ! is_own_repo "$dir"; then
+        warn "$dir/.git is not a valid repository (interrupted fetch?); reinitialising"
+        rm -rf "$dir/.git"
+    fi
+    is_own_repo "$dir" || git init --quiet "$dir"
+    is_own_repo "$dir" || die "$EX_MISMATCH" \
+        "could not initialise a git repository at $dir" \
+        "Remove $dir and rerun."
+
+    repo_git "$dir" remote remove origin 2>/dev/null || true
+    repo_git "$dir" remote add origin "$repository"
 
     net "fetching $label ${revision:0:12} from $repository"
-    if ! git -C "$dir" fetch --depth 1 --quiet origin "$revision"; then
+    if ! repo_git "$dir" fetch --depth 1 --quiet origin "$revision"; then
         # Some servers refuse an unadvertised object. Falling back to the branch costs
         # history but still lands on the pinned commit, which is verified below either way.
         warn "fetch by hash refused; falling back to branch $branch"
-        git -C "$dir" fetch --quiet origin "$branch" || die "$EX_NETWORK" \
+        repo_git "$dir" fetch --quiet origin "$branch" || die "$EX_NETWORK" \
             "could not fetch $label from $repository"
     fi
 
-    git -C "$dir" checkout --quiet --detach "$revision" || die "$EX_NETWORK" \
+    repo_git "$dir" checkout --quiet --detach "$revision" || die "$EX_NETWORK" \
         "$label fetched but revision ${revision:0:12} is not in it"
 
-    actual=$(git -C "$dir" rev-parse HEAD)
+    actual=$(repo_git "$dir" rev-parse HEAD)
     [[ $actual == "$revision" ]] || die "$EX_MISMATCH" \
         "$label checked out $actual, lockfile wants $revision"
     info "$label at ${revision:0:12}"
