@@ -510,6 +510,12 @@ that trigger. Do not substitute a library-owned fixture for the consumer evidenc
   P4.5 where shared. Restore inputs in a clean staging location and verify that
   reproducing emission requires no undocumented sibling paths or manual edits.
   A prior run of the old configuration path does not qualify.
+  *Note:* when this lands, the [execution guide](phase4-execution.md) stops being
+  about a phase. It is the standing flow guide and the only documentation of
+  `flow.sh`, `report.py`, and `archive.py`; rename it to `flow.md` then, updating
+  the six files that link it (`README.md`, `docs/README.md`, this plan,
+  `bootstrap.md`, `bundle-emission.md`, `consumer-installation.md`). The P4 gate
+  narrative stays in section 7 above.
 - [ ] **P5.5 — Publish initial usage documentation in the repository.** Document a
   minimal declaration, behavioral versus implementation elaboration, memory policy,
   explicit environment setup, emission/execution/collection commands, output

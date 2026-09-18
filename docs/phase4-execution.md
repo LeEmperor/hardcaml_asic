@@ -1,5 +1,15 @@
 # Phase 4: TT/CMOS5L execution and results
 
+Status: operating guide, 2026-09-18. P4.1–P4.5 are closed with evidence; see
+[phase plan section 7](phase_plan.md#7-p4--execution-results-and-physical-integration)
+for what each gate rests on. Nothing below is outstanding work. This is the
+standing account of how the flow is run and how a run becomes an evidence
+directory, and the only documentation of `flow.sh`, `report.py` and
+`archive.py`: [bootstrapping](bootstrap.md) ends where this begins, and
+[bundle emission](bundle-emission.md) produces its input. The flow's remaining
+use is P5.2–P5.4, which run this same sequence against the consumer's adopted
+bundle rather than this repository's example.
+
 The P3 bundle is immutable input. `scripts/phase4.py` is an external consumer:
 it verifies the emitted file hashes and pinned target references, creates a
 unique run directory for each attempt, executes LibreLane, and collects results

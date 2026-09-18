@@ -33,7 +33,11 @@ provides external preflight, isolated LibreLane runs, structured result collecti
 and postchecks; `./bootstrap.sh` provisions the pinned toolchain into `.toolchain/`,
 `scripts/flow.sh` runs that sequence end to end,
 `scripts/report.py` summarizes a finished run, and `scripts/archive.py` writes
-one out as an evidence directory (`--help` on any of them). [Mapped synthesis evidence](evidence/p4/memory-synthesis/README.md)
-exists for the registered-memory example; the full physical exit gate remains open.
-Physical SRAM support requires
-a separate capability investigation.
+one out as an evidence directory (`--help` on any of them). Both P4 gates have
+evidence: [mapped synthesis](evidence/p4/memory-synthesis/README.md) for the
+registered-memory example and the
+[physical path](evidence/p4/observable-physical/README.md) for the observable
+one, which closes P4's exit gate. That physical run used this repository's own
+example, so reproducing it from the consumer's adopted design remains open as
+[P5.4](docs/phase_plan.md#8-p5--reference-consumer-adoption-and-initial-usage).
+Physical SRAM support requires a separate capability investigation.
