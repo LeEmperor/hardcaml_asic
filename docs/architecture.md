@@ -205,6 +205,16 @@ assumed to be fully understood by typed validation: define supported insertion
 points and validation limits, and preserve the script for review. They do not
 silently supersede protected project, resource, or target facts.
 
+A default that every project in one harness and technology pair would otherwise
+retype is library-owned rather than derived. `Tt_cmos5l` supplies the pinned TT
+CMOS5L template's twenty LibreLane settings as ordinary `Flow.Librelane.Override.t`
+values, each with a `reason` stating what the setting does and naming the template
+revision it came from, and `Tt_cmos5l.overrides` merges a consumer's own overrides
+over them by key. They stay overrides rather than becoming derived settings on
+purpose: a derived key is protected and cannot be argued with, while a template
+default is tuning a project may disagree with, and the manifest then records the
+consumer's `reason` in place of the library's.
+
 Distinguish overridable defaults from protected derived values:
 
 1. Resolve target and flow defaults.

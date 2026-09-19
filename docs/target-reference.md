@@ -128,6 +128,7 @@ Liberty's own limits then apply.
 | `MACROS` | Registered resources | Raw override rejected; no CMOS5L macro is supported |
 | `FP_SIZING`, `RUN_LINTER` | Initial adapter defaults | Reasoned override allowed |
 | Other LibreLane settings such as density, margins, PDN pitch, and checks | Reasoned override | Recorded with key, strict JSON value, and reason |
+| The pinned TT CMOS5L template's twenty settings | `Tt_cmos5l.template_overrides` | Library-owned defaults; replace or drop one with `Tt_cmos5l.overrides ~extra ~without` |
 
 The existing consumer's `src/config.json` settings fit this boundary: clock
 values come from the typed clock, `FP_SIZING` and `RUN_LINTER` have defaults,

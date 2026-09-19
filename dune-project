@@ -23,5 +23,5 @@
   yojson
   cryptokit
   ppx_jane
-  (ppx_hardcaml :with-test)
+  ppx_hardcaml
   (expect_test_helpers_core :with-test)))

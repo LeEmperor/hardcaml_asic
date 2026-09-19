@@ -156,10 +156,11 @@ records the GDS, netlist, and testbench hashes, simulator image and version,
 command log, and both verdicts under `checks/<id>/`.
 
 The bundle's LibreLane settings must include the TT template's physical
-settings, supplied as reasoned overrides. Without `FP_PDN_MULTILAYER=0` and the
-template's PDN and LEF-pin settings, LibreLane's defaults put the power grid on
-`TopMetal1`, and TT precheck rejects the layout even though LibreLane's own DRC,
-LVS, and antenna checks pass.
+settings, supplied as reasoned overrides. `Tt_cmos5l.overrides` supplies them, so
+a declaration gets them by asking rather than by copying. Without
+`FP_PDN_MULTILAYER=0` and the template's PDN and LEF-pin settings, LibreLane's
+defaults put the power grid on `TopMetal1`, and TT precheck rejects the layout
+even though LibreLane's own DRC, LVS, and antenna checks pass.
 
 `run.json` records build identity, manifest hash, actual environment, command
 arguments, requested/completed stage, status, timestamps, and output paths.

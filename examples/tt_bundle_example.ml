@@ -2,29 +2,9 @@ open! Core
 open! Hardcaml
 open! Hardcaml_asic
 
-module I = struct
-  type 'a t =
-    { ui_in : 'a [@bits 8]
-    ; uio_in : 'a [@bits 8]
-    ; ena : 'a
-    ; clk : 'a
-    ; rst_n : 'a
-    }
-  [@@deriving hardcaml]
-end
-
-module O = struct
-  type 'a t =
-    { uo_out : 'a [@bits 8]
-    ; uio_out : 'a [@bits 8]
-    ; uio_oe : 'a [@bits 8]
-    }
-  [@@deriving hardcaml]
-end
-
 module Observable = struct
-  module I = I
-  module O = O
+  module I = Tt_cmos5l.I
+  module O = Tt_cmos5l.O
 
   let name = "tt_um_asic_observable"
 
@@ -42,8 +22,8 @@ module Observable = struct
 end
 
 module Memory = struct
-  module I = I
-  module O = O
+  module I = Tt_cmos5l.I
+  module O = Tt_cmos5l.O
 
   let name = "tt_um_asic_memory"
   let config = Single_port_ram.Config.create_exn ~width:8 ~depth:4 ~read_latency:1
@@ -82,36 +62,6 @@ let pinout : Pinout.t =
       { Pinout.bank; bit; description }))
 ;;
 
-(* The remaining settings of the pinned TT CMOS5L template's src/config.json
-   (ttihp-verilog-template b86a2a7); clock and default keys are derived instead.
-   FP_PDN_MULTILAYER=0 keeps the PDN off TopMetal1, which TT precheck forbids. *)
-let template_overrides : Flow.Librelane.Override.t list =
-  let reason = "TT CMOS5L template src/config.json at b86a2a7" in
-  List.map
-    ~f:(fun (key, value) -> { Flow.Librelane.Override.key; value; reason })
-    [ "PL_TARGET_DENSITY_PCT", `Int 60
-    ; "PL_RESIZER_HOLD_SLACK_MARGIN", `Float 0.1
-    ; "GRT_RESIZER_HOLD_SLACK_MARGIN", `Float 0.05
-    ; "LINTER_INCLUDE_PDK_MODELS", `Int 1
-    ; "RUN_KLAYOUT_XOR", `Int 0
-    ; "RUN_KLAYOUT_DRC", `Int 0
-    ; "DESIGN_REPAIR_BUFFER_OUTPUT_PORTS", `Int 0
-    ; "TOP_MARGIN_MULT", `Int 1
-    ; "BOTTOM_MARGIN_MULT", `Int 1
-    ; "LEFT_MARGIN_MULT", `Int 6
-    ; "RIGHT_MARGIN_MULT", `Int 6
-    ; "GRT_ALLOW_CONGESTION", `Int 1
-    ; "FP_IO_HLENGTH", `Int 2
-    ; "FP_IO_VLENGTH", `Int 2
-    ; "FP_PDN_VPITCH", `Float 50.0
-    ; "FP_PDN_VWIDTH", `Float 2.1
-    ; "RUN_CTS", `Int 1
-    ; "FP_PDN_MULTILAYER", `Int 0
-    ; "MAGIC_DEF_LABELS", `Int 0
-    ; "MAGIC_WRITE_LEF_PINONLY", `Int 1
-    ]
-;;
-
 let project kind =
   let design, title, description =
     match kind with
@@ -133,7 +83,7 @@ let project kind =
       { harness = Tiny_tapeout { tiles = T6x4 }
       ; technology = Technology.ihp_sg13cmos5l
       }
-    ~flow:(Flow.librelane ~overrides:template_overrides Hardening)
+    ~flow:(Flow.librelane ~overrides:(Tt_cmos5l.overrides ()) Hardening)
     ~clocks:[ { Clock.port = "clk"; period = Time_float.Span.of_sec (1. /. 48e6) } ]
     (* Minimums of 0 are the hold-pessimistic choice: TT inputs are driven asynchronously
        to clk through the mux, so a change right at the clock edge is possible, and the

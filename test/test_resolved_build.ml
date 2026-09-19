@@ -379,40 +379,24 @@ let%expect_test "LibreLane override provenance and protected assignments" =
   [%expect {| |}]
 ;;
 
-let%expect_test "reference project settings fit the override boundary" =
-  let values : (string * Yojson.Safe.t) list =
-    [ "PL_TARGET_DENSITY_PCT", `Int 60
-    ; "PL_RESIZER_HOLD_SLACK_MARGIN", `Float 0.1
-    ; "GRT_RESIZER_HOLD_SLACK_MARGIN", `Float 0.05
-    ; "LINTER_INCLUDE_PDK_MODELS", `Int 1
-    ; "RUN_KLAYOUT_XOR", `Int 0
-    ; "RUN_KLAYOUT_DRC", `Int 0
-    ; "DESIGN_REPAIR_BUFFER_OUTPUT_PORTS", `Int 0
-    ; "TOP_MARGIN_MULT", `Int 1
-    ; "BOTTOM_MARGIN_MULT", `Int 1
-    ; "LEFT_MARGIN_MULT", `Int 6
-    ; "RIGHT_MARGIN_MULT", `Int 6
-    ; "GRT_ALLOW_CONGESTION", `Int 1
-    ; "FP_IO_HLENGTH", `Int 2
-    ; "FP_IO_VLENGTH", `Int 2
-    ; "FP_PDN_VPITCH", `Float 50.
-    ; "FP_PDN_VWIDTH", `Float 2.1
-    ; "RUN_CTS", `Int 1
-    ; "FP_PDN_MULTILAYER", `Int 0
-    ; "MAGIC_DEF_LABELS", `Int 0
-    ; "MAGIC_WRITE_LEF_PINONLY", `Int 1
-    ]
-  in
-  let overrides : Flow.Librelane.Override.t list =
-    List.map values ~f:(fun (key, value) ->
-      { Flow.Librelane.Override.key; value; reason = "pinned reference project setting" })
-  in
+(* The library's own TT CMOS5L defaults, resolved: every one has to survive as the value
+   it declares, owned by Override with its reason. A default that collided with a
+   protected key would fail [resolve] outright, and one Resolved_build also derives would
+   be dropped silently, so both are checked here rather than in test_tt_cmos5l.ml, which
+   never resolves a build. *)
+let%expect_test "the TT CMOS5L template defaults fit the override boundary" =
+  let overrides = Tt_cmos5l.overrides () in
   let resolved = resolve ~flow:(Flow.librelane Hardening ~overrides) () |> ok_exn in
-  List.iter values ~f:(fun (key, value) ->
+  List.iter overrides ~f:(fun (override : Flow.Librelane.Override.t) ->
     let setting =
-      List.find_exn resolved.settings ~f:(fun setting -> String.equal setting.key key)
+      List.find_exn resolved.settings ~f:(fun setting ->
+        String.equal setting.key override.key)
     in
-    require (Yojson.Safe.equal setting.value value));
+    require (Yojson.Safe.equal setting.value override.value);
+    require
+      (Sexp.equal
+         (Resolved_build.Setting.Owner.sexp_of_t setting.owner)
+         (Resolved_build.Setting.Owner.sexp_of_t (Override override.reason))));
   [%expect {| |}]
 ;;
 
