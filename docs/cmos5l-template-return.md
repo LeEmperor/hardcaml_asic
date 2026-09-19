@@ -10,6 +10,17 @@ reading the diff.
 to install from; `scaf/tinytapeout/asic-dependencies.lock` has been moved off
 `414b7f4f92a201bd9bceb6864579dc3ee475101f` onto it.
 
+The lock stays on `a257424` even though this repository's `main` has moved past
+it, and that is on purpose. Everything the lock governs — `lib/`, `scripts/`,
+`examples/`, `test/`, `dune-project`, `hardcaml_asic.opam` — is byte-identical
+between `a257424` and the later commits, which only edit this document. Bumping
+the lock to chase a documentation commit would change
+`inputs/tinytapeout/asic-dependencies.lock`, and so the protemu bundle's
+identity, for a change that touched nothing the flow reads; that is exactly the
+failure `scaf/docs/tooling_theory1.md` names when it argues the Python must not
+be an emitted artifact. Move the lock when the installable library moves, not
+when its prose does.
+
 `scripts/` is byte-identical between the two revisions (`git diff 414b7f4
 a257424 -- scripts/` is empty), so the `Adapted from ... at revision
 414b7f4f...` docstrings in `adopted_phase4.py` and `adopted_report.py` still
@@ -115,27 +126,30 @@ A control run was taken first: the new library with the *old* declaration emits
 a bundle identical to the pre-change one in every byte including the identity,
 so nothing in the library change moves the output by itself.
 
-Identity moved in two steps, both confined to `source_inputs`:
+Identity moved in three steps, every one of them confined to `source_inputs`:
 
 | Identity | State |
 | --- | --- |
 | `243496ecf0d7add46f1840f12be8425f8b4c47b66ecc606bc22dc62fa4193d62` | before, declaration and lock untouched |
 | `083956e74fe46b8ee532c4007968bbaea492e5583414865cb427b308c4c29c36` | declaration rewritten, lock still on `414b7f4` |
-| **`6448596657bac8a0802e8aac28039c0aac12dbb2dc26c19a4b23820e5d7122f1`** | lock pinned to `a257424`; **this is the one to adopt** |
+| `6448596657bac8a0802e8aac28039c0aac12dbb2dc26c19a4b23820e5d7122f1` | lock pinned to `a257424`, protemu tree still dirty |
+| **`b699c8160775d269dd9fec5e6c17541cbc426c4bb9b5bf23952ed17b9626690b`** | protemu committed at `7e29ecd`, every input clean; **this is the one to adopt** |
 
-The second step moves nothing but `inputs/tinytapeout/asic-dependencies.lock`
-and its manifest entry; `src/config.json` is still byte-identical to the
-archived one at that identity, re-checked after the pin.
+The third step changes no file content at all. It moves only what the manifest
+records about git: `source_revision` `6c98cee…` → `7e29ecd16b3bd57dd4e14955132d1c28c565c833`,
+and the `git_status` of `bin/asic_bundle.ml` and
+`tinytapeout/asic-dependencies.lock` from `" M <path>"` to `""`. All five
+emitted files are byte-identical across all four rows, and `src/config.json` was
+re-checked against the archived `project/src/config.json` at the last one.
 
-**`6448596657…` was measured from a dirty protemu tree and will move once
-`bin/asic_bundle.ml` and the lock are committed**, because the manifest records
-`source_revision` (protemu's HEAD) and each input's `git_status` (` M <path>`
-while uncommitted, empty once clean). Re-emit after that commit and take the
-identity it prints as the one to adopt. Nothing outside `source_inputs` moves
-with it: `src/config.json`, `top.sdc`, `info.yaml` and both RTL files are fixed
-by the declaration, not by git state.
+That is the property worth naming: **the bundle identity moves when git state
+moves, even though nothing the flow reads has changed.** A dirty tree and the
+commit of that same tree are two different identities over the same bytes. That
+is deliberate — the manifest is meant to say where the bundle came from, not
+only what is in it — but it means an identity is only worth quoting from a clean
+tree.
 
-(None of the three is `5edf30f9…`; that bundle and this tree differ only in
+(None of the four is `5edf30f9…`; that bundle and this tree differ only in
 `source_revision`, because protemu's HEAD moved after the adopted run. No
 declared input's content differed at the point the baseline was taken.)
 

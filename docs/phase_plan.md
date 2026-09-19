@@ -492,12 +492,43 @@ that trigger. Do not substitute a library-owned fixture for the consumer evidenc
   and runs it successfully. [`Consumer installation`](consumer-installation.md)
   gives exact-revision pin and collateral instructions, plus the evidence and
   uncommitted-source limitation of this check.
-- [ ] **P5.2 — Support emulator P0.6 adoption.** Replace its duplicate configuration
+- [x] **P5.2 — Support emulator P0.6 adoption.** Replace its duplicate configuration
   authority with a declaration for the existing observable design and emulator-owned
   wrapper. Generate target, clock, metadata, source sets, and reasoned overrides.
   Evidence: link its P0.6 integration change, repeatable emitted bundle, wrapper
   regression, and configuration-conflict checks. Earlier RTL-only evidence is not
   proof of library adoption.
+  *Done:* protemu declares the observable top and its own TT wrapper in
+  [`bin/asic_bundle.ml`](../../scaf/bin/asic_bundle.ml) — adopted at `c59f32f`,
+  moved onto [`Tt_cmos5l`](../lib/tt_cmos5l.mli) at `7e29ecd` — pinning this
+  library at `a257424` through
+  [`asic-dependencies.lock`](../../scaf/tinytapeout/asic-dependencies.lock);
+  [`asic-adoption.md`](../../scaf/docs/asic-adoption.md) documents the pin and the
+  emission commands, and protemu records its side as
+  [P0.6](../../scaf/docs/phase_plan.md). The adopted path takes target, clock, pin
+  meanings, metadata, SDC, source sets, and all twenty LibreLane overrides from that
+  declaration; the hand-maintained `tinytapeout/info.yaml` and
+  `tinytapeout/src/config.json` are no longer inputs to it and survive only for the
+  legacy `check-p0.sh` staging path.
+  [`check-adopted-bundle.py`](../../scaf/tinytapeout/scripts/check-adopted-bundle.py)
+  is the evidence for the other three items in one run: it emits twice and compares
+  identity and manifest bytes, verifies copied-source hashes and generated
+  metadata/configuration/SDC, rejects conflicting `CLOCK_PERIOD`, `VERILOG_FILES`,
+  and `DIE_AREA` overrides, and runs protemu's existing `tinytapeout/test/tb.v`
+  wrapper trace plus Verilator lint and Yosys synthesis on emitted RTL inside the
+  pinned LibreLane image. Run against protemu `88a6600` on 2026-09-19, exit 0:
+  `PASS clock, source-list, and target configuration conflicts`, `PASS repeatable
+  bundle, manifest, metadata, and conflict checks`, `PASS p0 wrapper
+  reset/disable/pin/timer trace`, `PASS emitted RTL wrapper trace, lint, and
+  synthesis` on image `sha256:d109140b`; both emissions and a third kept one agreed
+  at identity `c6d137dece4bbef3c31ef9ad664b323a07baef53c23d4dca743023ab48176243`.
+  *That identity is not the one to adopt:* `dune-project` and
+  `hardcaml_protemu.opam` are declared bundle inputs and were dirty with P1.5 ISA
+  work at emission, so it moves when that work commits. Repeatability within a tree
+  state is what P5.2 asks for and is what this shows; the clean-tree emission P5.4
+  needs is `b699c8160775d269dd9fec5e6c17541cbc426c4bb9b5bf23952ed17b9626690b` at
+  protemu `7e29ecd`, recorded with the identity table in
+  [`cmos5l-template-return.md`](cmos5l-template-return.md).
 - [ ] **P5.3 — Support emulator P0.7 memory integration.** After P5.2, integrate its
   small registered whole-word load/readback design using explicitly selected flops.
   Evidence: link consumer validity/bounds/access-gating checks, latency/hold checks,
