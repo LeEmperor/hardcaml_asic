@@ -6,9 +6,16 @@ reading the diff.
 
 ## 1. The new `asic_revision`
 
-**Pending commit.** The work is on `main` in the working tree, uncommitted.
-Nothing below is installable by the consumer until this is a commit; fill in
-`scaf/tinytapeout/asic-dependencies.lock` `asic_revision=` with it.
+**`a257424c3ae31fd6ee10cea052cc7577f15d2677`**, on `main`. This is the revision
+to install from; `scaf/tinytapeout/asic-dependencies.lock` has been moved off
+`414b7f4f92a201bd9bceb6864579dc3ee475101f` onto it.
+
+`scripts/` is byte-identical between the two revisions (`git diff 414b7f4
+a257424 -- scripts/` is empty), so the `Adapted from ... at revision
+414b7f4f...` docstrings in `adopted_phase4.py` and `adopted_report.py` still
+describe their contents correctly. They were left alone; bumping them to track
+the lock is cosmetic and is the consumer's call. `adopted_archive.py` already
+points at the lock rather than a literal revision.
 
 One packaging change rides with it: **`ppx_hardcaml` moved from `:with-test` to
 a regular dependency** in `dune-project`, because `lib/tt_cmos5l.ml` derives the
@@ -102,23 +109,42 @@ What was diffed:
    after it, both from this working tree. **Result: `src/config.json`,
    `constraints/top.sdc`, `info.yaml`, `src/tt_um_leemperor_hardcaml_protemu.v`
    and `simulation/tt_um_leemperor_hardcaml_protemu.v` are byte-identical.**
-   Only `inputs/bin/asic_bundle.ml` and `manifest.json` differ.
+   Only the two changed input copies and `manifest.json` differ.
 
 A control run was taken first: the new library with the *old* declaration emits
 a bundle identical to the pre-change one in every byte including the identity,
 so nothing in the library change moves the output by itself.
 
-Identity moved `243496ecf0d7add46f1840f12be8425f8b4c47b66ecc606bc22dc62fa4193d62`
-→ `083956e74fe46b8ee532c4007968bbaea492e5583414865cb427b308c4c29c36`. (Neither is
-`5edf30f9…`; that bundle and this tree differ only in `source_revision`, because
-protemu's HEAD moved after the adopted run. No declared input's content differs.)
+Identity moved in two steps, both confined to `source_inputs`:
+
+| Identity | State |
+| --- | --- |
+| `243496ecf0d7add46f1840f12be8425f8b4c47b66ecc606bc22dc62fa4193d62` | before, declaration and lock untouched |
+| `083956e74fe46b8ee532c4007968bbaea492e5583414865cb427b308c4c29c36` | declaration rewritten, lock still on `414b7f4` |
+| **`6448596657bac8a0802e8aac28039c0aac12dbb2dc26c19a4b23820e5d7122f1`** | lock pinned to `a257424`; **this is the one to adopt** |
+
+The second step moves nothing but `inputs/tinytapeout/asic-dependencies.lock`
+and its manifest entry; `src/config.json` is still byte-identical to the
+archived one at that identity, re-checked after the pin.
+
+**`6448596657…` was measured from a dirty protemu tree and will move once
+`bin/asic_bundle.ml` and the lock are committed**, because the manifest records
+`source_revision` (protemu's HEAD) and each input's `git_status` (` M <path>`
+while uncommitted, empty once clean). Re-emit after that commit and take the
+identity it prints as the one to adopt. Nothing outside `source_inputs` moves
+with it: `src/config.json`, `top.sdc`, `info.yaml` and both RTL files are fixed
+by the declaration, not by git state.
+
+(None of the three is `5edf30f9…`; that bundle and this tree differ only in
+`source_revision`, because protemu's HEAD moved after the adopted run. No
+declared input's content differed at the point the baseline was taken.)
 
 ### The manifest delta, field by field
 
 | Field | Changed | What |
 | --- | --- | --- |
-| `source_inputs` | yes | `bin/asic_bundle.ml` hash and `git_status` |
-| `files` | yes | one entry, `inputs/bin/asic_bundle.ml` |
+| `source_inputs` | yes | `bin/asic_bundle.ml` and `tinytapeout/asic-dependencies.lock` hashes, plus their `git_status` |
+| `files` | yes | two entries, `inputs/bin/asic_bundle.ml` and `inputs/tinytapeout/asic-dependencies.lock` |
 | `resolved_settings` | **owner text only** | see below |
 | `generated_settings` | no | |
 | `flow_configuration` | no | |
