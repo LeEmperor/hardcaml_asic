@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end TT/LibreLane flow for one example bundle: emit, preflight, run,
 # postcheck, collect, report. Wraps scripts/phase4.py, which stays the interface;
-# scripts/report.py prints the summary. See docs/phase4-execution.md.
+# scripts/report.py prints the summary. See docs/flow.md.
 #
 # Usage:
 #   scripts/flow.sh [step ...]          # no step means all of them, in order
