@@ -42,9 +42,10 @@ checks this path with a fresh prefix and an unrelated Dune project under `/tmp`.
 
 ## Resolve TT/LibreLane collateral
 
-The OCaml package contains the elaboration and bundle library. External flow
-scripts and collateral are resolved from a checkout of **the same** source
-revision, placed anywhere the consumer chooses:
+The OCaml package contains the elaboration and bundle library. It does not
+install a `hardcaml_asic` CLI, the repository's Python/shell flow scripts, a PDK,
+or EDA tools. For now, external flow scripts and collateral are resolved from a
+checkout of **the same** source revision, placed anywhere the consumer chooses:
 
 ```sh
 ASIC_SOURCE=/path/for/pinned/asic-source
@@ -69,7 +70,7 @@ python3 "$ASIC_SOURCE/scripts/phase4.py" preflight "$BUNDLE" \
 Preflight checks the bundle's file hashes, external reference hashes, and
 requested tool revisions and versions. It will report a mismatch instead of
 silently using nearby collateral. The [bootstrap guide](bootstrap.md) explains
-provisioning and the [execution guide](phase4-execution.md) covers subsequent
+provisioning and the [execution guide](flow.md) covers subsequent
 run and collection commands. A consumer passes its own repository as
 `Bundle.render`'s `source_root` and explicitly lists its own source inputs; it
 does not pass the library source checkout as the consumer's source root.
@@ -81,5 +82,8 @@ an independent Dune executable using `(libraries hardcaml_asic)`, and ran it:
 `address=2 storage=32`. `opam lint hardcaml_asic.opam` passed. The source base
 revision at this check was `53b8d8b5506a9215de7ad15b44eaa0286d0e3893`;
 the package additions are uncommitted, so that hash alone does not identify the
-checked snapshot. The first revision-pinned consumer install should use the
-commit containing these files when one exists.
+checked snapshot. Protemu subsequently pinned
+`a257424c3ae31fd6ee10cea052cc7577f15d2677`; the P5.4 clean-staging record in
+the [phase plan](phase_plan.md#8-p5--reference-consumer-adoption-and-initial-usage)
+builds that exact revision into an isolated prefix and resolves it without a
+sibling path dependency.

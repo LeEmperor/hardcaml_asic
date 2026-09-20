@@ -230,7 +230,7 @@ TOOLCHAIN=/scratch/asic-toolchain ./bootstrap.sh    # provision somewhere else
 The variables are `TOOLCHAIN`, `TT`, `PDK`, `PDK_ROOT`, `FLOW_PY` and
 `PRECHECK_PY`. `scripts/flow.sh` adds its own (`OUT`, `BUNDLE`, `RUNS`, `KIND`,
 `STAGE`, `TESTBENCH`, `RUN`, `ALLOW_PYTHON_MISMATCH`); see
-[execution and results](phase4-execution.md).
+[execution and results](flow.md).
 
 ## Pins and drift
 

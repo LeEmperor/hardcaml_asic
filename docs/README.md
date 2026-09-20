@@ -1,5 +1,25 @@
 # Documentation
 
+- [Initial user workflow](usage.md): start here to install/pin the library,
+  declare and simulate a project, emit an immutable bundle, prepare the external
+  environment, run the flow, and preserve evidence. It links to the authoritative
+  specialist references below instead of duplicating them.
+- [Consumer installation](consumer-installation.md): one-package Dune/opam setup,
+  revision pinning, checkout-distributed flow tooling, external collateral
+  resolution, and separate-project checks.
+- [Registered memory example](memory-example.md): PDK-free simulation,
+  implementation elaboration, selection outcomes, and optional generated RTL test.
+- [Bundle emission](bundle-emission.md): commands, TT staging layout,
+  manifest/source sets, provenance identity, and verification boundary.
+- [Bootstrapping the toolchain](bootstrap.md): explicit PDK/tool provisioning,
+  pins, options, and troubleshooting.
+- [Flow execution and results](flow.md): preflight, synthesis/full execution,
+  result collection and interpretation, postchecks, archiving, and restoration.
+- [TT/CMOS5L target reference](target-reference.md): supported `6x4` geometry,
+  wrapper boundary, timing/configuration ownership, and protected settings.
+
+## Architecture and evidence
+
 - [Implementation phase plan](phase_plan.md): actionable P0–P5 tasks,
   dependencies, intermediate usage milestones, and evidence-based exit gates
   for the first TT/LibreLane path, plus a separate SRAM investigation track.
@@ -10,21 +30,6 @@
   Use this for architecture and scope decisions.
 - [Program-memory contract](program-memory-contract.md): authoritative behavior,
   verification obligations, and project integration for `Single_port_ram`.
-- [Registered memory example](memory-example.md): PDK-free simulation,
-  implementation elaboration, selection outcomes, and optional generated RTL test.
-- [TT/CMOS5L target reference](target-reference.md): pinned `6x4` geometry,
-  floorplan, technology views, source revisions, wrapper interface, and
-  timing/configuration ownership for P2.
-- [Bundle emission](bundle-emission.md): P3 commands, TT staging layout,
-  manifest/source sets, and verification boundary.
-- [Consumer installation](consumer-installation.md): one-package Dune/opam setup,
-  revision pinning, external collateral resolution, and separate-project check.
-- [Bootstrapping the toolchain](bootstrap.md): `./bootstrap.sh`, its two layers
-  and options, what lands in `.toolchain/`, overriding paths, where the pins live
-  and how drift is caught, and what to do when a check fails. Start here on a new
-  machine.
-- [Execution and results](phase4-execution.md): P4 tool preflight, isolated
-  LibreLane runs, result collection, TT precheck, and gate-level commands.
 - [Comment and formatting guidelines](comment_guidelines.md): header, doc comment,
   alignment and error message conventions, with a table of reference files in `lib/`
   for each kind of example.
@@ -58,6 +63,3 @@ Related consumer plans in this workspace:
 - [Protocol emulator](../../scaf/docs/construction-plan.md) and
   [phase plan](../../scaf/docs/phase_plan.md): P0.6/P0.7 adopt the library;
   P3 owns memory consumer logic; P5.1a tracks the SRAM capability investigation.
-- [Workbench architecture](../../workbench/docs/hardcaml_workbench_architecture.md):
-  optional project-driver, supervised-job, and artifact integration. Neither a
-  Workbench UI nor commercial EDA support is required for the first ASIC path.

@@ -79,21 +79,52 @@ postcheck, collect, and report without intervention.
   0.25%.
 
 This is the consumer's adopted design on its own emitted bundle and pinned
-dependencies, so it is the P5.4 evidence the P4.5 record said was still
-missing. Two gaps keep it from being the whole of P5.4 and P5.2:
+dependencies, so it supplied the physical precursor P4.5 said was missing. It
+did not alone close P5.4 because its source inputs were dirty. P5.2 closed on
+2026-09-19; P5.4 closed on 2026-09-20 with the separate clean-staging
+[P0.5c record](../../scaf/tinytapeout/reports/2026-09-20-p0.5c-clean-staging-physical.md)
+and [archive](../../scaf/flow_results/20260920-081325-ccecd9ed/README.md).
 
 1. **Emission is not yet reproducible from the recorded revision.** Five of the
    eight recorded source inputs were dirty or untracked at emission, including
    `bin/asic_bundle.ml` itself (`??`). The manifest hashes the copied content
    and records each input's `git_status`, so nothing is silently wrong, but
    `source_revision` does not describe the declaration that produced this
-   bundle. P5.4's clean-staging clause needs a committed tree, a re-emission,
-   and a statement of whether `identity` is stable across that change.
+   bundle. P5.4's clean-staging clause therefore needed a committed tree, a
+   re-emission, and a statement of whether `identity` is stable across that
+   change.
+
+   *Emission follow-up:* protemu committed at `7e29ecd`, all eight inputs clean, and
+   re-emitted. `identity` is **not** stable across that change: it moved to
+   `b699c8160775d269dd9fec5e6c17541cbc426c4bb9b5bf23952ed17b9626690b` while
+   every emitted file stayed byte-identical, because the manifest records
+   `source_revision` and each input's `git_status` and nothing else moved. The
+   four-row identity table and the re-check of `src/config.json` against the
+   archived one are in [`cmos5l-template-return.md`](cmos5l-template-return.md).
+   That was a clean emission data point, not a hardened P5.4 result. The general
+   property is worth keeping in view:
+   `dune-project` and `hardcaml_protemu.opam` are declared inputs, so any commit
+   touching them moves the bundle identity even when no RTL, configuration or
+   constraint byte changes.
 2. **P5.2's own evidence list is not covered by this run.** Repeatable
    emission, the wrapper regression on emitted RTL, and the
    configuration-conflict checks live in protemu's `check-adopted-bundle.py`,
    which the flow does not invoke and which left no record here. It needs to be
    run and linked separately.
+
+   *Closed:* run in full against protemu `e7e3bb47` from a clean tree, exit 0,
+   and recorded at
+   [`2026-09-19-p0.6-adopted-bundle-check.md`](../../scaf/tinytapeout/reports/2026-09-19-p0.6-adopted-bundle-check.md)
+   in the consumer repository. Four passes: the conflict diagnostics
+   (`CLOCK_PERIOD`, `VERILOG_FILES`, `DIE_AREA` each rejected naming the key),
+   repeatable emission and manifest/metadata checks, the `tb.v` wrapper trace on
+   emitted RTL, and Verilator lint plus Yosys synthesis inside image
+   `sha256:d109140b`, at identity
+   `22dfaf9a9fe0bce4e0c58d78bd0bb4d39173223de16fbd2f0f6ce8119cb46c7a`. Generic
+   synthesis reports 52 cells, 13 sequential and 39 combinational, which agrees
+   with the 13 flops the physical run above found. The flow still does not invoke
+   the check; that remains deliberate, since a physical run is physical evidence
+   and the adoption invariants are checked separately.
 
 The run record was archived with this library's own `scripts/archive.py`,
 which ran against the consumer run directory unmodified: 111 files, 9.4 MB of a
@@ -108,12 +139,12 @@ module it loads, which is worth knowing here: `scripts/archive.py` is the third
 library script the consumer has had to copy rather than call, after
 `phase4.py` and `report.py`.
 
-**What protemu needs next.** P5.3 is the blocking item: `Single_port_ram` with
-an explicitly selected flop store, integrated into protemu P0.7. Nothing in
-this run exercised memory — at 0.25% utilization the design has not tested
-area, congestion, or routability, and memory will be the first thing that does.
-After that, the absent CMOS5L SRAM macro backend is the feature that decides
-whether anything larger than a flop store is reachable on this target.
+**Current follow-up.** P5.3 has since closed with protemu's explicit-flop P0.7
+integration and mapped synthesis, and P5.5 has since closed with the consolidated
+usage guide. Memory physical feasibility and the separate CMOS5L SRAM capability
+investigation remain open. Nothing in this observable physical run exercised
+memory; at
+0.25% utilization it does not test congestion or routability under pressure.
 
 One flow-side note, not a blocker: LibreLane skipped `KLayout.DRC` in this run
 (`klayout__drc_error__count` is absent from `final/metrics.csv`; step 72 warned

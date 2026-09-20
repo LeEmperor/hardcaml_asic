@@ -1,14 +1,14 @@
-# Phase 4: TT/CMOS5L execution and results
+# TT/CMOS5L flow execution and results
 
-Status: operating guide, 2026-09-18. P4.1–P4.5 are closed with evidence; see
+Status: operating guide, 2026-09-20. P4.1–P4.5 and the consumer reproduction are
+closed with evidence; see
 [phase plan section 7](phase_plan.md#7-p4--execution-results-and-physical-integration)
 for what each gate rests on. Nothing below is outstanding work. This is the
 standing account of how the flow is run and how a run becomes an evidence
 directory, and the only documentation of `flow.sh`, `report.py` and
 `archive.py`: [bootstrapping](bootstrap.md) ends where this begins, and
-[bundle emission](bundle-emission.md) produces its input. The flow's remaining
-use is P5.2–P5.4, which run this same sequence against the consumer's adopted
-bundle rather than this repository's example.
+[bundle emission](bundle-emission.md) produces its input. The same sequence is
+used for this repository's examples and consumer-owned adopted bundles.
 
 The P3 bundle is immutable input. `scripts/phase4.py` is an external consumer:
 it verifies the emitted file hashes and pinned target references, creates a
@@ -37,7 +37,10 @@ writes and `flow.sh` sources; anything already set in the environment wins over
 it, so `TT=... scripts/flow.sh` still points the run at another checkout.
 `flow.sh` takes the run directory from
 the `run.json` path `phase4.py` prints, since run ids are random hex and do not
-sort by time. `report.py` prints timing per corner, signoff checks, the TT
+sort by time. For resumed steps it uses the run created by the current invocation,
+then `$RUN`, then the newest directory under `$RUNS` by modification time.
+`report.py --runs "$RUNS"` also selects newest by modification time; use an
+explicit run path for durable evidence. `report.py` prints timing per corner, signoff checks, the TT
 precheck rows, and what the post-CTS resizer did about hold; it exits nonzero
 when a check fails, when a run did not complete, or when a timing mode was left
 unconstrained. The `phase4.py` subcommands below remain the interface; the two
@@ -171,6 +174,13 @@ with the worst corner when available. Missing metrics have reasons. Raw reports
 remain linked by paths relative to the run directory. The collector is a separate
 command and also works on a failed or partially completed run.
 
+A synthesis-only run can be successful even though `report.py` exits nonzero:
+the general reporter requires physical timing, antenna, DRC, and LVS verdicts,
+which correctly remain `unknown`/unavailable after `--stage synthesis`. For that
+stage, inspect `process_status`, `completed_stage`, mapped cells/area, and the
+three synthesis checks. Never reinterpret absent physical metrics as pass or
+zero.
+
 ## Evidence and remaining acceptance
 
 The [phase plan](phase_plan.md#7-p4--execution-results-and-physical-integration)
@@ -223,3 +233,28 @@ stage run archives without pretending it has a layout.
 The archiver does not write the `README.md` beside the records. That note is the
 human account of what the run showed, and a generated stand-in would read as
 though someone had checked the result.
+
+The archiver also does not preserve the original bundle's generated RTL or
+copied source inputs. Keep the complete immutable input separately, as the
+consumer P5.3/P5.4 records do:
+
+```sh
+EVIDENCE=/absolute/path/to/evidence-directory
+BUNDLE=/absolute/path/to/emitted-bundle
+tar -czf "$EVIDENCE/input-bundle.tar.gz" \
+  -C "$(dirname "$BUNDLE")" "$(basename "$BUNDLE")"
+(cd "$EVIDENCE" && sha256sum input-bundle.tar.gz > input-bundle.sha256)
+```
+
+Restore that tarball to a fresh directory, verify the checksum and every file
+hash in `manifest.json`, and rerun preflight against the restored bundle before
+deleting scratch state. The consumer's
+[clean-staging archive](../../scaf/flow_results/20260920-081325-ccecd9ed/README.md#preservation-and-restoration)
+records an independently successful restoration. Do not edit emitted inputs to
+make restoration or preflight pass.
+
+The pinned LibreLane flow has a known ABC timing-print limitation: its renderer
+passes `cell/pin` where ABC expects a cell name. The consumer's
+[analysis](../../scaf/tinytapeout/reports/2026-09-20-p0.7-memory-synthesis.md#abc-diagnostics)
+shows why that print is not timing evidence. It does not invalidate mapped
+cell/area evidence or the independently reported post-route OpenSTA timing.

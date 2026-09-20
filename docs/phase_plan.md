@@ -1,7 +1,7 @@
 # hardcaml_asic phase plan
 
-Status: working implementation plan, 2026-09-18. P0–P4 have evidence and P4's
-exit gate is satisfied; P5 and the separate SRAM investigation remain open.
+Status: initial milestone complete, 2026-09-20. P0–P5 and M3 have evidence; the
+separate SRAM investigation remains open and does not block the milestone.
 
 ## 1. Purpose and use
 
@@ -77,6 +77,10 @@ The useful intermediate milestones are:
 | M1 — Resource usage | Construct and simulate registered program memory and elaborate its explicit flop implementation | P0 and P1 exit |
 | M2 — Project bundle | Generate validated TT/LibreLane inputs from a project declaration, including the memory example | P2 and P3 exit, with M1 |
 | M3 — Initial ASIC workflow | Build a separate consumer, execute emitted inputs, and inspect traceable results | P4 and P5 exit, with M2 |
+
+M1, M2, and M3 are complete. M3 closed on 2026-09-20 after P5.5 consolidated
+the delivered workflow and inexpensive commands were revalidated; the separate
+SRAM investigation does not block it.
 
 ### First implementation queue
 
@@ -400,7 +404,7 @@ not required to close this phase.
   Reuse the reference application's provisioning where appropriate. Evidence: a
   reproducible preflight establishes required files and tools; missing prerequisites
   are reported without implicit installation during elaboration or emission.
-  *Done:* the [execution guide](phase4-execution.md) gives explicit setup and
+  *Done:* the [execution guide](flow.md) gives explicit setup and
   preflight commands. [`phase4.py`](../scripts/phase4.py) checks every emitted
   file hash, target reference and revision, installed LibreLane, Python, Docker,
   and the exact container image without installing anything. The
@@ -457,8 +461,8 @@ not required to close this phase.
   mode), antenna/DRC/LVS pass, TT precheck passes all nine rows, and gate-level
   simulation of the final netlist against `test/tt_bundle_tb.v` passes.
   Inferred latches, unmapped instances, and synthesis errors are zero.
-  This run used the library's own example, so it is P4.5 evidence only; P5.4
-  still needs the consumer's adopted design.
+  This run used the library's own example, so it remains P4.5 evidence; the
+  separate consumer reproduction recorded under P5.4 supplies adoption evidence.
 
 **Exit gate:** the memory example has successful mapped synthesis, the small
 observable design has the physical/check evidence above, and both retain build/run
@@ -472,12 +476,9 @@ usable. P1 supplies memory; P4 supplies execution/results. Adoption is part of
 closing the library milestone, not a prerequisite that must already be complete.
 Consumer code and tests stay in the emulator repository; library fixes stay here.
 
-As of 2026-09-17 the emulator has deferred its adoption
-([emulator non-linear sequencing](../../scaf/docs/phase_plan.md#non-linear-sequencing-rtl-decoupled-from-asic-adoption)):
-its P0.6 starts once P5.1 here has evidence and its UART TX slice (P2.7) or
-store-consumer logic (P3.1a) is complete, and must land before its P3 exits.
-P5.1 and P5.5 can proceed independently; P5.2–P5.4, and therefore M3, wait on
-that trigger. Do not substitute a library-owned fixture for the consumer evidence.
+The emulator adoption trigger fired and protemu supplies the P5.2–P5.4 consumer
+evidence below. P5.5 consolidates the supported path around that evidence. Do
+not substitute a library-owned fixture for consumer evidence.
 
 - [x] **P5.1 — Make the library consumable from a separate project.** Establish
   the Dune/package installation or pinned dependency mechanism needed by the
@@ -516,50 +517,99 @@ that trigger. Do not substitute a library-owned fixture for the consumer evidenc
   metadata/configuration/SDC, rejects conflicting `CLOCK_PERIOD`, `VERILOG_FILES`,
   and `DIE_AREA` overrides, and runs protemu's existing `tinytapeout/test/tb.v`
   wrapper trace plus Verilator lint and Yosys synthesis on emitted RTL inside the
-  pinned LibreLane image. Run against protemu `88a6600` on 2026-09-19, exit 0:
+  pinned LibreLane image. Run against protemu `e7e3bb47` on 2026-09-19 from a clean
+  tree — all eight declared inputs report an empty `git_status` — exit 0:
   `PASS clock, source-list, and target configuration conflicts`, `PASS repeatable
   bundle, manifest, metadata, and conflict checks`, `PASS p0 wrapper
   reset/disable/pin/timer trace`, `PASS emitted RTL wrapper trace, lint, and
-  synthesis` on image `sha256:d109140b`; both emissions and a third kept one agreed
-  at identity `c6d137dece4bbef3c31ef9ad664b323a07baef53c23d4dca743023ab48176243`.
-  *That identity is not the one to adopt:* `dune-project` and
-  `hardcaml_protemu.opam` are declared bundle inputs and were dirty with P1.5 ISA
-  work at emission, so it moves when that work commits. Repeatability within a tree
-  state is what P5.2 asks for and is what this shows; the clean-tree emission P5.4
-  needs is `b699c8160775d269dd9fec5e6c17541cbc426c4bb9b5bf23952ed17b9626690b` at
-  protemu `7e29ecd`, recorded with the identity table in
-  [`cmos5l-template-return.md`](cmos5l-template-return.md).
-- [ ] **P5.3 — Support emulator P0.7 memory integration.** After P5.2, integrate its
+  synthesis` on image `sha256:d109140b` (Yosys 0.66, Verilator 5.046); both
+  emissions and a third kept one agreed at identity
+  `22dfaf9a9fe0bce4e0c58d78bd0bb4d39173223de16fbd2f0f6ce8119cb46c7a`. Generic
+  synthesis maps to 52 cells, 13 sequential and 39 combinational, agreeing with the
+  13 flops the P0.5b physical run reported. Recorded in the consumer repository at
+  [`2026-09-19-p0.6-adopted-bundle-check.md`](../../scaf/tinytapeout/reports/2026-09-19-p0.6-adopted-bundle-check.md).
+  A prior run of the same check at `88a6600`, with two inputs dirty, passed the same
+  four checks at a different identity with all four generated files byte-identical:
+  identity tracks git state and declared-input content, not what the flow reads.
+  These clean-tree emissions became preliminary data points for the later P5.4
+  clean-staging physical reproduction.
+- [x] **P5.3 — Support emulator P0.7 memory integration.** After P5.2, integrate its
   small registered whole-word load/readback design using explicitly selected flops.
   Evidence: link consumer validity/bounds/access-gating checks, latency/hold checks,
   independence from unspecified outputs, and mapped synthesis results. Reuse P4.4
   evidence when it is for this exact adopted design. The emulator's full core,
   firmware loader, and ISA decisions remain its P3 work.
-- [ ] **P5.4 — Reproduce the adopted physical path.** Ensure the consumer's physical
+  *Done:* protemu's P3.1a 256x16 consumer is connected to a stable `program`
+  instance with explicit `Flops` policy. Independent consumer tests, both library
+  elaboration modes, and separate emitted simulation/implementation RTL checks
+  pass without comparing unspecified outputs. Protemu bundle
+  `7ce444837068766c...` / run `a538212c80fb407b...` completed pinned CMOS5L
+  mapped synthesis at 16,294 cells and 349,314.9408 um^2, with zero inferred
+  latches, unmapped instances, or synthesis errors. Evidence is the consumer's
+  [P0.7 record](../../scaf/tinytapeout/reports/2026-09-20-p0.7-memory-synthesis.md)
+  and [archive](../../scaf/flow_results/20260920-071538-a538212c/README.md).
+  Declared consumer inputs were dirty and are content-hashed in the manifest;
+  the archive also preserves their complete original bundle independently of
+  the scratch tree. The raw ABC driving-cell lookup failed because pinned
+  LibreLane passed its OpenSTA-form `cell/pin` value to ABC's cell-only lookup;
+  for the recorded `AREA 0` script this qualifies the post-map ABC delay print,
+   not mapped cells or area. This closes memory integration and mapped synthesis,
+   not P5.4 clean-tree physical reproducibility, timing closure, or SRAM support.
+   *Closure confirmed, 2026-09-20:* consumer implementation and cleanup landed at
+   protemu `8d3ada1`; the consumer worktree is clean. The historical dirty-input
+   synthesis record remains valid with its preserved input bundle and documented
+   ABC timing limitation. No additional flow run is required for P5.3.
+- [x] **P5.4 — Reproduce the adopted physical path.** Ensure the consumer's physical
   run and required checks use the emitted bundle and pinned dependencies. Evidence:
   link the adopted-design P0 exit evidence and its build/run records, including
   P4.5 where shared. Restore inputs in a clean staging location and verify that
   reproducing emission requires no undocumented sibling paths or manual edits.
   A prior run of the old configuration path does not qualify.
-  *Note:* when this lands, the [execution guide](phase4-execution.md) stops being
-  about a phase. It is the standing flow guide and the only documentation of
-  `flow.sh`, `report.py`, and `archive.py`; rename it to `flow.md` then, updating
-  the six files that link it (`README.md`, `docs/README.md`, this plan,
-  `bootstrap.md`, `bundle-emission.md`, `consumer-installation.md`). The P4 gate
-  narrative stays in section 7 above.
-- [ ] **P5.5 — Publish initial usage documentation in the repository.** Document a
+  *Done:* protemu commit `8d3ada1571e07ff21e4c8707dcc3ce917d6037b3`
+  was restored into a clean detached staging worktree and built against the
+  consumer lock's `hardcaml_asic`
+  `a257424c3ae31fd6ee10cea052cc7577f15d2677` through a fresh isolated prefix.
+  All eight source-input statuses are clean; the observable checker passes
+  repeatable emission, copied hashes, conflict rejection, both wrapper traces,
+  lint, and generic synthesis. Bundle
+  `85729c18ca404a4b45dd8b1e97ea5833ad3677614b2064b222b38e9c17f575fe`
+  / run `ccecd9edc8e342b2b28f1a88d5c4e7ac` completed one full pinned 6x4 CMOS5L
+  attempt. Worst setup/hold slack is +15.589/+0.147 ns across the three reported
+  corners with no unconstrained mode; antenna, DRC, LVS, all nine TT prechecks,
+  and final-netlist simulation against protemu's observable testbench pass, with
+  zero inferred latches, synthesis errors, or unmapped instances. The consumer's
+  [P0.5c record](../../scaf/tinytapeout/reports/2026-09-20-p0.5c-clean-staging-physical.md)
+  and [archive](../../scaf/flow_results/20260920-081325-ccecd9ed/README.md)
+  preserve records, reports, logs, the complete immutable bundle, restoration
+  checks, and the exact testbench. No generated input was edited and no checkout
+  named `../hardcaml_asic` was used. The standing [flow guide](flow.md) now carries
+  the execution documentation; the historical P4 evidence remains in section 7.
+- [x] **P5.5 — Publish initial usage documentation in the repository.** Document a
   minimal declaration, behavioral versus implementation elaboration, memory policy,
   explicit environment setup, emission/execution/collection commands, output
   interpretation, and common diagnostics. Update implemented/planned status in the
   README and relevant interfaces. Evidence: the examples and commands match the
   delivered API and the consumer evidence; limitations and deferred features are
   explicit. No external publication or hosted service is required.
+  *Done:* [`usage.md`](usage.md) is the primary install-to-restoration path and
+  links the authoritative installation, memory, bundle, bootstrap, target, and
+  flow references. The maintained PDK-free examples, package-consumer smoke,
+  script help, bundle emission into fresh temporary directories, documentation
+  links, build/tests, and whitespace checks were revalidated on 2026-09-20.
+  It distinguishes the installed library from checkout-distributed scripts and
+  external tools, build identity from run identity, synthesis from physical
+  acceptance, and the standard report archive from separately preserved complete
+  input bundles. Current limits and the consumer P5.3/P5.4 evidence are linked.
 
 **Exit gate / M3:** P0–P5 required tasks have evidence. A separate consumer can
 declare, build, simulate, emit, execute, and inspect the initial TT/LibreLane path
 with registered flop memory. The adopted observable physical run and memory
 synthesis have traceable evidence. Consumer hardware semantics and final submission
 approval remain consumer responsibilities.
+
+*Closed 2026-09-20.* The required P0–P5 items above have evidence and P5.5 is
+complete. The separate S track and memory physical feasibility remain open by
+design and do not block M3.
 
 ## 9. S — Separate SRAM capability investigation
 

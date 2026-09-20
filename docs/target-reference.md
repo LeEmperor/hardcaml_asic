@@ -81,8 +81,9 @@ The TT top has exactly these ports:
 Resolution checks names, widths, and directions, including unused input ports
 that Hardcaml records as phantom inputs. The declaration supplies a nonblank
 title, author, and description plus one description for each of the 24 `ui`,
-`uo`, and `uio` bits. The TT wrapper owns reset, disable, and pad arbitration
-behavior; these checks only validate its boundary.
+`uo`, and `uio` bits. The harness defines the reset, enable, and bidirectional
+pins, but the consumer design owns reset/disable behavior and `uio_out`/`uio_oe`
+arbitration; these checks only validate the boundary.
 
 The initial timing subset is one primary clock on input `clk`, with optional
 input and output delays on named top-level ports. Each delay declares both a
