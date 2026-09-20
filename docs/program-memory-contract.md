@@ -274,11 +274,13 @@ the flow adapter validates and renders the views needed for its operation.
 | --- | --- | --- |
 | Behavioural model | implemented, P1 | Diagnostic poison per section 5.1; reference for defined behavior |
 | Generic flop implementation | implemented, P1 | Synthesizable, no macro; explicitly selected or explicitly allowed as fallback |
-| IHP CMOS5L macro | **blocked — see below** | Requires a macro that exists, is permitted, and can hold on disable |
+| IHP CMOS5L macro | **candidate inventoried; capability unresolved** | S.1 found an exact candidate; S.2-S.4 still require permission, conformance, flow evidence, and implementation |
 
-The macro backend must not be started yet. It is not known whether a usable
-CMOS5L SRAM macro exists for a Tiny Tapeout user project. What was checked in the
-pinned `tt-support-tools` revision `da63c99`:
+The macro backend must not be started yet. The
+[S.1 investigation](sram-candidate-investigation.md) found and inventoried the
+exact-shape `RM_IHPSG13_1P_256x16_c2_bm_bist`, but has not established behavioral
+conformance, target permission, or physical-flow capability. The earlier targeted
+check of pinned `tt-support-tools` revision `da63c99` found:
 
 - `tech/ihp-sg13cmos5l/cells.json` lists standard cells only; no SRAM entries.
 - The only `sram` match in the repository is a `SramCore` layer in
@@ -290,11 +292,11 @@ pinned `tt-support-tools` revision `da63c99`:
 - `cell_regexp` is used only for cell-summary reporting in `configure.py`, not as
   a precheck gate, so a non-matching macro name would not by itself fail precheck.
 
-At the time of that investigation the PDK itself was not inspected and no local
-checkout was available. Inspecting a bootstrapped PDK can establish candidate
-availability and collateral. It does not by itself establish shuttle permission,
-behavioral compatibility, or successful flow integration; those must also be
-verified before implementing the macro backend.
+At the time of that earlier check the PDK itself was not inspected and no local
+checkout was available. S.1 has now established candidate availability and
+collateral from the locked PDK. It does not establish shuttle permission,
+behavioral compatibility, or successful flow integration; those remain S.2-S.3
+gates before implementing the macro backend.
 
 The first project milestone uses an explicitly selected flop implementation and
 does not wait for a macro. A macro-required request must fail if no supported

@@ -1,12 +1,13 @@
 # SRAM candidate investigation for TT 6x4 / IHP CMOS5L
 
-Status: bounded ASIC S.1 inventory and preliminary S.2 / protemu P5.1a
-evidence, 2026-09-20. This is not macro-backend or physical-integration
-evidence.
+Status: ASIC S.1 inventory verified and complete, with preliminary S.2 /
+protemu P5.1a evidence, 2026-09-20. This is not behavioral-conformance,
+target-authorization, macro-backend, or physical-integration evidence.
 
 ## Executive conclusion
 
-**Overall answer: unresolved, with a strong exact-shape candidate.** The pinned
+**S.1 answer: complete, with a strong exact-shape candidate; overall SRAM
+capability remains unresolved.** The pinned
 IHP Open PDK contains the public, Apache-2.0-licensed
 `RM_IHPSG13_1P_256x16_c2_bm_bist` hard macro. It is an exact 256-word by
 16-bit, one-port candidate for protemu's current program store, and the pinned
@@ -27,13 +28,31 @@ That is candidate discovery, not established support. In particular:
 - no source found says that this exact 256x16 macro is approved for the selected
   March 2027 shuttle, and no authoritative submission policy was found that
   turns the merged tooling change into shuttle permission;
-- the exact 256x16 model has not been run through the library conformance suite,
-  and its views, dual supply connection, PDN, placement, LVS/black-box handling,
-  and checks have not been exercised in this project's pinned flow.
+- at S.1 closure the exact 256x16 model had not been run through the library
+  conformance suite; the later [S.2a experiment](sram-model-conformance.md) passes
+  functional behavior but leaves actual timing behavior unestablished, and its
+  views, dual supply connection, PDN, placement, LVS/black-box handling, and checks
+  have not been exercised in this project's pinned flow.
 
 The correct current conclusion is therefore: **an accessible, exact-process,
 exact-shape candidate exists and merits model checks, but it is not usable with
 the exact pinned TT support revision and is not yet a supported backend.**
+
+### S.1 acceptance assessment
+
+| Required inventory item | Recorded evidence |
+| --- | --- |
+| PDK/library versions | Exact IHP PDK, TT support-tools, and LibreLane locks and installed states below |
+| Permitted use and restrictions | Apache-2.0 grants use, modification, and distribution subject to its notice and other terms and without warranty; target/submission authorization remains unresolved |
+| Exact shape | Datasheet and views identify 256 words x 16 bits, one port, eight address bits, column mux 2 |
+| Port and power mappings | Main, mask, DLY, and BIST controls plus datasheet, LEF/CDL, and Liberty supply names are tabulated below |
+| Simulation models | Macro Verilog contains functional and timing paths and instantiates the shared behavioral model |
+| Timing corners | Exact typical, fast, and slow Liberty identities and operating points are recorded below |
+| Physical views | Exact LEF, GDS, and CDL files are present and hashed below |
+
+This satisfies the S.1 source-backed inventory gate. It does not satisfy S.2,
+S.3, or S.4 and does not turn accessible or licensed collateral into submission
+approval.
 
 ## Search scope and revisions
 
@@ -76,7 +95,9 @@ The independently provisioned protemu copies at `../scaf/tinytapeout/pdk` and
 `../scaf/tinytapeout/tt` have the same two revisions. Its support-tools checkout
 is clean. Its PDK checkout has one untracked generated identification file,
 `ihp-sg13cmos5l/SOURCES`, containing the locked PDK revision; no tracked PDK
-file is modified.
+file is modified. No `../scaf/tinytapeout/.venv` installation exists, so no
+second LibreLane installation was available to compare; this repository's
+installed command reports `LibreLane v3.1.0.dev3`.
 
 Searches began under `ihp-sg13cmos5l` and `tech/ihp-sg13cmos5l`, then broadened
 only within those installed repositories. The relevant process path
@@ -124,7 +145,7 @@ cross-view validator documentation.
 | Supplies | Datasheet: `VDD` support logic, `VDDARRAY` array supply, `VSS` ground. LEF/CDL names are `VDD!`, `VDDARRAY!`, `VSS!`; Liberty names are `VDD`, `VDDARRAY`, `VSS`. Documented operating range is 1.08-1.32 V, nominal 1.20 V |
 | Physical size/layers | 236.80 x 118.78 um = 28,127.10 um2; macro metal use through M4. LEF signal pins are on Metal2 and repeated supply rails are on Metal4. GDS also carries CMOS5L SRAM/DigiBnd marker layers |
 | Timing views | Typical 1.20 V/25 C, fast 1.32 V/-55 C, slow 1.08 V/125 C. Datasheet clock-to-output at those corners is approximately 3.02/1.86/5.06 ns rising and 2.95/1.82/4.94 ns falling |
-| License | Repository and individual generated views state Apache License 2.0; the collateral is public, not access-restricted |
+| License | Repository and text-based generated views state Apache License 2.0, permitting use, modification, and distribution subject to the license conditions and without warranty; the collateral is public, but target/submission permission is a separate unresolved restriction |
 
 The 64x16 candidate has the same active-high one-port control structure,
 one-cycle access, hold-producing registered model, supplies, operating range,
@@ -170,6 +191,8 @@ accidental collateral drift, are:
 | GDS | `763ddd53d812e0400c2cb89af192a0000d7b3f27e049de93aef41a2be9b547c6` |
 | CDL | `f7918bfd22caa5b317bd2222adbdf700588e93c9c55a131a753fa6227abb2c53` |
 | Typical Liberty | `6f4cca1ed508f879a35bdc15a9de2d027f81ec0eeec0d6c8ab27d05f5edad445` |
+| Fast Liberty | `c28bb80737d7a7daea14b9d259380c7e1dfc27c71c3ad1223a5387d8515ebe4b` |
+| Slow Liberty | `a04cff61cb4befb2290427db1ff2cb1c31c8d5990dca53ee3e5d1cc621679cd9` |
 
 ## Contract compatibility
 
@@ -190,9 +213,10 @@ candidate discovery as backend conformance:
 | Single clock domain | **Potentially adaptable** | Main port uses the contract clock; BIST clock/control must be statically tied off |
 | Portable interface has no power/BIST/DLY pins | **Potentially adaptable** | Backend-owned wrapper/collateral must tie `A_DLY`, mask, and BIST pins and map physical supplies without changing `Single_port_ram` |
 
-No model was executed in this task. Therefore preliminary compatibility is
-enough to justify S.2 model work, not enough to complete S.2 or claim backend
-conformance.
+No model was executed during this S.1 inventory. The subsequent
+[S.2a experiment](sram-model-conformance.md) established functional-model
+conformance and timed-model compilation, while simulator timing support and S.2b
+target permission remain open. Neither result claims backend conformance.
 
 ## Tiny Tapeout permission and flow findings
 
@@ -232,6 +256,10 @@ on 2026-09-17. Crucially, its parent is the project's exact locked revision
 `da63c992...`. Thus the currently pinned target is not merely untested: its own
 precheck list is **confirmed incompatible** with the candidate GDS marker
 layers. This investigation does not change the pin.
+
+The fix object is not present in the pinned local checkout's object database;
+its parent and one-line diff were instead reverified from GitHub's immutable
+commit API and patch URL. No local pin or checkout changed.
 
 ### Permission evidence and limit
 
@@ -283,8 +311,9 @@ do not by themselves grant a slot on a selected shuttle.
   shuttle.
 - Whether the official competition pins will advance to include TT commit
   `cfa06bae` or equivalent; changing dependency pins is a separate decision.
-- Exact-model conformance under the library's scoreboard, including four-state
-  disabled hold, write-cycle unspecified output, and timed model compilation.
+- Actual timed-model behavior under a simulator that supports the exact
+  `$setuphold` delayed signals and timing checks; S.2a established functional
+  conformance and timed-source compilation only.
 - Whether tying both `VDD!` and `VDDARRAY!` to `VPWR` is the required and
   accepted power implementation for this target, rather than merely one public
   project's solution.
@@ -297,29 +326,26 @@ do not by themselves grant a slot on a selected shuttle.
 
 ## Recommended next task
 
-Proceed with a **bounded S.2 behavioral-model check plus authoritative pin/use
-clarification**, not S.3 physical integration and not S.4 backend work:
+S.2a is now recorded in the
+[exact-model conformance experiment](sram-model-conformance.md). Proceed with
+**bounded S.2b authoritative pin/use clarification**, not S.3 physical
+integration and not S.4 backend work:
 
-1. Run the existing RAM contract vectors against only the supplied
-   `RM_IHPSG13_1P_256x16_c2_bm_bist` functional model through a temporary test
-   wrapper with the tie-offs above. Check defined reads and disabled hold within
-   the four-state model; do not require a value after writes or from unwritten
-   locations. Record compiler command, model hashes, and results without adding
-   a technology mapping.
-2. Obtain the authoritative answer to the quoted shuttle/pin/power question.
+1. Obtain the authoritative answer to the quoted shuttle/pin/power question.
    Existing public evidence may answer it if the competition updates its lock
    or instructions; do not infer permission from the PDK or contact anyone as
    part of this task.
-3. Only if both succeed, define a separate S.3 minimal external flow experiment
-   for this exact 256x16 candidate, including all views, both supply rails,
-   explicit placement/PDN, timing corners, extraction/LVS policy, and the
-   official post-`cfa06bae` precheck. Do not begin the library backend first.
+2. Only if S.2b and the other capability gates succeed, define a separate S.3
+   minimal external flow experiment for this exact 256x16 candidate, including
+   all views, both supply rails, explicit placement/PDN, timing corners,
+   extraction/LVS policy, and the official post-`cfa06bae` precheck. Do not begin
+   the library backend first.
 
-Status justified now: ASIC S.1 may be marked complete with this inventory;
-ASIC S.2 remains in progress/open pending model checks and authoritative target
-permission; S.3 and S.4 remain open. Protemu P5.1a remains open but should link
-this as a candidate-found, capability-gate-unresolved record rather than an
-unavailable decision.
+Status justified now: ASIC S.1 and S.2a are complete;
+ASIC S.2 remains open pending authoritative target permission and actual timing
+support remains limited as recorded; S.3 and S.4 remain open. Protemu P5.1a
+remains open but should link this as a candidate-found,
+capability-gate-unresolved record rather than an unavailable decision.
 
 ## Source references
 

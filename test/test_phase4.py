@@ -1,11 +1,17 @@
-"""Report collection fixtures require no PDK or licensed tools."""
+"""Runner and collection fixtures require no PDK or licensed tools."""
 
+import contextlib
 import importlib.util
+import io
 import json
+import os
 from pathlib import Path
+import signal
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 sys.dont_write_bytecode = True
@@ -13,6 +19,190 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts/phase4.py"
 SPEC = importlib.util.spec_from_file_location("phase4", SCRIPT)
 phase4 = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(phase4)
+
+
+class RunnerTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.bundle = self.root / "bundle"
+        self.bundle.mkdir()
+        (self.bundle / "src").mkdir()
+        (self.bundle / "src/config.json").write_text("{}\n")
+        self.manifest = {
+            "schema_version": 1,
+            "adapter": "LibreLane",
+            "identity": "build-1",
+            "top_module": "fixture_top",
+            "files": [],
+            "requested_tools": {"librelane": "1.2.3", "python": "3.11"},
+            "target": {"technology": "ihp-sg13cmos5l", "external_references": []},
+        }
+        (self.bundle / "manifest.json").write_text(json.dumps(self.manifest))
+        self.args = SimpleNamespace(
+            bundle=self.bundle,
+            runs=self.root / "runs",
+            stage="synthesis",
+            support_tools=self.root / "tools",
+            pdk_root=self.root / "pdk",
+            python=self.root / "venv/bin/python",
+            allow_python_mismatch=False,
+            native=True,
+        )
+
+    def ready(self):
+        return {
+            "ready": True,
+            "issues": [],
+            "waivers": [],
+            "requested": self.manifest["requested_tools"],
+            "actual": {"python": "3.11.9", "librelane": "1.2.3"},
+        }
+
+    def test_structured_outcome_and_actual_preflight_are_persisted(self):
+        decision = self.ready()
+        with mock.patch.object(phase4, "preflight", return_value=decision), \
+             mock.patch.object(phase4, "run_logged", return_value=0):
+            outcome = phase4.run(self.args)
+        self.assertIsInstance(outcome, phase4.RunOutcome)
+        self.assertTrue(outcome.run_dir.is_absolute())
+        self.assertTrue(outcome.run_record.is_absolute())
+        self.assertEqual(outcome.run_record, outcome.run_dir / "run.json")
+        self.assertEqual((outcome.status, outcome.exit_code), ("completed", 0))
+        record = phase4.read_json(outcome.run_record)
+        self.assertEqual(phase4.read_json(outcome.run_dir / "preflight.json"), decision)
+        self.assertEqual(record["environment"], decision)
+
+    def test_missing_manifest_fails_before_allocation(self):
+        (self.bundle / "manifest.json").unlink()
+        with self.assertRaises(FileNotFoundError):
+            phase4.run(self.args)
+        self.assertFalse(self.args.runs.exists())
+
+    def test_failed_and_interrupted_attempts_keep_machine_readable_identity(self):
+        cases = (
+            (RuntimeError("flow failed"), "failed", 1, None),
+            (phase4.FlowInterrupted(signal.SIGINT), "interrupted", 130, "SIGINT"),
+            (phase4.FlowInterrupted(signal.SIGTERM), "interrupted", 143, "SIGTERM"),
+        )
+        for error, status, code, interrupted_by in cases:
+            with self.subTest(status=status, code=code):
+                with mock.patch.object(phase4, "preflight", return_value=self.ready()), \
+                     mock.patch.object(phase4, "run_logged", side_effect=error):
+                    outcome = phase4.run(self.args)
+                self.assertEqual((outcome.status, outcome.exit_code), (status, code))
+                record = phase4.read_json(outcome.run_record)
+                self.assertEqual(record["status"], status)
+                if interrupted_by:
+                    self.assertEqual(record["interrupted_by"], interrupted_by)
+
+    def test_standalone_adapter_prints_only_the_run_record_path(self):
+        with mock.patch.object(phase4, "preflight", return_value=self.ready()), \
+             mock.patch.object(phase4, "run_logged", return_value=0):
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                self.assertEqual(phase4.execute(self.args), 0)
+        lines = stdout.getvalue().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(Path(lines[0]).is_file())
+
+    def test_run_logged_terminates_and_waits_for_child_group(self):
+        process = mock.MagicMock()
+        process.pid = 4321
+        process.wait.side_effect = [phase4.FlowInterrupted(signal.SIGTERM), 143]
+        process.__enter__.return_value = process
+        process.__exit__.return_value = False
+        record = {"commands": []}
+        record_path = self.root / "record.json"
+        with mock.patch.object(phase4.subprocess, "Popen", return_value=process), \
+             mock.patch.object(phase4.os, "killpg") as killpg:
+            with self.assertRaises(phase4.FlowInterrupted):
+                phase4.run_logged(["tool"], self.root, os.environ.copy(),
+                                  self.root / "log", record, record_path)
+        killpg.assert_called_once_with(4321, signal.SIGTERM)
+        self.assertEqual(process.wait.call_count, 2)
+
+
+class PostcheckTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.run_dir = self.root / "run"
+        flow = self.run_dir / "project/runs/asic/final"
+        (flow / "gds").mkdir(parents=True)
+        (flow / "nl").mkdir()
+        (flow / "gds/fixture_top.gds").write_text("gds\n")
+        (flow / "nl/fixture_top.nl.v").write_text("module fixture_top; endmodule\n")
+        (self.run_dir / "project/manifest.json").write_text(json.dumps({
+            "top_module": "fixture_top",
+        }))
+        (self.run_dir / "run.json").write_text(json.dumps({
+            "run_id": "attempt-1",
+            "build_identity": "build-1",
+            "status": "completed",
+            "completed_stage": "full",
+            "outputs": {"flow": "project/runs/asic"},
+            "environment": {"requested": {"librelane": "1.2.3"}},
+        }))
+        self.support = self.root / "support"
+        (self.support / "precheck").mkdir(parents=True)
+        (self.support / "precheck/default.nix").write_text("{}\n")
+        (self.support / "precheck/tool-versions.json").write_text(json.dumps({
+            "klayout": "0.28.17",
+        }))
+        (self.support / "tech").mkdir()
+        self.pdk = self.root / "pdk"
+        cells = self.pdk / "ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog"
+        cells.mkdir(parents=True)
+        (cells / "sg13cmos5l_udp.v").write_text("\n")
+        (cells / "sg13cmos5l_stdcell.v").write_text("\n")
+        io_model = self.pdk / "ihp-sg13cmos5l/libs.ref/sg13cmos5l_io/verilog"
+        io_model.mkdir(parents=True)
+        (io_model / "sg13cmos5l_io.v").write_text("\n")
+        self.testbench = self.root / "custom_tb.v"
+        self.testbench.write_text("module memory_tb; endmodule\n")
+        self.precheck_python = self.root / "precheck-python"
+        self.precheck_python.write_text("\n")
+        self.args = SimpleNamespace(
+            run_dir=self.run_dir,
+            support_tools=self.support,
+            pdk_root=self.pdk,
+            precheck_python=self.precheck_python,
+            testbench=self.testbench,
+            testbench_top="memory_tb",
+        )
+        self.probes = ["KLayout 0.28.17", "0.28.17", "image-id", "Icarus 12"]
+
+    def test_missing_input_fails_before_check_allocation(self):
+        self.testbench.unlink()
+        with self.assertRaises(phase4.PrerequisiteError):
+            phase4.check(self.args)
+        self.assertFalse((self.run_dir / "checks").exists())
+
+    def test_explicit_non_example_top_is_forwarded_and_recorded(self):
+        with mock.patch.object(phase4, "command_output", side_effect=self.probes), \
+             mock.patch.object(phase4, "run_logged", return_value=0) as run_logged:
+            outcome = phase4.check(self.args)
+        self.assertEqual(outcome.exit_code, 0)
+        compile_command = run_logged.call_args_list[1].args[0]
+        self.assertEqual(compile_command[compile_command.index("-s") + 1], "memory_tb")
+        record_path = next((self.run_dir / "checks").glob("*/postcheck.json"))
+        self.assertEqual(phase4.read_json(record_path)["inputs"]["testbench_top"],
+                         "memory_tb")
+
+    def test_interrupted_postcheck_is_finalized_with_signal_status(self):
+        with mock.patch.object(phase4, "command_output", side_effect=self.probes), \
+             mock.patch.object(phase4, "run_logged",
+                               side_effect=phase4.FlowInterrupted(signal.SIGTERM)):
+            outcome = phase4.check(self.args)
+        self.assertEqual(outcome.exit_code, 143)
+        record_path = next((self.run_dir / "checks").glob("*/postcheck.json"))
+        record = phase4.read_json(record_path)
+        self.assertEqual(record["status"], "interrupted")
+        self.assertEqual(record["interrupted_by"], "SIGTERM")
+        self.assertIsNotNone(record["ended_at"])
 
 
 class CollectorTest(unittest.TestCase):

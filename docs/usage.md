@@ -230,28 +230,61 @@ Keep these claims distinct:
   design-specific final-netlist verification.
 
 Missing metrics remain `null`/`unknown` with an unavailable reason; they are not
-passes or zeroes. The current reporter intentionally exits nonzero for a valid
-synthesis-only run because physical timing and signoff verdicts are absent. Read
-the requested/completed stage and synthesis fields rather than weakening that
-physical reporter.
+passes or zeroes. The reporter checks the requested stage against both the run
+record and collected result. A completed synthesis-only run exits zero only with
+valid mapped cell/area evidence, no collection errors, and explicit zero values
+for all three synthesis checks; it labels physical timing, signoff, and
+postchecks as not evaluated. A full request never falls back to that policy: it
+must complete the full stage and additionally provide constrained setup/hold
+timing, passing DRC/LVS/antenna, and passing TT precheck and final-netlist
+verification. Unknown or contradictory stages and absent or malformed required
+evidence exit nonzero.
 
-Archive one explicit run, then separately retain the complete immutable input
-bundle. The standard archiver does **not** include the original generated RTL or
-the bundle's copied source inputs:
+Archive one explicit run. The standard archiver retains both selected run
+evidence and the complete immutable input bundle:
 
 ```sh
 EVIDENCE=/absolute/path/to/evidence-directory
 python3 "$ASIC_SOURCE/scripts/archive.py" "$RUN" --list
 python3 "$ASIC_SOURCE/scripts/archive.py" "$RUN" --output "$EVIDENCE"
-tar -czf "$EVIDENCE/input-bundle.tar.gz" \
-  -C "$(dirname "$BUNDLE")" "$(basename "$BUNDLE")"
-(cd "$EVIDENCE" && sha256sum input-bundle.tar.gz > input-bundle.sha256)
 ```
 
-Restore the tarball to a fresh directory, check its checksum and manifest file
-hashes, and rerun `phase4.py preflight` there before discarding scratch flow
-state. The consumer's [clean-staging P5.4 record](../../scaf/tinytapeout/reports/2026-09-20-p0.5c-clean-staging-physical.md)
-demonstrates that procedure and preserves the independently restored bundle.
+The result contains `reports.tar.gz`, `input-bundle.tar.gz`,
+`input-bundle.sha256`, the plain JSON records, and `archive.json`. The input
+tarball contains the original manifest bytes and exactly its declared files,
+including copied source inputs and both RTL source sets. The archiver verifies
+manifest/run identity, every declared hash, and source-copy metadata. It prefers
+the original `run.json.bundle`; if that path has disappeared, the staged
+`RUN/project` is used only when it is an exact complete copy. Undeclared run,
+tool, PDK, and support files are excluded.
+
+Restore and verify without the original checkout, bundle, run directory, PDK, or
+opam switch:
+
+```sh
+RESTORE=$(mktemp -d)
+(cd "$EVIDENCE" && sha256sum --check input-bundle.sha256)
+tar -xzf "$EVIDENCE/input-bundle.tar.gz" -C "$RESTORE"
+python3 - "$RESTORE/bundle" "$EVIDENCE/run.json" <<'PY'
+import hashlib, json, pathlib, sys
+bundle, run_path = map(pathlib.Path, sys.argv[1:])
+manifest_bytes = (bundle / "manifest.json").read_bytes()
+manifest = json.loads(manifest_bytes)
+run = json.loads(run_path.read_text())
+assert hashlib.sha256(manifest_bytes).hexdigest() == run["manifest_sha256"]
+assert manifest["identity"] == run["build_identity"]
+for entry in manifest["files"]:
+    assert hashlib.sha256((bundle / entry["path"]).read_bytes()).hexdigest() == entry["sha256"], entry["path"]
+print("verified", len(manifest["files"]), "bundle files for", run["run_id"])
+PY
+```
+
+Running preflight or executing the restored bundle still needs the exact
+separately recorded toolchain and external collateral. Archives produced before
+this capability may lack `input-bundle.tar.gz`; reports alone cannot reconstruct
+the omitted generated RTL or source copies. The consumer's
+[clean-staging P5.4 record](../../scaf/tinytapeout/reports/2026-09-20-p0.5c-clean-staging-physical.md)
+documents the earlier manual procedure and remains historical evidence.
 
 ## Diagnostics and limits
 

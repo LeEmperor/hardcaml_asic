@@ -38,6 +38,7 @@
 #   FLOW_PY      python of the LibreLane venv         ($TOOLCHAIN/.venv/bin/python)
 #   PRECHECK_PY  python of the TT precheck venv       ($TOOLCHAIN/.venv-precheck/...)
 #   TESTBENCH    gate-level wrapper testbench   (test/tt_bundle_tb.v)
+#   TESTBENCH_TOP simulator top for this development example (tb_observable)
 #   RUN          an existing run directory for steps after "run"
 #   ALLOW_PYTHON_MISMATCH  0 to require the bundle's exact Python minor version (1)
 #
@@ -82,6 +83,9 @@ OUT=${OUT:-/home/wayne/devel/jane/p4-$KIND}
 BUNDLE=${BUNDLE:-$OUT/bundle}
 RUNS=${RUNS:-$OUT/runs}
 TESTBENCH=${TESTBENCH:-test/tt_bundle_tb.v}
+# This default belongs to this repository's example adapter. The reusable
+# command contract requires both the testbench path and simulator top.
+TESTBENCH_TOP=${TESTBENCH_TOP:-tb_observable}
 
 # --allow-python-mismatch by default: the bundle requests 3.11 and the venv is
 # 3.12, an intentional compatibility run. ALLOW_PYTHON_MISMATCH=0 turns it off.
@@ -235,10 +239,6 @@ step_run() {
   [ -f "$record" ] || { echo "flow: no run.json printed" >&2; return 1; }
   RUN=$(dirname "$record")
   echo "flow: run directory $RUN" >&2
-  # phase4.py owns the run directory's own records; this is the one thing it
-  # cannot write, because preflight ran before the directory existed. Copying it
-  # in makes the attempt self-contained, which is what gets archived as evidence.
-  [ -f "$OUT/preflight.json" ] && cp "$OUT/preflight.json" "$RUN/preflight.json"
   return 0
 }
 
@@ -248,7 +248,8 @@ step_postcheck() {
   say "postcheck: TT precheck and gate-level simulation"
   python3 scripts/phase4.py postcheck "$RUN" \
     --support-tools "$TT" --pdk-root "$PDK" \
-    --precheck-python "$PRECHECK_PY" --testbench "$TESTBENCH"
+    --precheck-python "$PRECHECK_PY" --testbench "$TESTBENCH" \
+    --testbench-top "$TESTBENCH_TOP"
 }
 
 step_collect() {

@@ -15,14 +15,18 @@
   pins, options, and troubleshooting.
 - [Flow execution and results](flow.md): preflight, synthesis/full execution,
   result collection and interpretation, postchecks, archiving, and restoration.
+- [Legacy flow consolidation](flow_legacy_migration.md): execution brief for
+  installing one authoritative flow implementation, migrating the `scaf`
+  consumer, and deleting vendored and staged legacy paths.
 - [TT/CMOS5L target reference](target-reference.md): supported `6x4` geometry,
   wrapper boundary, timing/configuration ownership, and protected settings.
 
 ## Architecture and evidence
 
-- [Implementation phase plan](phase_plan.md): actionable P0–P5 tasks,
-  dependencies, intermediate usage milestones, and evidence-based exit gates
-  for the first TT/LibreLane path, plus a separate SRAM investigation track.
+- [Implementation phase plan](phase_plan.md): completed P0–P5/M3 evidence,
+  post-M3 P6–P7 shared-tooling distribution and consumer migration tasks toward
+  M4, plus separate S-series SRAM and T-series toolchain follow-ups. Each task
+  has dependencies and evidence-based exit criteria.
   Start here to choose implementation work.
 - [Architecture and implementation plan](architecture.md): accepted system
   boundaries, project lifecycle, target and resource policies, build outputs,
@@ -48,7 +52,8 @@ Architecture decisions were accepted on 2026-09-16. API examples in the plan are
 sketches, not a claim that the corresponding modules are implemented. Resource
 behavior is governed by its contract; current architecture and milestone order
 are governed by the architecture plan. The library phase plan breaks that first
-milestone into implementation tasks and tracks completion evidence.
+milestone into implementation tasks and tracks completion evidence, followed by
+the selected tooling-distribution and consumer-consolidation work.
 
 The shared direction is one initial package, separate harness/technology/flow
 selection, context-registered resources with explicit implementation policy, and

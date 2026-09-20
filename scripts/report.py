@@ -20,12 +20,14 @@ import argparse
 import csv
 import importlib.util
 import json
+import math
 from pathlib import Path
 import re
 import sys
 
 
 SCRIPT = Path(__file__).resolve()
+UNCONSTRAINED_THRESHOLD = 1e30
 
 
 def load_phase4():
@@ -85,7 +87,7 @@ def corner_timing(metrics_csv):
             else:
                 mode, corner = match.groups()
                 field = "vio"
-            if field == "ws" and abs(value) > 1e30:
+            if field == "ws" and abs(value) >= UNCONSTRAINED_THRESHOLD:
                 value = None
             corners.setdefault(corner, {})[f"{mode}_{field}"] = value
     return corners
@@ -117,12 +119,22 @@ def hold_repair(run_dir, record):
 
 
 def number(value, digits=3):
-    return "n/a" if value is None else f"{value:.{digits}f}"
+    return (f"{value:.{digits}f}" if isinstance(value, (int, float))
+            and not isinstance(value, bool) and math.isfinite(value) else "n/a")
 
 
-def report(run_dir, results, source):
+def numeric(value, *, count=False, nonnegative=False):
+    if (not isinstance(value, (int, float)) or isinstance(value, bool)
+            or not math.isfinite(value)):
+        return False
+    if nonnegative and value < 0:
+        return False
+    return not count or float(value).is_integer()
+
+
+def report(run_dir, results, source, output=print):
     problems = []
-    out = print
+    out = output
 
     record = json.loads((run_dir / "run.json").read_text())
     out(f"run        {results.get('run_id')}  ({run_dir})")
@@ -130,66 +142,166 @@ def report(run_dir, results, source):
     out(f"status     {results.get('process_status')}"
         f"   stage {results.get('completed_stage')} of {results.get('requested_stage')}"
         f"   source {source}")
-    if results.get("process_status") != "completed":
-        problems.append(f"process status {results.get('process_status')}")
-    for error in results.get("errors") or []:
-        problems.append(f"collection error: {error}")
+    for field in ("run_id", "build_identity"):
+        if record.get(field) is None or results.get(field) is None:
+            problems.append(f"missing {field} in run or results record")
+        elif record[field] != results[field]:
+            problems.append(f"contradictory {field}: run={record[field]!r}, results={results[field]!r}")
+    for run_field, result_field in (("status", "process_status"),
+                                    ("requested_stage", "requested_stage"),
+                                    ("completed_stage", "completed_stage")):
+        if record.get(run_field) != results.get(result_field):
+            problems.append(f"contradictory {result_field}: run={record.get(run_field)!r}, "
+                            f"results={results.get(result_field)!r}")
 
-    out("\nTIMING")
-    goal = results.get("timing_goal")
-    unconstrained = results.get("timing_unconstrained_modes") or []
-    out(f"  goal {goal}")
-    if goal != "pass":
-        problems.append(f"timing goal {goal}")
-    if unconstrained:
-        out(f"  UNCONSTRAINED: {', '.join(unconstrained)}"
-            "  (no constrained paths reported; the SDC does not check this mode)")
-        problems.append(f"unconstrained timing modes: {', '.join(unconstrained)}")
-    metrics = results.get("metrics") or {}
-    for name in ("setup_slack", "hold_slack"):
-        item = metrics.get(name) or {}
-        reason = item.get("unavailable_reason")
-        out(f"  {name:<12} {number(item.get('value')):>10} ns"
-            f"   corner {item.get('corner') or '-'}"
-            f"{'   ' + reason if reason else ''}")
-    corners = corner_timing(flow_dir(run_dir, record) / "final/metrics.csv")
-    if corners:
-        out(f"  {'corner':<22}{'setup ws':>10}{'setup vio':>11}"
-            f"{'hold ws':>10}{'hold vio':>10}")
-        for corner, values in sorted(corners.items()):
-            out(f"  {corner:<22}{number(values.get('setup_ws')):>10}"
-                f"{number(values.get('setup_vio'), 0):>11}"
-                f"{number(values.get('hold_ws')):>10}"
-                f"{number(values.get('hold_vio'), 0):>10}")
+    requested = record.get("requested_stage")
+    completed = record.get("completed_stage")
+    result_requested = results.get("requested_stage")
+    result_completed = results.get("completed_stage")
+    valid_stages = {"synthesis", "full"}
+    if requested not in valid_stages or result_requested not in valid_stages:
+        problems.append(f"unknown requested stage: run={requested!r}, results={result_requested!r}")
+        scope = None
+    elif requested != result_requested:
+        scope = None
+    else:
+        scope = requested
+    if completed not in valid_stages | {None} or result_completed not in valid_stages | {None}:
+        problems.append(f"unknown completed stage: run={completed!r}, results={result_completed!r}")
+    if record.get("status") != "completed" or results.get("process_status") != "completed":
+        problems.append(f"process did not complete: run={record.get('status')!r}, "
+                        f"results={results.get('process_status')!r}")
+    if scope is not None and (completed != scope or result_completed != scope):
+        problems.append(f"requested {scope} but completed stage is "
+                        f"run={completed!r}, results={result_completed!r}")
 
-    out("\nSIGNOFF CHECKS")
-    for name, item in sorted((results.get("checks") or {}).items()):
-        note = item.get("reason")
-        status = f"{item.get('status'):<8}  {note}" if note else item.get("status")
-        out(f"  {name:<10} {status}")
-        if item.get("status") != "pass":
-            problems.append(f"{name} {item.get('status')}")
-    for name, item in sorted((results.get("synthesis_checks") or {}).items()):
-        value = item.get("value")
-        out(f"  {name:<22} {number(value, 0)}")
-        if value:
+    out(f"scope      {scope + '-only acceptance' if scope == 'synthesis' else 'full-flow acceptance' if scope == 'full' else 'invalid/unknown'}")
+
+    errors = results.get("errors")
+    if not isinstance(errors, list):
+        problems.append("collection errors field missing or malformed")
+    else:
+        for error in errors:
+            problems.append(f"collection error: {error}")
+
+    metrics = results.get("metrics")
+    out("\nSYNTHESIS EVIDENCE")
+    if not isinstance(metrics, dict):
+        problems.append("metrics missing or malformed")
+        metrics = {}
+    for name, count in (("mapped_area", False), ("mapped_cells", True)):
+        item = metrics.get(name)
+        value = item.get("value") if isinstance(item, dict) else None
+        reason = item.get("unavailable_reason") if isinstance(item, dict) else None
+        out(f"  {name:<22} {number(value, 0 if count else 3)}"
+            f"{'   ' + str(reason) if reason is not None else ''}")
+        if reason is not None:
+            problems.append(f"{name} unavailable: {reason}")
+        elif not numeric(value, count=count, nonnegative=True):
+            problems.append(f"{name} missing or malformed")
+
+    synthesis_checks = results.get("synthesis_checks")
+    if not isinstance(synthesis_checks, dict):
+        problems.append("synthesis_checks missing or malformed")
+        synthesis_checks = {}
+    for name in ("unmapped_instances", "synthesis_errors", "inferred_latches"):
+        item = synthesis_checks.get(name)
+        value = item.get("value") if isinstance(item, dict) else None
+        reason = item.get("unavailable_reason") if isinstance(item, dict) else None
+        out(f"  {name:<22} {number(value, 0)}"
+            f"{'   ' + str(reason) if reason is not None else ''}")
+        if reason is not None:
+            problems.append(f"{name} unavailable: {reason}")
+        elif not numeric(value, count=True, nonnegative=True):
+            problems.append(f"{name} missing or malformed")
+        elif value != 0:
             problems.append(f"{name} = {number(value, 0)}")
 
-    postchecks = results.get("postchecks") or []
-    out("\nPOSTCHECKS" if postchecks else "\nPOSTCHECKS  none recorded")
-    for entry in postchecks:
-        for name, status in sorted((entry.get("checks") or {}).items()):
-            out(f"  {name:<12} {status}")
-            if status != "pass":
-                problems.append(f"{name} {status}")
-    rows = precheck_rows(run_dir)
-    for check, result in rows:
-        out(f"    {check:<44} {result}")
+    if scope == "full":
+        out("\nTIMING")
+        goal = results.get("timing_goal")
+        unconstrained = results.get("timing_unconstrained_modes")
+        out(f"  goal {goal}")
+        if goal != "pass":
+            problems.append(f"timing goal {goal}")
+        if not isinstance(unconstrained, list) or any(
+                not isinstance(mode, str) for mode in unconstrained):
+            problems.append("timing_unconstrained_modes missing or malformed")
+        elif unconstrained:
+            out(f"  UNCONSTRAINED: {', '.join(unconstrained)}"
+                "  (no constrained paths reported; the SDC does not check this mode)")
+            problems.append(f"unconstrained timing modes: {', '.join(unconstrained)}")
+        for name in ("setup_slack", "hold_slack"):
+            item = metrics.get(name)
+            value = item.get("value") if isinstance(item, dict) else None
+            corner = item.get("corner") if isinstance(item, dict) else None
+            reason = item.get("unavailable_reason") if isinstance(item, dict) else None
+            out(f"  {name:<12} {number(value):>10} ns   corner {corner or '-'}"
+                f"{'   ' + str(reason) if reason else ''}")
+            if reason is not None:
+                problems.append(f"{name} unavailable: {reason}")
+            elif (not numeric(value, nonnegative=True)
+                  or abs(value) >= UNCONSTRAINED_THRESHOLD
+                  or not isinstance(corner, str) or not corner):
+                problems.append(f"{name} missing or malformed")
+        corners = corner_timing(flow_dir(run_dir, record) / "final/metrics.csv")
+        if corners:
+            out(f"  {'corner':<22}{'setup ws':>10}{'setup vio':>11}"
+                f"{'hold ws':>10}{'hold vio':>10}")
+            for corner, values in sorted(corners.items()):
+                out(f"  {corner:<22}{number(values.get('setup_ws')):>10}"
+                    f"{number(values.get('setup_vio'), 0):>11}"
+                    f"{number(values.get('hold_ws')):>10}"
+                    f"{number(values.get('hold_vio'), 0):>10}")
 
-    repair = hold_repair(run_dir, record)
-    out("\nHOLD REPAIR (post-CTS resizer)" if repair else "\nHOLD REPAIR  no resizer log found")
-    for step, line in repair:
-        out(f"  [{step}] {line}")
+        out("\nSIGNOFF CHECKS")
+        checks = results.get("checks")
+        if not isinstance(checks, dict):
+            problems.append("physical checks missing or malformed")
+            checks = {}
+        for name in ("drc", "lvs", "antenna"):
+            item = checks.get(name)
+            status = item.get("status") if isinstance(item, dict) else None
+            note = item.get("reason") if isinstance(item, dict) else None
+            out(f"  {name:<10} {status or 'missing'}{('  ' + str(note)) if note else ''}")
+            if status != "pass":
+                problems.append(f"{name} {status or 'missing'}")
+
+        postchecks = results.get("postchecks")
+        out("\nPOSTCHECKS")
+        if not isinstance(postchecks, list) or not postchecks:
+            problems.append("required postchecks missing or malformed")
+        else:
+            for index, entry in enumerate(postchecks):
+                if not isinstance(entry, dict):
+                    problems.append(f"postcheck {index + 1} malformed")
+                    continue
+                if entry.get("status") != "completed":
+                    problems.append(f"postcheck {index + 1} status {entry.get('status')}")
+                entry_checks = entry.get("checks")
+                if not isinstance(entry_checks, dict):
+                    entry_checks = {}
+                    problems.append(f"postcheck {index + 1} checks missing or malformed")
+                for name in ("precheck", "gate_level"):
+                    status = entry_checks.get(name)
+                    out(f"  {name:<12} {status or 'missing'}")
+                    if status != "pass":
+                        problems.append(f"{name} {status or 'missing'}")
+        for check, result in precheck_rows(run_dir):
+            out(f"    {check:<44} {result}")
+
+        repair = hold_repair(run_dir, record)
+        out("\nHOLD REPAIR (post-CTS resizer)" if repair
+            else "\nHOLD REPAIR  no resizer log found")
+        for step, line in repair:
+            out(f"  [{step}] {line}")
+    else:
+        reason = ("not evaluated / not required for requested synthesis operation"
+                  if scope == "synthesis" else "not evaluated: acceptance scope is invalid")
+        out(f"\nTIMING  {reason}")
+        out(f"\nSIGNOFF CHECKS  {reason}")
+        out(f"\nPOSTCHECKS  {reason}")
+        out(f"\nHOLD REPAIR  {reason}")
 
     sdc = run_dir / "project/constraints/top.sdc"
     if sdc.is_file():
@@ -203,7 +315,10 @@ def report(run_dir, results, source):
         for problem in problems:
             out(f"  - {problem}")
         return 1
-    out("all reported checks passed")
+    if scope == "synthesis":
+        out("synthesis acceptance passed; physical timing and signoff were not evaluated")
+    else:
+        out("full-flow acceptance passed")
     return 0
 
 
@@ -221,8 +336,10 @@ def main():
         raise SystemExit(f"report: not a run directory (no run.json): {run_dir}")
     results, source = results_for(run_dir)
     if args.json:
+        status = report(run_dir, results, source,
+                        output=lambda *values: print(*values, file=sys.stderr))
         print(json.dumps(results, indent=2, sort_keys=True))
-        return 0
+        return status
     return report(run_dir, results, source)
 
 

@@ -3,6 +3,7 @@
 
 import argparse
 import csv
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -21,12 +22,54 @@ class PrerequisiteError(Exception):
     pass
 
 
+class FlowInterrupted(Exception):
+    def __init__(self, signum):
+        super().__init__(f"interrupted by {signal.Signals(signum).name}")
+        self.signum = signum
+
+
+@dataclass(frozen=True)
+class RunOutcome:
+    run_id: str
+    run_dir: Path
+    run_record: Path
+    status: str
+    exit_code: int
+
+    def as_dict(self):
+        return {
+            "run_id": self.run_id,
+            "run_dir": str(self.run_dir),
+            "run_record": str(self.run_record),
+            "status": self.status,
+            "exit_code": self.exit_code,
+        }
+
+
+@dataclass(frozen=True)
+class CheckOutcome:
+    check_id: str
+    check_dir: Path
+    check_record: Path
+    status: str
+    exit_code: int
+
+    def as_dict(self):
+        return {
+            "check_id": self.check_id,
+            "check_dir": str(self.check_dir),
+            "check_record": str(self.check_record),
+            "status": self.status,
+            "exit_code": self.exit_code,
+        }
+
+
 def now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def interrupt_on_terminate(_signum, _frame):
-    raise KeyboardInterrupt
+def interrupt_handler(signum, _frame):
+    raise FlowInterrupted(signum)
 
 
 def digest(path):
@@ -146,13 +189,16 @@ def run_logged(argv, cwd, env, log, record, record_path):
                               stderr=subprocess.STDOUT, start_new_session=True) as process:
             try:
                 return process.wait()
-            except KeyboardInterrupt:
-                os.killpg(process.pid, signal.SIGTERM)
+            except (FlowInterrupted, KeyboardInterrupt):
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
                 process.wait()
                 raise
 
 
-def execute(args):
+def run(args):
     bundle = args.bundle.resolve()
     manifest = read_json(bundle / "manifest.json")
     run_id = uuid.uuid4().hex
@@ -170,8 +216,9 @@ def execute(args):
     log = run_dir / "execution.log"
     try:
         check = preflight(bundle, args.support_tools, args.pdk_root, args.python,
-                          args.allow_python_mismatch, args.native)
+                           args.allow_python_mismatch, args.native)
         record["environment"] = check
+        save(run_dir / "preflight.json", check)
         if not check["ready"]:
             raise PrerequisiteError("; ".join(check["issues"]))
         project = run_dir / "project"
@@ -211,23 +258,35 @@ def execute(args):
             raise RuntimeError("build manifest changed during execution")
         record["completed_stage"] = args.stage
         record["status"] = "completed"
-    except KeyboardInterrupt:
+    except (FlowInterrupted, KeyboardInterrupt) as exc:
+        signum = exc.signum if isinstance(exc, FlowInterrupted) else signal.SIGINT
         record["status"] = "interrupted"
-        record["error"] = "interrupted by user"
+        record["error"] = f"interrupted by {signal.Signals(signum).name}"
+        record["interrupted_by"] = signal.Signals(signum).name
+        exit_code = 128 + signum
     except Exception as exc:
         record["status"] = "failed"
         record["error"] = str(exc)
+        exit_code = 1
+    else:
+        exit_code = 0
     finally:
         record["ended_at"] = now()
         save(record_path, record)
-    print(record_path)
-    if record["status"] != "completed":
-        print(record["error"], file=sys.stderr)
-        return 1
-    return 0
+    return RunOutcome(run_id, run_dir.resolve(), record_path.resolve(),
+                      record["status"], exit_code)
 
 
-def postcheck(args):
+def execute(args):
+    """Standalone development adapter retaining the historical one-line path."""
+    outcome = run(args)
+    print(outcome.run_record)
+    if outcome.status != "completed":
+        print(read_json(outcome.run_record)["error"], file=sys.stderr)
+    return outcome.exit_code
+
+
+def check(args):
     run_dir = args.run_dir.resolve()
     run = read_json(run_dir / "run.json")
     if run["status"] != "completed" or run["completed_stage"] != "full":
@@ -240,7 +299,8 @@ def postcheck(args):
                  args.support_tools / "precheck/default.nix"):
         if not path.is_file():
             raise PrerequisiteError(f"missing postcheck input: {path}")
-    check_dir = run_dir / "checks" / uuid.uuid4().hex
+    check_id = uuid.uuid4().hex
+    check_dir = run_dir / "checks" / check_id
     check_dir.mkdir(parents=True)
     record_path = check_dir / "postcheck.json"
     record = {"schema_version": 1, "run_id": run["run_id"],
@@ -248,7 +308,8 @@ def postcheck(args):
               "ended_at": None, "status": "running", "commands": [],
               "checks": {"precheck": "pending", "gate_level": "pending"},
               "inputs": {"gds_sha256": digest(gds), "netlist_sha256": digest(netlist),
-                         "testbench_sha256": digest(args.testbench)},
+                          "testbench_sha256": digest(args.testbench),
+                          "testbench_top": args.testbench_top},
               "logs": ["postcheck.log"], "tools": {}}
     save(record_path, record)
     log = check_dir / "postcheck.log"
@@ -303,7 +364,7 @@ def postcheck(args):
         shutil.copy2(args.testbench, testbench)
         executable = check_dir / "gate.out"
         compile_command = simulator + ["iverilog", "-g2012", "-DFUNCTIONAL", "-DSIM",
-                           "-s", "tb_observable", "-o", str(executable),
+                            "-s", args.testbench_top, "-o", str(executable),
                            *(str(path) for path in models), str(netlist), str(testbench)]
         if run_logged(compile_command, check_dir, env, log, record, record_path):
             record["checks"]["gate_level"] = "fail"
@@ -313,18 +374,35 @@ def postcheck(args):
             record["checks"]["gate_level"] = "pass"
         record["status"] = "completed" if all(
             value == "pass" for value in record["checks"].values()) else "failed"
-    except KeyboardInterrupt:
+    except (FlowInterrupted, KeyboardInterrupt) as exc:
+        signum = exc.signum if isinstance(exc, FlowInterrupted) else signal.SIGINT
         record["status"] = "interrupted"
+        record["error"] = f"interrupted by {signal.Signals(signum).name}"
+        record["interrupted_by"] = signal.Signals(signum).name
+        exit_code = 128 + signum
     except Exception as exc:
         record["status"] = "failed"
         record["error"] = str(exc)
+        exit_code = 1
+    else:
+        exit_code = 0 if record["status"] == "completed" else 1
     finally:
         record["reports"] = [str(path.relative_to(check_dir)) for path in
                              sorted((work / "precheck/reports").glob("*")) if path.is_file()]
         record["ended_at"] = now()
         save(record_path, record)
-    print(record_path)
-    return 0 if record["status"] == "completed" else 1
+    return CheckOutcome(check_id, check_dir.resolve(), record_path.resolve(),
+                        record["status"], exit_code)
+
+
+def postcheck(args):
+    """Standalone development adapter retaining the historical one-line path."""
+    outcome = check(args)
+    print(outcome.check_record)
+    if outcome.status != "completed":
+        print(read_json(outcome.check_record).get("error", "postcheck failed"),
+              file=sys.stderr)
+    return outcome.exit_code
 
 
 def metric(value, unit, definition, stage, source, corner=None, reason=None):
@@ -516,6 +594,7 @@ def main():
     p.add_argument("--pdk-root", required=True, type=Path)
     p.add_argument("--precheck-python", required=True, type=Path)
     p.add_argument("--testbench", required=True, type=Path)
+    p.add_argument("--testbench-top", required=True)
     args = parser.parse_args()
     try:
         if args.action == "preflight":
@@ -529,9 +608,12 @@ def main():
                 save(args.output, result)
             return 0 if result["ready"] else 1
         if args.action == "run":
-            signal.signal(signal.SIGTERM, interrupt_on_terminate)
+            signal.signal(signal.SIGINT, interrupt_handler)
+            signal.signal(signal.SIGTERM, interrupt_handler)
             return execute(args)
         if args.action == "postcheck":
+            signal.signal(signal.SIGINT, interrupt_handler)
+            signal.signal(signal.SIGTERM, interrupt_handler)
             return postcheck(args)
         result = collect(args.run_dir.resolve())
         if args.output:
@@ -542,6 +624,9 @@ def main():
     except (OSError, ValueError, KeyError, PrerequisiteError) as exc:
         print(f"phase4: {exc}", file=sys.stderr)
         return 2
+    except FlowInterrupted as exc:
+        print(f"phase4: {exc}", file=sys.stderr)
+        return 128 + exc.signum
 
 
 if __name__ == "__main__":

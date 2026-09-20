@@ -1,12 +1,15 @@
 # hardcaml_asic phase plan
 
-Status: initial milestone complete, 2026-09-20. P0–P5 and M3 have evidence; the
-separate SRAM investigation remains open and does not block the milestone.
+Status: initial milestone complete, 2026-09-20. P0–P5 and M3 have evidence.
+Post-M3 P6–P7 track shared tooling distribution and consumer consolidation;
+T.1 tracks the upstream ABC constraint defect. The separate S-series SRAM
+track proceeds independently and does not reopen M3.
 
 ## 1. Purpose and use
 
 This is the actionable breakdown of the
-[first implementation milestone](architecture.md#8-first-implementation-milestone).
+[first implementation milestone](architecture.md#8-first-implementation-milestone)
+and the selected post-milestone work.
 The [architecture plan](architecture.md) governs system boundaries and scope;
 the [program-memory contract](program-memory-contract.md) governs RAM behavior.
 This document owns task sequencing, dependencies, and completion evidence. Update
@@ -58,11 +61,16 @@ flow execution and results (P4) remain open.
 | P3 — Build emission | Deterministic RTL, constraints, TT configuration/metadata, and manifest | P0/P2; P1 for the memory example |
 | P4 — Execution and results | Bundle consumption, run records, report collection, and physical evidence | P3 bundle and explicitly prepared tool environment |
 | P5 — Consumer adoption | Independently built emulator consumes the library and reproduces the path | P3 for initial adoption; P1/P4 for full closure |
+| P6 — Shared tooling distribution | Installed, versioned flow CLI with operation-aware acceptance and complete archives | M3; existing scripts and their regression suites |
+| P7 — Consumer flow consolidation | Protemu consumes the installed CLI; duplicate implementations and runnable legacy path retired | P6 installed interface; consumer-owned tests and migration |
 | S — SRAM capability investigation | Evidence-backed support or deferral decision; conditional macro implementation | Candidate PDK/collateral access; no dependency for P0–P5 |
+| T — Toolchain follow-ups | Evidence-backed corrections to external-tool behavior | A specific diagnosed defect; independent of M3 |
 
-These phases subdivide the architecture's first milestone. They are not the four
-long-term phases in the direction note. P0–P5 together establish initial usage;
-later open targets and commercial adapters follow demonstrated needs.
+P0–P5 subdivide the architecture's first milestone. They are not the four
+long-term phases in the direction note. P6–P7 consolidate delivery of the proven
+workflow; they are not retroactive requirements for initial usage. Later open
+targets and commercial adapters follow demonstrated needs. Always prefix task
+IDs with `ASIC` across repositories: ASIC P6/P7 are not protemu's tapeout phases.
 
 Phases can interleave. P1 and P2 can proceed once the relevant P0 interfaces are
 available. P3 can first emit a resource-free observable design, then add the P1
@@ -77,12 +85,64 @@ The useful intermediate milestones are:
 | M1 — Resource usage | Construct and simulate registered program memory and elaborate its explicit flop implementation | P0 and P1 exit |
 | M2 — Project bundle | Generate validated TT/LibreLane inputs from a project declaration, including the memory example | P2 and P3 exit, with M1 |
 | M3 — Initial ASIC workflow | Build a separate consumer, execute emitted inputs, and inspect traceable results | P4 and P5 exit, with M2 |
+| M4 — Consolidated tooling delivery | Install the library and flow tools together; reproduce consumer workflows without vendored implementations or legacy configuration | P6 and P7 exit |
 
 M1, M2, and M3 are complete. M3 closed on 2026-09-20 after P5.5 consolidated
 the delivered workflow and inexpensive commands were revalidated; the separate
 SRAM investigation does not block it.
 
-### First implementation queue
+M4 is open. Its detailed migration requirements are in
+[Legacy flow consolidation](flow_legacy_migration.md); this plan owns task IDs,
+dependencies, and completion evidence. That brief's phases A/B map to P6 and
+C/D/E map to P7. S-series implementation and T.1 are not M4 prerequisites unless
+a demonstrated defect prevents the selected acceptance checks.
+
+### Current implementation queue (post-M3)
+
+1. Preserve the completed P6.1/P6.2 reporting/archive changes, then audit and
+   document the installed command boundary under P6.3.
+2. Implement installation and dependency/provisioning identity in P6.4/P6.5;
+   prove independent installation in P6.6.
+3. Migrate consumer setup and commands in P7.1/P7.2, then move coverage before
+   retiring legacy paths in P7.3/P7.4.
+4. Use one explicit physical validation unit plus synthesis/archive checks for
+   P7.5, and close the migration documentation in P7.6.
+
+Each unchecked item below is intended as a bounded implementation or validation
+unit, not a request to execute the whole migration in one agent context. P6 must
+provide an installable recorded revision before consumer migration is accepted.
+The S-series owner can proceed in parallel; coordinate changes to shared bundle,
+adapter, and tooling interfaces rather than duplicating work.
+
+### Why P7 depends on P6, and what may overlap
+
+P6 supplies the installed command interface, runtime assets, revision identity,
+and provisioning rules that P7 consumes. Migrating consumer commands before
+those exist would force P7 to invent a competing interface or retain copied
+implementation, defeating consolidation. One owner settles the shared interface;
+the consumer owner supplies requirements and implements against that interface.
+
+The handoffs are incremental, not a ban on parallel preparation:
+
+1. **Before P6.3 settles:** P7 may inventory commands/imports/bootstrap hooks,
+   map legacy test assertions to replacement coverage, and identify CLI needs.
+   Do not delete working paths or implement speculative installed-CLI calls.
+2. **After P6.3:** consumer migration can be designed against the agreed command
+   contract. Runtime migration waits for P6.4/P6.5 to supply an installable,
+   recorded candidate revision and agreed dependency/version behavior. Interface
+   changes discovered by the consumer are coordinated with the P6 owner.
+3. **After P6.4/P6.5:** P7.1/P7.2 implementation may overlap P6.6's independent
+   installation checks. A development candidate is not final migration evidence;
+   normal consumer setup must ultimately resolve its recorded committed revision.
+4. **Before P7.5 acceptance:** P6's exit gate, including P6.6, and the relevant
+   consumer migration/coverage work must pass. P7.6 documents that final path.
+
+A separate early P7 session should therefore be explicitly scoped to migration
+inventory and coverage planning. Keep its decisions in durable repository notes
+so handoffs do not depend on either session's chat context. The SRAM session
+retains S-series ownership throughout.
+
+### First implementation queue (historical, complete)
 
 1. P0.1–P0.3: establish a compiling lifecycle and registration with a small
    fixture, resolving naming and selection interfaces through that example.
@@ -600,8 +660,12 @@ not substitute a library-owned fixture for consumer evidence.
   external tools, build identity from run identity, synthesis from physical
   acceptance, and the standard report archive from separately preserved complete
   input bundles. Current limits and the consumer P5.3/P5.4 evidence are linked.
+  *Closure confirmed, 2026-09-20:* the usage documentation and validation record
+  are landed in the repository at `cf31e93`. P5.5 is complete; subsequent flow
+  reporting and archive improvements are follow-up work, not outstanding M3 gates.
 
-**Exit gate / M3:** P0–P5 required tasks have evidence. A separate consumer can
+**Exit gate met — M3 closed, 2026-09-20:** P0–P5 required tasks have evidence.
+A separate consumer can
 declare, build, simulate, emit, execute, and inspect the initial TT/LibreLane path
 with registered flop memory. The adopted observable physical run and memory
 synthesis have traceable evidence. Consumer hardware semantics and final submission
@@ -614,16 +678,22 @@ design and do not block M3.
 ## 9. S — Separate SRAM capability investigation
 
 This track may start early and informs the emulator's P5.1a study. It never blocks
-the explicit flop path. The [current investigation](program-memory-contract.md#8-backend-obligations)
-has not established a usable CMOS5L SRAM; do not start the library macro backend
-until availability, contract compatibility, target permission, and flow integration
-are established.
+the explicit flop path. The [S.1 investigation](sram-candidate-investigation.md)
+has inventoried an exact CMOS5L candidate but has not established SRAM capability;
+do not start the library macro backend until contract compatibility, target
+permission, and flow integration are established. Current gate status is summarized
+in [`sram-status.md`](sram-status.md).
 
-- [ ] **S.1 — Inventory candidate macros and collateral.** Inspect explicitly
+- [x] **S.1 — Inventory candidate macros and collateral.** Inspect explicitly
   provisioned PDK/library inputs and record versions, permitted use, exact shapes,
   port/power mappings, simulation models, timing corners, and physical views.
   Evidence: a source-backed candidate inventory or a documented absence. A
-  `MACROS` configuration hook alone does not establish macro support.
+  `MACROS` configuration hook alone does not establish macro support. *Done,
+  2026-09-20:* the [source-backed investigation](sram-candidate-investigation.md)
+  records the exact `RM_IHPSG13_1P_256x16_c2_bm_bist` shape and interfaces,
+  Apache-2.0 terms and unresolved target restriction, functional/timing Verilog,
+  three Liberty corners, LEF/GDS/CDL views, hashes, and inspected revisions.
+  Candidate inventory does not close S.2-S.4 or authorize submission.
 - [ ] **S.2 — Establish behavioral and target compatibility.** Evaluate the
   latency-one, whole-word 1RW, hold-on-disable contract against candidate models
   and documentation, and establish permission for the selected TT target.
@@ -665,3 +735,157 @@ After M3, prioritize work from real consumers and measured limitations:
 
 Expand this plan with concrete tasks and evidence gates when one of those efforts
 is selected. Preserve the current task IDs and completed evidence.
+
+## 11. P6 — Shared tooling distribution
+
+**Entry:** M3 and the existing Python/shell flow implementation. The
+[migration brief](flow_legacy_migration.md#3-required-public-interface) specifies
+the installed `hardcaml-asic-flow` interface and ownership boundaries. These
+tasks package and consolidate existing behavior; they do not introduce a generic
+scheduler, require registry publication, or change portable resource semantics.
+Implementation and tests belong in this repository.
+
+- [x] **P6.1 — Make acceptance operation-aware.** Synthesis-only results require
+  completed synthesis and valid mapped metrics/checks, not physical verdicts.
+  Full runs retain timing, signoff, and postcheck requirements. Missing,
+  contradictory, unavailable, malformed, or sentinel-valued required evidence
+  fails; partial full runs cannot pass as synthesis. *Done in the current
+  worktree:* [`report.py`](../scripts/report.py) and
+  [`test_report.py`](../test/test_report.py), including the unavailable-reason
+  and unconstrained-slack regressions. Fifteen tests and the combined test alias
+  pass; historical consumer synthesis and full-flow records remain supported.
+  Consumer vendored copies have not adopted this change; that is P7.
+- [x] **P6.2 — Preserve complete immutable inputs in standard archives.** Preserve
+  the original manifest and all declared files, verify linkage and hashes,
+  package deterministic input bytes with a checksum, and restore without the
+  original source/run tree. Replacement failures must preserve existing evidence
+  and human-owned files. *Done in the current worktree:*
+  [`archive.py`](../scripts/archive.py) and
+  [`test_archive.py`](../test/test_archive.py), with nineteen passing tests
+  covering independent restoration, invalid inputs, and replacement behavior.
+  The [flow guide](flow.md) records the supported archive/restore procedure.
+  Historical reports-only archives remain historical; they are not rewritten.
+- [ ] **P6.3 — Audit and settle the reusable command contract.** Review the
+  migration brief against current scripts and identify every example/consumer
+  assumption that must become an explicit argument. Cover provision/check,
+  preflight, run, postcheck, collect, report, archive, and any shared orchestration.
+  Require explicit expensive execution, explicit resumed run selection, a
+  machine-readable new-run path, and explicit design-specific verification inputs.
+  Evidence: an operation/argument/exit-status matrix, call-site inventory, and
+  regression cases for the boundary; no second source of target configuration.
+- [ ] **P6.4 — Install the CLI and its runtime assets.** Install
+  `hardcaml-asic-flow`, its modules, and required data alongside the OCaml package
+  from one source artifact. Reuse the tested implementations rather than copying
+  or reimplementing them. Expose `--help` and `--version`, remove checkout-relative
+  runtime imports, and declare runtime dependencies. Route retained repository
+  development commands through the same implementation. Evidence: a fresh-prefix
+  install runs from an unrelated directory without source-checkout access;
+  individual operations and scope-specific exit statuses have CLI regression tests.
+- [ ] **P6.5 — Unify revision and provisioning authority.** Ship provisioning
+  defaults with the installed tooling; once a bundle exists, its requested tools
+  remain authoritative for preflight. Record the executing flow-tool identity
+  and its relationship to the installed library. Define compatibility behavior
+  for supported historical schemas/pins without rewriting old records. Exact
+  environment matching is the normal evidence path; exceptions are explicit,
+  recorded waivers as specified in the migration brief. Evidence: matching,
+  mismatched, and waived fixtures plus read-only provisioning checks; no implicit
+  downloads during elaboration/emission and no duplicate consumer-owned EDA pins.
+- [ ] **P6.6 — Prove and document independent installation.** Extend the package
+  smoke path to install library and CLI into a fresh prefix, build an unrelated
+  consumer, emit a bundle, and exercise PDK-free validation, reporting, archiving,
+  and independent restoration fixtures. Hide source-tree access for the installed
+  commands. Negative fixtures must still fail. Update installation/usage commands
+  to the installed interface and run the library/script suites. Evidence: exact
+  package revision, commands and results, including installed CLI version and
+  runtime-data discovery; EDA tools are not required for this gate.
+
+**Exit gate:** one recorded source artifact installs the OCaml library and all
+generic flow tooling. The CLI operates outside the source checkout, preserves
+P6.1/P6.2 guarantees, and has documented version/collateral ownership. Record the
+revision to be adopted by P7; a dirty development prefix alone is not the final
+consumer dependency. Committing/publishing remains an explicit user action.
+
+## 12. P7 — Consumer migration and legacy retirement
+
+**Entry:** P6's independently tested installed CLI. Consumer implementation and
+evidence belong in protemu (`scaf` in this workspace); generic fixes remain here.
+This is post-M3 operational consolidation, not reopening ASIC P5.2–P5.4 or
+protemu P0. The [migration brief](flow_legacy_migration.md#6-migration-sequence)
+owns the detailed file inventory; verify it before removal.
+
+- [ ] **P7.1 — Make consumer setup honor the recorded dependency.** Normal
+  bootstrap installs the exact committed library/tooling revision from the
+  consumer lock. Provide an explicit development-path override with revision,
+  dirty-state, and lock-mismatch reporting; evidence waivers remain explicit and
+  recorded. Remove copied external-tool pin authority only after its replacement
+  is wired. Evidence: clean setup without a sibling checkout, incorrect-pin
+  rejection, and visible development-override behavior.
+- [ ] **P7.2 — Replace vendored flow implementations.** Make the consumer invoke
+  the installed preflight/run/postcheck/collect/report/archive/provisioning code.
+  Keep emitter, design selection, and testbench selection consumer-owned. Any
+  wrapper is thin and contains no second flow state machine or acceptance logic.
+  Require explicit run paths for resume; resolve advertised container/native
+  behavior consistently. Evidence: orchestration tests cover argument forwarding,
+  failure/interrupt propagation, run identity, and output paths; no active imports
+  or execution of vendored generic implementations remain.
+- [ ] **P7.3 — Move useful coverage, then retire the staged legacy flow.** Inventory
+  assertions in old wrapper/RTL/lint/synthesis/staging commands and migrate them
+  to emitted sources or the installed CLI before deleting their implementation.
+  Retire hand-maintained duplicate wrapper/configuration/metadata, old commands,
+  and obsolete Dune/Makefile wiring according to the brief. Preserve consumer
+  design logic, testbench semantics, and historical evidence. Evidence: coverage
+  mapping, passing replacement tests, and searches showing no active legacy
+  execution/configuration path in code, CI, or operating instructions.
+- [ ] **P7.4 — Make adopted-boundary checks routine.** Run fast deterministic
+  emission, manifest/resource checks, configuration-conflict tests, dependency
+  identity checks, and CLI-boundary checks in the canonical test/CI path. Keep
+  container RTL/lint/synthesis under an explicit slower command and physical work
+  out of ordinary tests. Evidence: fast checks run without PDK/container access;
+  documented slow checks use the same installed CLI and verify observable and
+  memory source sets. Do not create a CI-specific alternate flow.
+- [ ] **P7.5 — Validate the consolidated consumer path.** From a clean detached
+  consumer and recorded installed package, run adopted checks for observable and
+  memory, memory mapped synthesis with successful synthesis-only reporting, and
+  one observable full flow with required postchecks/reporting. Archive through
+  the installed tooling, remove original-input access in a disposable restoration
+  test, and verify complete bundle/run linkage. Record commands, versions, waivers,
+  identities, checks, and archive digests. This validates changed delivery and
+  orchestration; old P5.4 evidence alone does not exercise them. Do not require
+  memory hardening or SRAM support. If a physical attempt fails, preserve it and
+  make the first actionable defect a separate bounded task rather than repeatedly
+  tuning or relaunching without diagnosis.
+- [ ] **P7.6 — Close the migration record and user documentation.** Update both
+  repositories' active installation, bootstrap, flow, and usage instructions to
+  the single installed path. Link P7.5 evidence, record the consumer's adopted
+  revision, and mark the migration brief complete only after its deletion and
+  validation criteria pass. Remove stale operating references, while retaining
+  labelled historical reports. Evidence: link/command checks, final inventories,
+  and an explicit distinction between supported workflow and deferred capabilities.
+
+**Exit gate / M4:** P6 and P7 have evidence. A clean consumer resolves a pinned
+library/CLI artifact, has no vendored generic flow implementation or runnable
+legacy configuration path, and demonstrates both operation scopes with restorable
+archives. A second consumer would be useful further validation, not a mandatory
+prerequisite. M3 remains closed regardless of M4 progress.
+
+## 13. T — Toolchain follow-ups and consumer measurement boundaries
+
+- [ ] **T.1 — Correct the upstream ABC driving-cell constraint boundary.** Track
+  or prepare the narrow LibreLane fix that renders a cell name, rather than an
+  OpenSTA-style `cell/pin` token, into ABC constraints. The
+  [P0.7 investigation](../../scaf/tinytapeout/reports/2026-09-20-p0.7-memory-synthesis.md)
+  records the existing diagnosis and its limited impact for the measured `AREA 0`
+  script. Evidence: a focused regression, an explicit corrected tool revision,
+  and a fresh mapped-synthesis comparison showing the driver lookup succeeds and
+  documenting mapping/area/report differences. Upstream submission is a separate
+  authorized action; do not patch a shared venv or silently advance baseline pins.
+  This is not a retroactive failure of P5.3/P5.4. If a different mapping script
+  depends on the affected constraint, reevaluate its impact before using results.
+
+Memory physical feasibility is consumer work, not an unnumbered library release
+gate: **protemu P5.1** owns storage/encoding costs and initial placed feasibility;
+**protemu P5.3** owns full physical evaluation of promising configurations.
+**Protemu P5.1a** coordinates SRAM capability with ASIC S.1–S.4. Start bounded
+measurements early enough to inform capacity/area choices; their outcomes may
+motivate specific library fixes but do not block P6/P7 by default. The S-series
+owner maintains its status and evidence independently.

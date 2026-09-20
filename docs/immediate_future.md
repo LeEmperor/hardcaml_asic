@@ -57,6 +57,13 @@ P5.3 cost evidence.
 
 ## 2. Make shared flow tooling consumable without copying it
 
+This work now has stable IDs in the phase plan:
+[ASIC P6 — shared tooling distribution](phase_plan.md#11-p6--shared-tooling-distribution)
+and [ASIC P7 — consumer migration](phase_plan.md#12-p7--consumer-migration-and-legacy-retirement).
+Their exit is M4; P0–P5/M3 stay complete. The
+[legacy flow consolidation brief](flow_legacy_migration.md) supplies the detailed
+interface and removal inventory, while the phase plan owns sequencing/status.
+
 Protemu currently vendors `phase4.py`, `report.py`, and `archive.py` under
 `adopted_*` names. Establish a versioned CLI/distribution boundary for these
 shared tools, building on the existing bundle and run formats.
@@ -69,6 +76,28 @@ commands. Keep provisioning explicit and separate from elaboration/emission.
 Acceptance: protemu upgrades the shared tooling through a recorded dependency
 update rather than synchronizing Python copies. A generic scheduler or
 Workbench integration is not needed to deliver this.
+
+Two prerequisite tooling improvements are implemented and tested in the current
+worktree, with evidence recorded as P6.1/P6.2:
+
+- **Operation-aware reporting:** judge synthesis-only runs against their requested
+  synthesis scope, while keeping physical timing/checks explicitly unevaluated.
+  Full-run acceptance remains strict, and partial or malformed evidence cannot
+  become a pass by being interpreted as a smaller operation.
+- **Complete input preservation:** make the immutable input bundle a standard
+  archive output, verify its manifest/run linkage and every declared file hash,
+  and demonstrate restoration without the original source or experiment tree.
+
+Next: P6.3 settles the reusable command boundary; P6.4/P6.5 install the CLI and
+unify revision/provisioning authority; P6.6 proves independent installation.
+P7 then migrates consumer setup and commands, moves coverage before deleting
+legacy paths, and validates one observable full run plus memory synthesis and
+archive restoration. Existing vendored copies do not acquire these changes
+automatically. Each item is a separate bounded implementation/validation unit.
+The [P6/P7 dependency note](phase_plan.md#why-p7-depends-on-p6-and-what-may-overlap)
+defines safe overlap: P7 inventory/coverage planning may start now; runtime
+migration needs P6's agreed interface and installable candidate, and final
+consumer acceptance needs the independent installation gate to pass.
 
 ## 3. Completed: P5.4 clean-staging physical reproducibility
 
@@ -93,22 +122,35 @@ and the consumer P5.3/P5.4 evidence without replacing specialist references.
 
 The standing execution guide is `flow.md`; historical P4 evidence remains in the
 phase plan rather than becoming the onboarding route. P5.5 closes P5 and M3.
+Closure is confirmed at landed documentation revision `cf31e93`; reporting,
+archiving, SRAM, and memory physical experiments are subsequent work.
 
 ## 5. Measure memory costs and investigate SRAM separately
 
 After the small consumer memory integration, measure representative protemu
 memory shapes for mapped area/timing, then physical feasibility where useful.
 Use those results to guide memory sizing and further backend work.
+The consumer task IDs are **protemu P5.1** for storage costs/placed feasibility
+and **protemu P5.3** for full physical evaluation. They do not block M4 by default.
 
 The SRAM investigation should first produce a supported-or-deferred decision
 backed by macro availability, exact shape/behavior, required collateral, target
 permission, and a minimal flow feasibility probe. Only then implement an exact
 macro mapping and run contract/flow conformance. Do not infer support from PDK
 presence or a `MACROS` configuration hook.
+This remains **ASIC S.1–S.4**, coordinated with **protemu P5.1a**, under the
+separate SRAM-track owner. The library phase-plan expansion does not change
+that owner's investigation or implementation gates.
 
 Before broadening public backend-authoring APIs, address the current
 field-order-sensitive S-expression matching of resource contracts. This is a
 follow-up API concern, not a prerequisite for explicit-flop P5.3.
+
+The upstream ABC constraint-rendering correction is now **ASIC T.1** in the
+[toolchain follow-up section](phase_plan.md#13-t--toolchain-follow-ups-and-consumer-measurement-boundaries).
+It requires a regression, explicit corrected tool pin, and fresh synthesis
+comparison; the documented historical area and physical STA evidence remains
+valid within its stated scope.
 
 ## Following the initial milestone
 

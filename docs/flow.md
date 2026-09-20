@@ -40,11 +40,14 @@ the `run.json` path `phase4.py` prints, since run ids are random hex and do not
 sort by time. For resumed steps it uses the run created by the current invocation,
 then `$RUN`, then the newest directory under `$RUNS` by modification time.
 `report.py --runs "$RUNS"` also selects newest by modification time; use an
-explicit run path for durable evidence. `report.py` prints timing per corner, signoff checks, the TT
-precheck rows, and what the post-CTS resizer did about hold; it exits nonzero
-when a check fails, when a run did not complete, or when a timing mode was left
-unconstrained. The `phase4.py` subcommands below remain the interface; the two
-scripts only drive them.
+explicit run path for durable evidence. `report.py` derives its acceptance scope
+from the requested stage recorded consistently in `run.json` and `results.json`.
+For a full run it prints timing per corner, signoff checks, the TT precheck rows,
+and what the post-CTS resizer did about hold. It exits nonzero when required
+evidence is missing or malformed, a required check fails, the requested stage
+did not complete, the records contradict each other, or a full run leaves a
+timing mode unconstrained. The `phase4.py` subcommands below remain the
+interface; the two scripts only drive them.
 
 `flow.sh` ends with a summary: how long each step took, the end-to-end wall
 time, and the absolute path of every record and log the invocation produced —
@@ -60,11 +63,11 @@ repository**, and should stay outside it. A completed `full` run directory is
 around 235 MB of OpenROAD, Magic, and KLayout output: ODB and DEF snapshots per
 step, fill insertion, GDS streamout, SPICE extraction. That is tool output, not
 a result, and it does not belong in a git working tree. What belongs in the
-repository is the curated record under [`evidence/`](../evidence): the manifest,
-preflight, run, postcheck, and results JSON, plus the logs and signoff reports
-the acceptance criteria are actually read from — under 200 KB for the run it
-describes. Curate it by hand when a gate closes; the run store is scratch and
-can be deleted once its evidence is extracted.
+repository is the curated record under [`evidence/`](../evidence): the complete
+immutable input bundle, manifest, preflight, run, postcheck, and results JSON,
+plus the logs and signoff reports the acceptance criteria are actually read
+from. The run store is scratch and can be deleted once `archive.py` has produced
+and verified that complete evidence directory.
 
 ## Environment
 
@@ -174,12 +177,25 @@ with the worst corner when available. Missing metrics have reasons. Raw reports
 remain linked by paths relative to the run directory. The collector is a separate
 command and also works on a failed or partially completed run.
 
-A synthesis-only run can be successful even though `report.py` exits nonzero:
-the general reporter requires physical timing, antenna, DRC, and LVS verdicts,
-which correctly remain `unknown`/unavailable after `--stage synthesis`. For that
-stage, inspect `process_status`, `completed_stage`, mapped cells/area, and the
-three synthesis checks. Never reinterpret absent physical metrics as pass or
-zero.
+A synthesis-only run passes `report.py` only when both records consistently say
+that synthesis was requested and completed, collection has no errors, mapped
+cell and area metrics are finite and valid, and unmapped instances, synthesis
+errors, and inferred latches are all explicitly present and zero. Zero mapped
+area or cells is valid evidence for a design that legitimately maps that way; it
+is not rejected by a generic positive-area rule. Physical timing, antenna, DRC,
+LVS, postchecks, and hold repair are reported as not evaluated and not required
+for this operation, never rewritten as passes. The final verdict says
+`synthesis acceptance passed` rather than claiming physical signoff.
+
+A requested full run remains subject to the complete policy: both records must
+show full completion; synthesis evidence must meet the same requirements; setup
+and hold metrics must be finite, cornered, and constrained with a passing timing
+goal; DRC, LVS, and antenna must each be present and pass; and a completed
+postcheck must explicitly pass both TT precheck and gate-level verification. A
+full request that stops after synthesis therefore fails rather than being
+reclassified as synthesis-only. Unknown, missing, or contradictory stage fields
+also fail with diagnostics. Missing metrics remain unavailable, not zero or
+pass.
 
 ## Evidence and remaining acceptance
 
@@ -194,12 +210,15 @@ Both gates now have records:
 [`evidence/p4/memory-synthesis`](../evidence/p4/memory-synthesis/README.md) for
 P4.4 and
 [`evidence/p4/observable-physical`](../evidence/p4/observable-physical/README.md)
-for P4.5, which closes P4's exit gate. Each is a directory of the small
+for P4.5, which closes P4's exit gate. Each historical directory contains the
 immutable records — manifest, preflight, run, postcheck, results — plus an
 archive of the logs and reports its claims are read from, and a note stating the
-result and any waivers. Follow that shape for a new gate. Note that the P4.5 run
-used this repository's own example: it proves the physical path, and it is
-deliberately not reusable as P5.4 consumer-adoption evidence.
+result and any waivers. Archives made before complete-input preservation was
+added may not contain `input-bundle.tar.gz` and cannot be reconstructed from
+`reports.tar.gz`; do not infer otherwise. New archives use the complete shape
+below. Note that the P4.5 run used this repository's own example: it proves the
+physical path, and it is deliberately not reusable as P5.4 consumer-adoption
+evidence.
 
 ### Building one
 
@@ -207,14 +226,17 @@ deliberately not reusable as P5.4 consumer-adoption evidence.
 
 ```sh
 scripts/archive.py RUN_DIR --list                       # the selection, writes nothing
-scripts/archive.py RUN_DIR --output evidence/p4/NAME    # records, reports.tar.gz, archive.json
+scripts/archive.py RUN_DIR --output evidence/p4/NAME    # records and both tarballs
 ```
 
-It copies the immutable records out, tars the logs and reports an acceptance
-decision is read from together with `final/gds` and `final/nl`, and writes
-`archive.json` naming every member, every absence, and the hashes it verified.
-For the P4.5 run that is 111 files, 8.5 MB uncompressed, 0.65 MB archived,
-against a 235 MB run directory.
+It copies the immutable records out and writes two archives. `reports.tar.gz`
+contains the logs and reports an acceptance decision is read from together with
+`final/gds` and `final/nl`. `input-bundle.tar.gz` contains the original
+`manifest.json` bytes plus exactly every path in `manifest.files`: copied source
+inputs, synthesis and simulation RTL, configuration, constraints, and metadata.
+`input-bundle.sha256` pins that tarball. `archive.json` names every member and
+absence, records the bundle archive digest and size, and states whether the
+verified bytes came from the original or staged bundle.
 
 The final GDS and netlist are included on purpose. Everything else in the archive
 is evidence that a check passed; those two are the run's actual output, the only
@@ -224,34 +246,57 @@ simulator (`checks/*/gate.out`) and the intermediate stage directories — `odb`
 `mag`, `mag_gds` — stay out: they are rebuildable and nothing reads them.
 
 Every hash the run already pinned is re-checked on the way in: the staged
-manifest against `run.json`, and the GDS, netlist and testbench against
-`postcheck.json`. A mismatch writes nothing and exits nonzero, so an evidence
-directory cannot quietly hold bytes other than the ones the run consumed. An
-absent or empty input is reported rather than skipped, which is how a synthesis
-stage run archives without pretending it has a layout.
+manifest against `run.json`, build identity against the manifest, every bundle
+file against the manifest, source-input copies against both manifest inventories,
+and the GDS, netlist and testbench against `postcheck.json`. Paths must be unique,
+relative, contained regular files; symlinks and traversal are rejected. The
+archiver prefers the original path in `run.json`. If that directory no longer
+exists or is invalid, it accepts `RUN_DIR/project` only when that staged copy is
+independently complete and valid. Added `tt/`, `runs/`, tool trees, and other
+undeclared staging files are never included.
+
+All validation and archive construction finish in a sibling temporary directory
+before publication. A failure leaves an existing evidence directory unchanged.
+`--force` replaces files owned by the archiver, including both input-bundle files,
+while retaining `README.md` and other user-owned files. An absent reports input
+is still reported rather than skipped, which is how a synthesis stage run
+archives without pretending it has a layout. The input tarball uses stable member
+ordering, timestamps, ownership, and modes, so unchanged input bytes produce the
+same compressed archive digest.
 
 The archiver does not write the `README.md` beside the records. That note is the
 human account of what the run showed, and a generated stand-in would read as
 though someone had checked the result.
 
-The archiver also does not preserve the original bundle's generated RTL or
-copied source inputs. Keep the complete immutable input separately, as the
-consumer P5.3/P5.4 records do:
+Restore and verify the complete bundle using only the evidence directory:
 
 ```sh
 EVIDENCE=/absolute/path/to/evidence-directory
-BUNDLE=/absolute/path/to/emitted-bundle
-tar -czf "$EVIDENCE/input-bundle.tar.gz" \
-  -C "$(dirname "$BUNDLE")" "$(basename "$BUNDLE")"
-(cd "$EVIDENCE" && sha256sum input-bundle.tar.gz > input-bundle.sha256)
+RESTORE=$(mktemp -d)
+(cd "$EVIDENCE" && sha256sum --check input-bundle.sha256)
+tar -xzf "$EVIDENCE/input-bundle.tar.gz" -C "$RESTORE"
+python3 - "$RESTORE/bundle" "$EVIDENCE/run.json" <<'PY'
+import hashlib, json, pathlib, sys
+bundle, run_path = map(pathlib.Path, sys.argv[1:])
+manifest_bytes = (bundle / "manifest.json").read_bytes()
+manifest = json.loads(manifest_bytes)
+run = json.loads(run_path.read_text())
+assert hashlib.sha256(manifest_bytes).hexdigest() == run["manifest_sha256"]
+assert manifest["identity"] == run["build_identity"]
+for entry in manifest["files"]:
+    data = (bundle / entry["path"]).read_bytes()
+    assert hashlib.sha256(data).hexdigest() == entry["sha256"], entry["path"]
+print("verified", len(manifest["files"]), "bundle files for", run["run_id"])
+PY
 ```
 
-Restore that tarball to a fresh directory, verify the checksum and every file
-hash in `manifest.json`, and rerun preflight against the restored bundle before
-deleting scratch state. The consumer's
+This verification needs no checkout, original bundle, run directory, PDK, or
+opam switch. Re-executing or preflighting the restored design still requires the
+separately recorded toolchain and external collateral. The consumer's historical
 [clean-staging archive](../../scaf/flow_results/20260920-081325-ccecd9ed/README.md#preservation-and-restoration)
-records an independently successful restoration. Do not edit emitted inputs to
-make restoration or preflight pass.
+demonstrates the earlier manual preservation procedure; its record is not
+rewritten by this capability. Do not edit emitted inputs to make restoration or
+preflight pass.
 
 The pinned LibreLane flow has a known ABC timing-print limitation: its renderer
 passes `cell/pin` where ABC expects a cell name. The consumer's
