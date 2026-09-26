@@ -2,7 +2,6 @@
 
 import contextlib
 import hashlib
-import importlib.util
 import io
 import json
 from pathlib import Path
@@ -15,10 +14,11 @@ from unittest import mock
 
 
 sys.dont_write_bytecode = True
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts/archive.py"
-SPEC = importlib.util.spec_from_file_location("archive", SCRIPT)
-archive = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(archive)
+# The modules under test are the ones Dune installs: `flow/hardcaml_asic_flow/`
+# is put on the path and imported as a regular package, so these suites cover the
+# installed implementation rather than a checkout-only copy of it.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "flow"))
+from hardcaml_asic_flow import archive  # noqa: E402
 
 FLOW = "project/runs/asic"
 TOP = "tt_um_asic_observable"
@@ -309,13 +309,22 @@ class ArchiveTest(unittest.TestCase):
 
     def test_list_describes_complete_input_preservation(self):
         stdout, stderr = io.StringIO(), io.StringIO()
-        with mock.patch.object(sys, "argv", [str(SCRIPT), str(self.run), "--list"]):
+        with mock.patch.object(sys, "argv", ["hardcaml-asic-flow", str(self.run), "--list"]):
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 self.assertEqual(archive.main(), 0)
         self.assertIn("input-bundle: bundle/src/fixture.v", stdout.getvalue())
         self.assertIn("input-bundle: bundle/simulation/fixture.v", stdout.getvalue())
         self.assertIn("input-bundle: bundle/inputs/lib/design.ml", stdout.getvalue())
         self.assertIn("complete input-bundle files from original", stderr.getvalue())
+
+    def test_list_rejects_unfinished_or_corrupted_runs(self):
+        self.write_run("failed")
+        with self.assertRaises(archive.phase4.PrerequisiteError):
+            archive.list_archive(self.run)
+        self.write_run("completed")
+        (self.run / "project/manifest.json").write_text("{}\n")
+        with self.assertRaises(archive.phase4.PrerequisiteError):
+            archive.list_archive(self.run)
 
     def test_gds_hash_mismatch_and_unfinished_run_fail(self):
         self.write_check(gds="0" * 64)

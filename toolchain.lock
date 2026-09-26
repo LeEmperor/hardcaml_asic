@@ -1,19 +1,24 @@
-# Pinned external inputs for the TT/CMOS5L flow, as data for scripts/toolchain.sh.
+# Pinned external inputs for the TT/CMOS5L flow, as data for the generic provisioner.
 #
 # Careful: this file is NOT the authority. The authority is the OCaml source, which is
-# what ends up in an emitted bundle and what scripts/phase4.py preflight checks the
-# installed collateral against:
+# what ends up in an emitted bundle and what the flow's preflight checks the installed
+# collateral against:
 #
 #   support_tools_revision : lib/target.ml, Inputs.reference_cmos5l_6x4;
 #   pdk_revision           : lib/target.ml, Inputs.reference_cmos5l_6x4;
 #   librelane_version      : lib/bundle.ml, the "requested_tools" object;
 #   python                 : lib/bundle.ml, the "requested_tools" object;
 #
-# This file exists because scripts/toolchain.sh is plain shell that has to provision the
+# This file exists because the provisioner is plain shell that has to provision the
 # toolchain before anything can be built, so it cannot ask the library what to fetch.
 # test/check_bundle.py asserts every value here equals the emitted manifest's
 # "requested_tools", so the copy cannot drift: change a pin in lib/ without changing it
 # here and `dune runtest` fails, naming both values.
+#
+# This is the one maintained copy. flow/hardcaml_asic_flow/data/toolchain.lock is a
+# symlink to this file and flow/dune installs it into the package's runtime data, so
+# an installation and a checkout provision from the same pins and there is no second
+# lock to keep in step.
 #
 # The repository and branch fields have no counterpart in the manifest. A bundle pins
 # revisions, not where to get them, on purpose: the same declaration means the same thing

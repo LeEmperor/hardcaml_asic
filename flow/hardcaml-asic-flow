@@ -1,0 +1,58 @@
+#!/bin/sh
+# Installed entry point for the hardcaml_asic flow tooling.
+#
+# Dune puts this at $PREFIX/bin/hardcaml-asic-flow and the private Python package
+# at $PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/. The only job here is to
+# turn "wherever this file actually lives" into that package root and hand control
+# to hardcaml_asic_flow.cli, so the command works through PATH and through a
+# symlink someone dropped in ~/bin.
+#
+# Why a shell launcher rather than a Python script with a shebang: the isolation
+# flags have to be on the interpreter's own command line. "python3 -I" drops the
+# script directory and $PYTHONPATH from sys.path, so an installed command cannot
+# accidentally import a module from the caller's cwd or from a source checkout
+# that happens to be exported; "-B" keeps a read-only prefix from being asked to
+# write __pycache__. Neither can be requested from inside an already-running
+# interpreter, and a "#!/usr/bin/env python3 -I" shebang is not portable.
+#
+# Nothing here consults Git, opam, OCaml, a PDK or a container; --help and
+# --version must work on a host with none of them.
+
+set -u
+
+# Resolve symlinks by hand: readlink -f is GNU, and "cd -P" alone would follow the
+# link's own directory rather than the link. The loop ends at the real file.
+target=$0
+while [ -L "$target" ]; do
+    link=$(readlink "$target") || exit 2
+    case $link in
+        /*) target=$link ;;
+        *)  target=$(dirname "$target")/$link ;;
+    esac
+done
+bindir=$(CDPATH= cd -- "$(dirname -- "$target")" && pwd -P) || exit 2
+
+package_root=$bindir/../lib/hardcaml_asic/flow
+if [ ! -f "$package_root/hardcaml_asic_flow/cli.py" ]; then
+    # Deliberately no search for a source checkout to fall back on: an
+    # incomplete installation is reported as one.
+    printf '%s: installed flow modules are missing: expected %s\n' \
+        "$0" "$package_root/hardcaml_asic_flow/cli.py" >&2
+    printf 'Reinstall the hardcaml_asic package; no source checkout is searched.\n' >&2
+    exit 2
+fi
+package_root=$(CDPATH= cd -- "$package_root" && pwd -P) || exit 2
+
+command -v python3 >/dev/null 2>&1 || {
+    printf '%s: python3 is required and was not found on PATH\n' "$0" >&2
+    exit 2
+}
+
+# argv[1] carries the package root because -I ignores $PYTHONPATH by design;
+# the real arguments start at argv[2].
+exec python3 -I -B -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+from hardcaml_asic_flow.cli import main
+sys.exit(main(sys.argv[2:]))
+' "$package_root" "$@"

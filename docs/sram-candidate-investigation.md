@@ -25,8 +25,10 @@ That is candidate discovery, not established support. In particular:
 - the immediate child commit on Tiny Tapeout's official CMOS5L branch adds
   those two layers, after a public 1024x8 CMOS5L SRAM project reported successful
   GDS, full TT precheck, gate-level test, and viewer jobs;
-- no source found says that this exact 256x16 macro is approved for the selected
-  March 2027 shuttle, and no authoritative submission policy was found that
+- the later bounded [S.2b source investigation](sram-target-compatibility.md)
+  established the exact target, current mutable official tool chain, marker
+  requirement, and voltage compatibility, but found no source saying that this
+  exact 256x16 macro is approved for the selected March 2027 shuttle or that
   turns the merged tooling change into shuttle permission;
 - at S.1 closure the exact 256x16 model had not been run through the library
   conformance suite; the later [S.2a experiment](sram-model-conformance.md) passes
@@ -281,9 +283,12 @@ question remaining for Jane Street/Tiny Tapeout is:
 > support-tools/action revision must submissions use now that SRAM marker-layer
 > support was merged immediately after our locked revision?
 
-Until that answer or an updated authoritative competition pin exists, classify
-permission as **promising but unresolved**. PDK licensing and precheck support
-do not by themselves grant a slot on a selected shuttle.
+The subsequent [S.2b record](sram-target-compatibility.md) answers the target and
+current-branch portions but not exact macro eligibility, accepted supply
+commoning, or final immutable submission pins. Until those answers or updated
+authoritative instructions exist, classify permission as **promising but
+unresolved**. PDK licensing and precheck support do not by themselves grant a
+slot on a selected shuttle.
 
 ## Confirmed facts and unknowns
 
@@ -326,25 +331,22 @@ do not by themselves grant a slot on a selected shuttle.
 
 ## Recommended next task
 
-S.2a is now recorded in the
-[exact-model conformance experiment](sram-model-conformance.md). Proceed with
-**bounded S.2b authoritative pin/use clarification**, not S.3 physical
-integration and not S.4 backend work:
+S.2a is recorded in the
+[exact-model conformance experiment](sram-model-conformance.md), and bounded S.2b
+public-source research is recorded in the
+[target compatibility investigation](sram-target-compatibility.md). Seek the
+three precise authoritative clarifications recorded there: exact macro
+eligibility, accepted common-supply mapping, and final immutable submission
+refs. In parallel, an S.3 minimal external flow experiment may be prepared under
+the explicitly experimental frozen `f6bf5c58...` support revision, including all
+views, both supply rails, explicit placement/PDN, timing corners,
+extraction/LVS policy, and marker-aware precheck. Do not describe it as
+submission readiness or begin the library backend first.
 
-1. Obtain the authoritative answer to the quoted shuttle/pin/power question.
-   Existing public evidence may answer it if the competition updates its lock
-   or instructions; do not infer permission from the PDK or contact anyone as
-   part of this task.
-2. Only if S.2b and the other capability gates succeed, define a separate S.3
-   minimal external flow experiment for this exact 256x16 candidate, including
-   all views, both supply rails, explicit placement/PDN, timing corners,
-   extraction/LVS policy, and the official post-`cfa06bae` precheck. Do not begin
-   the library backend first.
-
-Status justified now: ASIC S.1 and S.2a are complete;
-ASIC S.2 remains open pending authoritative target permission and actual timing
-support remains limited as recorded; S.3 and S.4 remain open. Protemu P5.1a
-remains open but should link this as a candidate-found,
+Status justified now: ASIC S.1 and S.2a are complete; S.2b research is complete
+and partially resolved; ASIC S.2 remains open pending authoritative macro/power
+permission, final submission pins, and the recorded timed-model limitation. S.3
+and S.4 remain open. Protemu P5.1a should link this as a candidate-found,
 capability-gate-unresolved record rather than an unavailable decision.
 
 ## Source references

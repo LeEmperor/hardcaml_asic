@@ -700,11 +700,19 @@ in [`sram-status.md`](sram-status.md).
   Evidence: model checks and authoritative target/collateral references, with
   unresolved questions called out. A shape mismatch is not silently composed or
   rounded into support.
-- [ ] **S.3 — Establish flow feasibility and record a decision.** Use a minimal
+- [x] **S.3 — Establish flow feasibility and record a decision.** Use a minimal
   external integration probe to exercise candidate views, power connections,
   constraints, and required physical/precheck handling before building the library
   backend. Evidence: a reproducible supported-candidate result or a documented
   decision to defer, including the missing evidence and next investigation step.
+  *Done, 2026-09-20:* the [bounded external probe](sram-flow-feasibility.md)
+  retained one exact hard macro, completed routing/power/antenna/setup/hold checks,
+  and passed every TT precheck row under frozen support revision `cfa06bae...`.
+  The result establishes qualified local feasibility, not submission readiness:
+  four Magic DRC and two extraction-overlap markers remain, LVS treats the SRAM
+  as a black box, and timing lacks macro parasitics. Inputs, failed attempts,
+  reports, final views, checksummed archive, and independent restoration evidence
+  are preserved in [`evidence/sram-flow-feasibility/`](../evidence/sram-flow-feasibility/).
 - [ ] **S.4 — Implement a verified exact mapping, conditional on S.1–S.3 establishing
   capability.** Add the technology resource mapping, required wrapper/source
   roles, and registered collateral. Run P1 conformance against the macro model
@@ -765,14 +773,20 @@ Implementation and tests belong in this repository.
   covering independent restoration, invalid inputs, and replacement behavior.
   The [flow guide](flow.md) records the supported archive/restore procedure.
   Historical reports-only archives remain historical; they are not rewritten.
-- [ ] **P6.3 — Audit and settle the reusable command contract.** Review the
+- [x] **P6.3 — Audit and settle the reusable command contract.** Review the
   migration brief against current scripts and identify every example/consumer
   assumption that must become an explicit argument. Cover provision/check,
   preflight, run, postcheck, collect, report, archive, and any shared orchestration.
   Require explicit expensive execution, explicit resumed run selection, a
   machine-readable new-run path, and explicit design-specific verification inputs.
-  Evidence: an operation/argument/exit-status matrix, call-site inventory, and
-  regression cases for the boundary; no second source of target configuration.
+  Evidence: the operation/argument/exit-status matrix and call-site inventory are
+  in [`p6-implementation-plan.md`](p6-implementation-plan.md). The source-only
+  dispatcher delegates to existing operations and its 17 table-driven tests cover
+  provision/check, preflight, run, postcheck, collect, report, archive and fixed
+  execute boundaries. Thirteen runner tests cover allocation, preflight, explicit
+  simulator top, signals and atomic records; the 15 reporter and 20 archiver tests preserve P6.1/
+  P6.2 policy. No target configuration authority was added. Installation,
+  identity/provisioning implementation and independent acceptance remain P6.4–P6.6.
 - [ ] **P6.4 — Install the CLI and its runtime assets.** Install
   `hardcaml-asic-flow`, its modules, and required data alongside the OCaml package
   from one source artifact. Reuse the tested implementations rather than copying
@@ -781,6 +795,21 @@ Implementation and tests belong in this repository.
   development commands through the same implementation. Evidence: a fresh-prefix
   install runs from an unrelated directory without source-checkout access;
   individual operations and scope-specific exit statuses have CLI regression tests.
+  *Partially delivered:* P6.4a packaged the implementation and proved
+  fresh-prefix module/data discovery, `PATH`/symlink lookup, read-only operation
+  and an honestly unstamped `--version`; evidence in
+  [`p6-implementation-plan.md`](p6-implementation-plan.md#12-p64a-completion-evidence).
+  P6.4b then routed the repository driver and the provisioning adapter through the
+  same dispatcher and gave every operation — provision, preflight, run, postcheck,
+  collect, report, archive and the fixed execute — installed-command regression
+  coverage against fixtures and stub processes, with scope-specific exit statuses
+  including 1, 2 and 143; evidence in
+  [`p6-implementation-plan.md`](p6-implementation-plan.md#13-p64b-completion-evidence).
+  This parent stays open for one clause of its own evidence line: the installed
+  checks deny the checkout through cwd, `PATH`, `PYTHONPATH` and a decoy package
+  and prove where imports resolved from, but do not make the source tree
+  unreadable. Denying source-tree access outright is P6.6a, so it is not claimed
+  here.
 - [ ] **P6.5 — Unify revision and provisioning authority.** Ship provisioning
   defaults with the installed tooling; once a bundle exists, its requested tools
   remain authoritative for preflight. Record the executing flow-tool identity

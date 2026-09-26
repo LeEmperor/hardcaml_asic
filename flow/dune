@@ -1,0 +1,58 @@
+; Installation of the flow tooling into the same hardcaml_asic opam artifact as
+; the OCaml library, so a consumer that pins one revision gets both and cannot
+; end up with a library and a CLI from different sources.
+;
+; Layout in the prefix:
+;   $PREFIX/bin/hardcaml-asic-flow                              launcher (0755)
+;   $PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/*.py      private modules
+;   $PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/data/     runtime data
+;
+; The modules go under "flow/" rather than straight into the findlib directory so
+; they cannot be confused with the library's own installed artifacts, and so the
+; launcher has exactly one directory to put on sys.path.
+;
+; Sections: "lib" installs 0644 and "libexec" installs 0755 into the same
+; $PREFIX/lib/hardcaml_asic/ root. Only the provisioner needs the execute bit,
+; and even that is belt and braces -- the CLI invokes it as "bash <path>".
+
+(install
+ (package hardcaml_asic)
+ (section bin)
+ (files hardcaml-asic-flow))
+
+(install
+ (package hardcaml_asic)
+ (section lib)
+ (files
+  (hardcaml_asic_flow/__init__.py as flow/hardcaml_asic_flow/__init__.py)
+  (hardcaml_asic_flow/__main__.py as flow/hardcaml_asic_flow/__main__.py)
+  (hardcaml_asic_flow/archive.py as flow/hardcaml_asic_flow/archive.py)
+  (hardcaml_asic_flow/cli.py as flow/hardcaml_asic_flow/cli.py)
+  (hardcaml_asic_flow/identity.py as flow/hardcaml_asic_flow/identity.py)
+  (hardcaml_asic_flow/paths.py as flow/hardcaml_asic_flow/paths.py)
+  (hardcaml_asic_flow/phase4.py as flow/hardcaml_asic_flow/phase4.py)
+  (hardcaml_asic_flow/report.py as flow/hardcaml_asic_flow/report.py)
+  ; Same file as the repository root toolchain.lock, which stays the one place a
+  ; pin is edited and the one test/check_bundle.py asserts against the emitted
+  ; manifest. data/toolchain.lock is a symlink to it in the source tree; Dune
+  ; installs the contents, so the prefix holds no second handwritten copy.
+  (hardcaml_asic_flow/data/toolchain.lock as flow/hardcaml_asic_flow/data/toolchain.lock)
+  (version.txt as flow/hardcaml_asic_flow/data/version.txt)))
+
+(install
+ (package hardcaml_asic)
+ (section libexec)
+ (files
+  (hardcaml_asic_flow/data/toolchain.sh as flow/hardcaml_asic_flow/data/toolchain.sh)))
+
+; The installed version comes from Dune so that a "dune subst" release build
+; reports the substituted package version rather than a literal in the source.
+; identity.py falls back to its declared constant when this file is absent, which
+; is the case for a plain source checkout; test/test_identity.py pins the two
+; together.
+(rule
+ (target version.txt)
+ (action
+  (with-stdout-to
+   version.txt
+   (echo "%{version:hardcaml_asic}"))))

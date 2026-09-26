@@ -209,13 +209,15 @@ python3 "$ASIC_SOURCE/scripts/report.py" "$RUN"
 ```
 
 `scripts/flow.sh` is the convenience driver for this repository's maintained
-examples. With no arguments it builds, emits, preflights, performs a **full
-expensive run**, postchecks, collects, and reports. Select steps explicitly when
-resuming. A post-run step uses the run made in that invocation, then `$RUN`, then
-the newest run under `$RUNS` by modification time. `report.py --runs "$RUNS"`
-uses the same newest-by-modification-time policy. Prefer an explicit `RUN` for
-evidence. The [flow guide](flow.md) owns full command details, version waivers,
-native execution, failure records, and the wrapper's environment variables.
+examples: it fills in the example, testbench and reference paths and hands every
+operation to the same dispatcher the installed command runs. It takes one command
+per invocation, and with no arguments it prints its help rather than starting a
+**full expensive run**. `STAGE` is required by `run` and `execute`, and a resumed
+operation requires `RUN`: the newest run under `$RUNS` is never guessed.
+`report.py --runs "$RUNS"` remains a development spelling that selects newest by
+modification time; prefer an explicit `RUN` for evidence. The
+[flow guide](flow.md) owns full command details, version waivers, native
+execution, failure records, and the driver's environment variables.
 
 ## 7. Interpret and preserve results
 

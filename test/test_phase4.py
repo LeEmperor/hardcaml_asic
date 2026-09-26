@@ -1,7 +1,6 @@
 """Runner and collection fixtures require no PDK or licensed tools."""
 
 import contextlib
-import importlib.util
 import io
 import json
 import os
@@ -15,10 +14,11 @@ from unittest import mock
 
 
 sys.dont_write_bytecode = True
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts/phase4.py"
-SPEC = importlib.util.spec_from_file_location("phase4", SCRIPT)
-phase4 = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(phase4)
+# The modules under test are the ones Dune installs: `flow/hardcaml_asic_flow/`
+# is put on the path and imported as a regular package, so these suites cover the
+# installed implementation rather than a checkout-only copy of it.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "flow"))
+from hardcaml_asic_flow import phase4  # noqa: E402
 
 
 class RunnerTest(unittest.TestCase):
@@ -123,6 +123,15 @@ class RunnerTest(unittest.TestCase):
         killpg.assert_called_once_with(4321, signal.SIGTERM)
         self.assertEqual(process.wait.call_count, 2)
 
+    def test_atomic_save_preserves_existing_record_on_publication_failure(self):
+        path = self.root / "results.json"
+        path.write_text("old evidence\n")
+        with mock.patch.object(phase4.os, "replace", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                phase4.save(path, {"new": "partial"})
+        self.assertEqual(path.read_text(), "old evidence\n")
+        self.assertEqual(list(self.root.glob(".results.json.*")), [])
+
 
 class PostcheckTest(unittest.TestCase):
     def setUp(self):
@@ -148,7 +157,12 @@ class PostcheckTest(unittest.TestCase):
         }))
         self.support = self.root / "support"
         (self.support / "precheck").mkdir(parents=True)
-        (self.support / "precheck/default.nix").write_text("{}\n")
+        # The shape that matters is the pinned fetchTarball: postcheck reads the
+        # nixpkgs revision out of this file rather than out of a channel.
+        self.nixpkgs = "https://github.com/NixOS/nixpkgs/archive/fixture-revision.tar.gz"
+        (self.support / "precheck/default.nix").write_text(
+            'let pkgs = import (fetchTarball "%s") {}; in pkgs.mkShell {}\n'
+            % self.nixpkgs)
         (self.support / "precheck/tool-versions.json").write_text(json.dumps({
             "klayout": "0.28.17",
         }))
@@ -191,6 +205,55 @@ class PostcheckTest(unittest.TestCase):
         record_path = next((self.run_dir / "checks").glob("*/postcheck.json"))
         self.assertEqual(phase4.read_json(record_path)["inputs"]["testbench_top"],
                          "memory_tb")
+
+    def test_nixpkgs_pin_comes_from_the_pinned_collateral_or_is_absent(self):
+        pinned = self.support / "precheck/default.nix"
+        self.assertEqual(phase4.nixpkgs_pin(pinned), f"nixpkgs={self.nixpkgs}")
+        # No pin in the file means no search path: an empty NIX_PATH would be a
+        # worse answer than nix's own diagnostic, so the caller leaves it alone.
+        unpinned = self.root / "unpinned.nix"
+        unpinned.write_text("{ pkgs ? import <nixpkgs> {} }: pkgs.mkShell {}\n")
+        self.assertIsNone(phase4.nixpkgs_pin(unpinned))
+
+    def test_precheck_shell_environment_carries_the_pinned_nixpkgs(self):
+        """Both nix-shell invocations see <nixpkgs> from the copied default.nix."""
+        probes = []
+
+        def record(argv, cwd=None, env=None):
+            probes.append((argv, env))
+            return self.probes[len(probes) - 1]
+
+        with mock.patch.object(phase4, "command_output", side_effect=record), \
+             mock.patch.object(phase4, "run_logged", return_value=0) as run_logged:
+            outcome = phase4.check(self.args)
+        self.assertEqual(outcome.exit_code, 0)
+        klayout_argv, klayout_env = probes[0]
+        self.assertEqual(klayout_argv[0], "nix-shell")
+        self.assertEqual(klayout_env["NIX_PATH"], f"nixpkgs={self.nixpkgs}")
+        logged_nix_shell = [call for call in run_logged.call_args_list
+                            if call.args[0][0] == "nix-shell"]
+        self.assertEqual(len(logged_nix_shell), 1)
+        self.assertEqual(logged_nix_shell[0].args[2]["NIX_PATH"],
+                         f"nixpkgs={self.nixpkgs}")
+
+    def test_an_unpinned_precheck_shell_leaves_nix_path_alone(self):
+        (self.support / "precheck/default.nix").write_text(
+            "{ pkgs ? import <nixpkgs> {} }: pkgs.mkShell {}\n")
+        seen = []
+
+        def record(argv, cwd=None, env=None):
+            seen.append(env)
+            return self.probes[len(seen) - 1]
+
+        # A NIX_PATH the caller already exported is not this test's subject; the
+        # claim is only that an unpinned shell adds none.
+        environment = {name: value for name, value in os.environ.items()
+                       if name != "NIX_PATH"}
+        with mock.patch.object(phase4, "command_output", side_effect=record), \
+             mock.patch.object(phase4, "run_logged", return_value=0), \
+             mock.patch.dict(phase4.os.environ, environment, clear=True):
+            phase4.check(self.args)
+        self.assertNotIn("NIX_PATH", seen[0])
 
     def test_interrupted_postcheck_is_finalized_with_signal_status(self):
         with mock.patch.object(phase4, "command_output", side_effect=self.probes), \

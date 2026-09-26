@@ -40,30 +40,58 @@ used for the prefix must be recorded separately; a dirty worktree cannot be
 represented by a Git commit hash. [`test/package_consumer_smoke.sh`](../test/package_consumer_smoke.sh)
 checks this path with a fresh prefix and an unrelated Dune project under `/tmp`.
 
+## The installed `hardcaml-asic-flow` command
+
+Since P6.4a the same package installs the flow tooling beside the library, so a
+consumer pins one revision for both:
+
+```text
+$PREFIX/bin/hardcaml-asic-flow                            the command
+$PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/        its private modules
+$PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/data/   toolchain.sh, toolchain.lock
+```
+
+The command works through `PATH` and through a symlink to it. It finds its
+modules and data relative to its own installed location only; it does not search
+for a source checkout, and an incomplete installation is reported rather than
+worked around. `--help` and `--version` need no Git, OCaml toolchain, PDK,
+container or provisioning.
+
+Host requirements: Python 3.9 or newer (declared as `conf-python-3`; the minor
+bound is checked by the command, since the conf package cannot express it) and a
+POSIX shell. Provisioning also needs Bash, Git and the usual Unix utilities.
+Running and postchecking a design need Docker, LibreLane and Nix. Installing the
+package fetches none of those, and `--version`, `--help`, `collect`, `report` and
+`archive` need none of them.
+
+**Installing the package only supports the standard `--prefix` layout.** Placing
+the library and the command under independently chosen directories is not
+supported; the launcher expects `../lib/hardcaml_asic/flow` relative to itself.
+
+Two things are not yet true of `--version`, and will not be until P6.5: it does
+not report a source revision or checkout state, and it does not verify that the
+linked OCaml library was built from the same artifact as the command. It says so
+in both its human and `--json` output rather than implying otherwise.
+
 ## Resolve TT/LibreLane collateral
 
-The OCaml package contains the elaboration and bundle library. It does not
-install a `hardcaml_asic` CLI, the repository's Python/shell flow scripts, a PDK,
-or EDA tools. For now, external flow scripts and collateral are resolved from a
-checkout of **the same** source revision, placed anywhere the consumer chooses:
+`toolchain.lock` supplies exact support-tools and PDK commits, LibreLane and
+Python versions, and ships as the installed command's runtime data. Its values
+mirror the library's emitted `manifest.json`;
+[`check_bundle.py`](../test/check_bundle.py) checks that copy for drift. Once a
+bundle exists, the bundle is authoritative and preflight rejects collateral that
+disagrees with it.
 
 ```sh
-ASIC_SOURCE=/path/for/pinned/asic-source
-git clone https://github.com/LeEmperor/hardcaml_asic.git "$ASIC_SOURCE"
-git -C "$ASIC_SOURCE" checkout --detach "$ASIC_REV"
 TOOLCHAIN=/path/for/asic-toolchain
-TOOLCHAIN="$TOOLCHAIN" "$ASIC_SOURCE/scripts/toolchain.sh"
+TOOLCHAIN="$TOOLCHAIN" hardcaml-asic-flow provision
 source "$TOOLCHAIN/toolchain-env.sh"
 ```
 
-`toolchain.lock` in that checkout supplies exact support-tools and PDK commits,
-LibreLane and Python versions. Its values mirror the library's emitted
-`manifest.json`; [`check_bundle.py`](../test/check_bundle.py) checks that copy for
-drift. Keep the source checkout and package pin on the same commit. To validate
-an emitted consumer bundle against the actual installed collateral:
+To validate an emitted consumer bundle against the actual installed collateral:
 
 ```sh
-python3 "$ASIC_SOURCE/scripts/phase4.py" preflight "$BUNDLE" \
+hardcaml-asic-flow preflight "$BUNDLE" \
   --support-tools "$TT" --pdk-root "$PDK_ROOT" --python "$FLOW_PY"
 ```
 
@@ -71,9 +99,15 @@ Preflight checks the bundle's file hashes, external reference hashes, and
 requested tool revisions and versions. It will report a mismatch instead of
 silently using nearby collateral. The [bootstrap guide](bootstrap.md) explains
 provisioning and the [execution guide](flow.md) covers subsequent
-run and collection commands. A consumer passes its own repository as
-`Bundle.render`'s `source_root` and explicitly lists its own source inputs; it
-does not pass the library source checkout as the consumer's source root.
+run and collection commands; both still describe the repository's own
+`scripts/` entry points, which are development adapters onto these same modules.
+A consumer passes its own repository as `Bundle.render`'s `source_root` and
+explicitly lists its own source inputs; it does not pass the library source
+checkout as the consumer's source root.
+
+Migrating the reference consumer off its vendored copies onto this command is
+P7, and the remaining installed-operation integration is P6.4b: until those
+land, a consumer that is working today should keep its current path.
 
 ## P5.1 check in this worktree
 

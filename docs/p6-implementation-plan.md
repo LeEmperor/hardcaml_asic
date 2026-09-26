@@ -1,7 +1,9 @@
 # ASIC P6.3–P6.6: bounded implementation plan
 
-Status: P6.3a implementation checkpoint complete; P6.3b in progress, 2026-09-20.
-No installed CLI has been implemented.
+Status: P6.3 and P6.4a complete; P6.4b–P6.6 open, 2026-09-20.
+The package installs a `hardcaml-asic-flow` command that runs its own modules and
+data from a prefix. Identity stamping, provisioning authority and independent
+acceptance are not implemented.
 
 The [phase plan](phase_plan.md#11-p6--shared-tooling-distribution) owns task IDs,
 dependencies and evidence gates. The [migration brief](flow_legacy_migration.md)
@@ -25,9 +27,9 @@ owned. Provisioning is explicit, never a dependency of elaboration/emission or
 execution. No workflow language, scheduler, general plugin interface, new target,
 or SRAM work is required.
 
-P6.3 is not complete on the strength of this document: its required executable
-boundary regressions are still missing. Proposed suffixed IDs below refine their
-parent goals without changing the phase plan or claiming parent completion.
+P6.3 is complete on the combined audit, settled matrix, operation-boundary tests,
+and executable dispatcher regressions recorded below. Suffixed IDs refine the
+phase-plan parent without creating competing task ownership.
 
 ## 2. Current-state audit
 
@@ -230,10 +232,10 @@ explicit resumed `RUN`, and remove automatic mismatch waivers. Incompatible old
 flags such as implicit-newest `--runs` get a short replacement diagnostic for one
 documented migration window; do not silently preserve old expensive defaults.
 
-### Brief clarifications / proposed amendments
+### Settled brief clarifications
 
-These are specific inspection-driven refinements to section 3/4 of the migration
-brief, to acknowledge in P6.3 evidence, not changes to its architecture:
+These inspection-driven refinements to sections 3/4 of the migration brief are
+settled by P6.3 and do not change its architecture:
 
 1. `--testbench FILE` alone is insufficient: library and consumer require different
    simulator tops. Require `--testbench-top MODULE`. Current benches need no
@@ -467,9 +469,9 @@ Parent completion still requires the full phase-plan acceptance, not just a suff
 | Unit | Work / dependencies | Tests and completion evidence |
 |---|---|---|
 | **P6.3a — explicit operation boundaries** (complete) | Existing runner only: bench-top argument, internal run outcome (keep legacy script stdout adapter), save actual run preflight, run/postcheck signal finalization. No installed dispatcher yet | `python3 test/test_phase4.py`: 12 tests pass. Mocked-process cases cover non-example top forwarding, missing inputs before allocation/check creation, recorded failure, SIGINT/SIGTERM 130/143, child-group terminate/wait, exact preflight persistence, absolute structured run identity, and the one-line development-adapter path |
-| **P6.3b — contract regression specification** | After 3a, executable table-driven boundary cases/harness for public parser and fixed sequence, using injected operation functions; settle amendments above. A minimal source dispatcher seam is sufficient, not full installation | Cover every command's argument forwarding and success/failure exit mapping, including provision/check and archive/list. Cases: no-arg help no effects, required stage/run/bench/top, no newest even with decoy runs, stdout JSON path on recorded failure, raw collect vs verdict report JSON, synthesis omits postcheck, full cannot omit bench, fail/interrupt stops downstream promotion, native-full rejection. Record passing cases and inventory/matrix; only now consider parent P6.3 complete |
-| **P6.4a — one source package and prefix install** | After 3b: move modules/provisioner, regular imports, launcher and Dune assets; resolve standard/custom installation lookup prototype, metadata generation. Retained script adapters import same implementation | Existing suites via new imports; fresh disposable prefix `--help/--version` from unrelated cwd, read-only prefix and PATH symlink, all module/data imports originate in prefix. No pip or EDA invoked. This is packaging evidence, not P6.6 closure |
-| **P6.4b — installed commands and fixed execute** | After 4a: complete dispatcher, shared orchestration, operation-specific exits, generic Nix fix and repository adapters. Keep identity pluggable for 5b | `test_flow_cli.py` subprocess cases using fixtures/stubs, migrated generic `check-flow.sh` assertions, report/archive policy suites through CLI; failure/interrupt outcome and preflight persistence, explicit archive paths/force, no accidental expensive default. Parent 4 remains open until every operation is installed and tested |
+| **P6.3b — contract regression specification** (complete) | Source-only parser/dispatcher and fixed sequence using injected operation functions; no installation | `python3 test/test_flow_cli.py`: 17 tests pass. Cases cover all operations, no-argument/help purity, early argument rejection, explicit runs/stages/resume paths, machine-readable failure/interruption, tool precedence, provision statuses, testbench/top, native-full rejection, synthesis scope, collection versus acceptance, report JSON policy, archive/list/force, fixed sequencing, clean final JSON and failure promotion barriers |
+| **P6.4a — one source package and prefix install** (complete) | After 3b: move modules/provisioner, regular imports, launcher and Dune assets; resolve standard/custom installation lookup prototype, metadata generation. Retained script adapters import same implementation | Delivered; see [section 12](#12-p64a-completion-evidence). 65 existing tests pass through the moved package imports, 17 new packaging tests and 11 fresh-prefix tests pass. Standard `--prefix` only; custom `--libdir` relocation stays deferred. No pip or EDA invoked. This is packaging evidence, not P6.6 closure |
+| **P6.4b — installed commands and fixed execute** (complete) | After 4a (packaging is done; do not redo it): per-operation installed evidence, the generic `nixpkgs_pin` fix, and `scripts/flow.sh` routed through the shared dispatcher instead of calling `phase4.py` stage by stage. Keep identity pluggable for 5b | Delivered; see [section 13](#13-p64b-completion-evidence). 24 installed-command cases in `test_installed_prefix.py` cover all eight operations plus the fixed execute, and 11 `RepositoryDriverTest` cases cover the driver's routing and its removed spellings. Parent 4 still waits on P6.6a's source-denial clause, which is recorded rather than claimed |
 | **P6.5a — artifact identity foundation** | After layout agreed in 4a; implement deterministic source stamp/export, same generated OCaml/JSON identity, no-.git builds and additive generator field. Coordinate `lib/bundle.ml` first | Clean Git, dirty tracked, relevant untracked, unknown snapshot, stamped Git-free artifact, tampered inventory, rebuild determinism, library/CLI identity equality and manifest coverage fixtures. Validate actual opam source path stamping behavior, not merely handcrafted JSON |
 | **P6.5b — explicit dependency/waiver records** | After 5a and command seam: comparisons, CLI expectation options, additive record fields, historical reading rules | Matching/wrong/dirty/unknown/waived fixtures; wrong generator vs CLI; historical report/archive without current lock; old bundle reexecution waiver; record persistence through archive. No current scaf checkout lookup; Python mismatch fails by default |
 | **P6.5c — provisioning/data authority** | After 4a; parameterized shared shell, strict Python minor, Docker/native scope, read-only/check/offline semantics and generic prerequisite tests. Can overlap 5a in disjoint files | Stub executable/process fixtures assert no network/write under `--check`, absent and mismatched envs fail correctly, no default fallback, installed lock path used, malformed lock rejected, no opam activity; lock-vs-emitted bundle regression retained. Full provisioning real tools not part of this PDK-free gate |
@@ -638,5 +640,482 @@ exit 0
 
 All external process behavior in these new cases is injected. Existing collector
 logic executes directly on fixture files. No PDK, Docker, Nix, provisioning,
-synthesis or physical flow was invoked. P6.3 remains open until P6.3b's public
-parser and fixed-composition regressions pass.
+synthesis or physical flow was invoked.
+
+## 11. P6.3b completion evidence
+
+`scripts/flow_cli.py` is intentionally a source-only contract dispatcher. It
+defines parsing, path/tool precedence and the fixed `execute` sequence, while its
+`Operations` adapter delegates to the existing runner/collector, P6.1 reporter,
+P6.2 archiver and shell provisioner. It is not installed, has no version/identity
+claim, and is not a second implementation of those operations. Packaging and
+checkout-independent imports remain P6.4.
+
+The public boundary now has these settled properties:
+
+- No arguments and help have no operation side effects. Invalid arguments,
+  native full execution, missing full postcheck inputs and irrelevant synthesis
+  postcheck inputs fail before operation dispatch.
+- Run and execute require explicit runs roots and stages. Every resumed operation
+  takes one explicit run; decoy directories are ignored. Run/postcheck outcomes
+  are JSON objects with absolute identity paths, including recorded failure and
+  interruption; pre-allocation failures emit no fabricated run.
+- Tool precedence is explicit path, then `--toolchain`, then `TOOLCHAIN`. No
+  consumer-specific environment or checkout default is consulted. Python
+  mismatch is not implicitly waived.
+- Execute is exactly run (whose preflight is persisted), full-only postcheck,
+  collect, acceptance report and optional explicit archive. A recorded upstream
+  failure permits only best-effort collection; its original status wins and no
+  report success or archive promotion follows.
+- Collection success means a result structure was produced. The real P6.1
+  reporter decides acceptance in both human and JSON modes. Archive/list and
+  explicit destination/force delegate to the real P6.2 implementation.
+- Provision/check forwarding preserves 0/2/3/4/5/7. This is injected boundary
+  evidence only: provisioning was not run, and its production authority/read-only
+  refinements remain P6.5.
+
+The five contract clarifications are accepted: testbench top is required; native
+is synthesis-only; requested Python remains major.minor; report JSON retains the
+acceptance verdict; and provisioning readiness is not physical success. The CLI
+adds no target-selection authority. Dependency-lock and named-waiver syntax has
+an explicit fixture seam, but the source production adapter rejects use with a
+P6.5 diagnostic rather than silently ignoring it. Identity comparison, waiver
+recording and provisioner authority are therefore not claimed by P6.3.
+
+Exact P6.3 verification:
+
+```text
+python3 test/test_phase4.py       # 13 tests, OK
+python3 test/test_flow_cli.py      # 17 tests, OK
+python3 test/test_report.py        # 15 tests, OK
+python3 test/test_archive.py       # 20 tests, OK
+python3 -m py_compile scripts/phase4.py scripts/flow_cli.py scripts/report.py \
+  scripts/archive.py test/test_phase4.py test/test_flow_cli.py \
+  test/test_report.py test/test_archive.py
+dune build @test/runtest --force   # four suites plus bundle/lock check, OK
+git diff --check                   # exit 0
+```
+
+Runner/postcheck tests call the real operation boundaries, verify atomic record
+publication and inject external process results. Reporter and archiver tests
+execute the current implementations and their fixture files, including list-time
+integrity. Dispatcher tests inject operation functions to prove parsing,
+forwarding, clean JSON outcomes and composition without EDA/provisioning. P6.4b
+installed-operation evidence, P6.5 identity/provisioning and P6.6
+independent-install acceptance remain open.
+
+## 12. P6.4a completion evidence
+
+### Files moved, added and adapted
+
+Moved with no change to operation logic (`git status` shows these as a delete
+under `scripts/` plus the new `flow/` tree; the index was not touched):
+
+| From | To |
+|---|---|
+| `scripts/phase4.py` | `flow/hardcaml_asic_flow/phase4.py` |
+| `scripts/report.py` | `flow/hardcaml_asic_flow/report.py` |
+| `scripts/archive.py` | `flow/hardcaml_asic_flow/archive.py` |
+| `scripts/flow_cli.py` | `flow/hardcaml_asic_flow/cli.py` |
+| `scripts/toolchain.sh` | `flow/hardcaml_asic_flow/data/toolchain.sh` |
+
+The only edits to those five files are the ones packaging required: the reporter
+and archiver replaced their `importlib` sibling loads with `from . import
+phase4`; the dispatcher replaced its `SCRIPT_DIR` loader with regular package
+imports, gained `--version [--json]`, a fixed `prog`, a >=3.9 guard and a
+provisioner invocation that passes the packaged lock; the provisioner replaced
+its `repo_root` derivation with its own directory plus an internal
+`--lock-file`. The reporter gained `run()` so its `__main__` diagnostic mapping
+is reachable by name. Shebangs moved from the modules to the adapters. No
+operation policy, record format, exit status or signal behaviour changed.
+
+Added:
+
+| File | Role |
+|---|---|
+| `flow/dune` | `bin`/`lib`/`libexec` install stanzas and the `version.txt` rule, all under `hardcaml_asic` |
+| `flow/hardcaml-asic-flow` | POSIX launcher: resolves its own real path, then `python3 -I -B` |
+| `flow/hardcaml_asic_flow/__init__.py` | Package docstring and `MINIMUM_PYTHON` |
+| `flow/hardcaml_asic_flow/__main__.py` | `python -m hardcaml_asic_flow` |
+| `flow/hardcaml_asic_flow/paths.py` | The only module that derives a runtime path, and it derives every one from `__file__` |
+| `flow/hardcaml_asic_flow/identity.py` | Package version plus the explicitly-unstamped source identity |
+| `flow/hardcaml_asic_flow/data/toolchain.lock` | Symlink to the repository `toolchain.lock` |
+| `test/test_packaging.py` | 17 source-tree packaging-contract tests |
+| `test/test_installed_prefix.py` | 11 fresh-prefix tests; not in `runtest`, because it installs |
+
+Adapted: `scripts/{phase4,report,archive,flow_cli}.py` are four-line adapters
+that put `flow/` on `sys.path` and call the package module;
+`scripts/toolchain.sh` execs the packaged provisioner with the repository's
+`.toolchain` default and lock. `test/dune` depends on `(source_tree ../flow)`
+and `../toolchain.lock` instead of individual `scripts/` files. `dune-project`
+declares `conf-python-3` and states the host runtime requirements, which
+regenerate into `hardcaml_asic.opam`.
+
+### Installed layout
+
+```text
+$PREFIX/bin/hardcaml-asic-flow                                    0755 launcher
+$PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/*.py            0644 modules
+$PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/data/toolchain.sh    0755
+$PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/data/toolchain.lock  0644
+$PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/data/version.txt     0644
+```
+
+`libexec` and `lib` resolve to the same `$PREFIX/lib/hardcaml_asic/` root and
+differ only in permissions, so one coherent tree comes from two stanzas. The
+directory `flow/` sits beside the library's own `flow.ml`/`flow.cmi`; the names
+do not collide and a real install was inspected to confirm it.
+
+### Launcher and runtime-data discovery
+
+The launcher follows `$0` through any chain of symlinks by hand (`readlink -f`
+is GNU), takes the real file's directory, and expects
+`../lib/hardcaml_asic/flow` beside it. A missing `hardcaml_asic_flow/cli.py`
+there is an error naming the expected path; **no source checkout is searched**.
+It then execs `python3 -I -B -c`, passing the package root as `argv[1]`, because
+`-I` deliberately ignores `$PYTHONPATH` and keeps the caller's cwd off
+`sys.path`; `-B` keeps a read-only prefix from being asked to write
+`__pycache__`. `argparse` gets a fixed `prog`, since under `-c` `argv[0]` is
+`-c`.
+
+Runtime data is resolved only by `paths`, from `__file__`: no cwd, no `.git`, no
+environment variable naming a checkout, no sibling clone. `toolchain.lock` keeps
+exactly one maintained source — the repository root file `check_bundle.py`
+asserts against the emitted manifest — and reaches the package as a symlink,
+which Dune installs as a regular file with the same bytes. The provisioner reads
+the lock beside itself by default and accepts an internal `--lock-file` that the
+Python entry always supplies; `provision` exposes no public option for it, so a
+caller cannot quietly swap target pins.
+
+### Version and identity: what is and is not claimed
+
+`--version` reports the package version, saying whether it came from the
+Dune-generated `version.txt` (installed) or the mirrored constant (source tree);
+`test/test_packaging.py` pins that constant to `dune-project`. It reports
+`stamped: false`, `revision: null`, `state: "unknown"`,
+`inventory_digest: null` and `library_artifact_match: null`, with a note naming
+P6.5. **No exact revision, clean-artifact claim or library/executor identity
+match is made, and none should be read into the package version.** `--version`
+and `--help` run with no Git, OCaml toolchain, PDK, Docker or provisioning, and
+were checked with `PATH` reduced to the directory holding `python3`.
+
+`--dependency-lock` and `--waiver` still parse and are still rejected with an
+explicit P6.5 diagnostic and exit 2; packaging did not turn them into silently
+accepted options.
+
+### Commands and results
+
+```text
+python3 test/test_phase4.py            13 tests, OK
+python3 test/test_flow_cli.py          17 tests, OK
+python3 test/test_report.py            15 tests, OK
+python3 test/test_archive.py           20 tests, OK
+python3 test/test_packaging.py         17 tests, OK
+python3 test/test_installed_prefix.py  11 tests, OK
+python3 -m py_compile flow/hardcaml_asic_flow/*.py scripts/*.py   test/test_*.py test/check_bundle.py                        exit 0
+bash -n on both toolchain.sh files, scripts/flow.sh, bootstrap.sh; sh -n on
+  flow/hardcaml-asic-flow                                    exit 0
+dune build                                                   exit 0
+dune build @install                                          exit 0
+dune build @test/runtest --force   five Python suites + bundle/lock check, OK
+dune runtest                                                 exit 0
+bash test/package_consumer_smoke.sh   external consumer: address=2 storage=32
+opam lint hardcaml_asic.opam                                 Passed
+local Markdown link/fragment check over the changed docs      all resolve
+git diff --check                                             exit 0
+```
+
+Fresh-prefix checks, all from `dune install --prefix` into a disposable
+temporary directory under the session scratch area — no opam switch, no shared
+environment and no installed package was altered:
+
+- No-argument invocation and `--help` from an unrelated cwd: usage, exit 0, and
+  that directory's contents unchanged.
+- `--help` with `PATH` holding only the `python3` directory: exit 0. No Git,
+  OCaml, PDK, Docker or provisioning.
+- `--version --json`: `package_version_source: installed-package-metadata`,
+  `module_dir`/`data_dir` inside the prefix, `toolchain_lock_present: true`.
+- Discovery through `PATH`, and through a differently named symlink to the
+  installed command: identical JSON.
+- A copy of the launcher in a prefix with no package: exit 2, "installed flow
+  modules are missing", "no source checkout is searched", empty stdout.
+- Prefix `chmod -R a-w`: `--version` and `--help` exit 0 and the prefix gains no
+  `__pycache__` or `.pyc`.
+- Import origin, with the checkout's `flow/` exported on `PYTHONPATH` and a
+  decoy `hardcaml_asic_flow` ahead of it: `sys.path[0]` is the prefix, no
+  checkout path is on `sys.path`, and all seven modules plus the provisioner and
+  lock report paths under the prefix.
+- Installed provisioner with `--lock-file` pointing at an absent file: exit 3
+  naming that path, and the `TOOLCHAIN` root is not created.
+- An unrelated Dune consumer builds against the same prefix through `OCAMLPATH`
+  and runs, so library and command come from one installed artifact.
+
+Fixture-backed installed operations, past the help/parser path and into the real
+implementations, using the reporter suite's own fixtures rather than new ones:
+installed `report` accepts a synthesis record with physical checks unevaluated
+and a complete full record; rejects a record with `synthesis_errors = 1` at exit
+1 while `--json` still prints the exact stored record; installed `collect
+--stdout` returns a schema-1 result without writing; installed `preflight` with
+`--waiver` exits 2 with the P6.5 diagnostic.
+
+### Tested source snapshot
+
+Base revision `037e670f51a1d44dbba1a885d9c97e4fd4196a10`, **dirty**: this work
+is uncommitted, and the worktree also carries separately owned SRAM and
+documentation changes this session did not touch. That hash therefore does not
+identify what was tested, and P6.4a produces no artifact identity that would.
+Establishing one is exactly P6.5a. Nothing was committed, pushed, reset or
+discarded; no pin or installed environment changed.
+
+### Deliberate limitations and deferrals
+
+- **Standard `--prefix` layout only.** The launcher expects
+  `../lib/hardcaml_asic/flow` relative to itself. Independent `--libdir`
+  relocation stays deferred, as section 4 allows; the prototype gave no reason
+  to need it.
+- **Source-denial is not proven.** The isolation checks deny the checkout
+  through cwd, `PATH`, `PYTHONPATH` and a decoy package, and prove where imports
+  actually resolved from. They do **not** make the source tree unreadable to the
+  process. A filesystem sandbox is P6.6a's gate and is not claimed here.
+- `scripts/flow.sh` still drives `scripts/phase4.py` stage by stage rather than
+  the shared dispatcher. Routing it is P6.4b, and
+  [section 13](#13-p64b-completion-evidence) records it done.
+- The plan's proposed `execute.py` was not split out of `cli.py`: the P6.3
+  dispatcher moved intact, as the unit requires, and splitting it would have
+  been churn with no packaging benefit.
+- No contract defect was found that would need a behavioural change to package.
+
+## 13. P6.4b completion evidence
+
+### Initial gap inventory
+
+P6.4a's package was re-inspected against the [P6.4 gate](phase_plan.md#11-p6--shared-tooling-distribution)
+before anything was changed. Five of its eight requirements were already met and
+were left alone; the gaps were these, and each row says how it was closed.
+
+| P6.4 requirement | State at the start of P6.4b | How it was closed |
+|---|---|---|
+| One artifact installs library, launcher, modules and data | Met by P6.4a | Untouched; re-verified by `dune build @install`, the fresh-prefix suite and the consumer smoke |
+| Reuse the tested implementations | Met: `scripts/*.py` are adapters onto the installed modules | Untouched |
+| `--help` and `--version` | Met, and honestly unstamped | Untouched |
+| No checkout-relative runtime imports in the installed command | Met: `paths` derives everything from `__file__` | Untouched |
+| Declared runtime dependencies | Met: `conf-python-3` plus the command's own >=3.9 check | Untouched |
+| **Route retained repository development commands through the same implementation** | **Gap.** `scripts/flow.sh` drove `scripts/phase4.py` stage by stage and kept its own sequencing, summary, newest-run lookup, default `--allow-python-mismatch` and expensive no-argument default. `scripts/toolchain.sh` executed the packaged shell directly with its own `--lock-file` plumbing | `scripts/flow.sh` rewritten as example build/emission plus path selection, one command per invocation, routed to `scripts/flow_cli.py`; `scripts/toolchain.sh` routed through `provision` |
+| **Per-operation installed regression tests with scope-specific exit statuses** | **Gap.** Installed subprocess coverage existed for `--help`, `--version`, `report`, `collect --stdout` and one `preflight` rejection. `provision`, `run`, `postcheck`, `archive` and `execute` had only injected-dispatcher or in-process coverage | 24 new installed-command tests driving every operation against fixtures and stub processes |
+| Fresh-prefix install runs from an unrelated directory **without source-checkout access** | **Partially met.** Discovery, `PATH`/symlink lookup, read-only operation and import origin are proven; making the checkout unreadable is not | Not closed here: the filesystem-denial gate is P6.6a. Recorded as the parent's one outstanding gate item |
+| Generic `nixpkgs_pin` environment fix (P6.4b scope, not a gate clause) | **Gap.** Only the consumer's `adopted_phase4.py` had it | Ported into `flow/hardcaml_asic_flow/phase4.py` with its own tests |
+
+Coverage was also classified before adding any, because three kinds of test were
+being counted as one:
+
+- **Source-operation behaviour** — `test_phase4.py`, `test_report.py`,
+  `test_archive.py`: the real implementations, in process, external programs
+  mocked. Already sufficient; unchanged except for the new Nix cases.
+- **Injected dispatcher/orchestration** — the 17 `test_flow_cli.py` contract
+  cases: real parser and real `execute` composition, but `Operations` is replaced
+  wholesale. These prove the contract, **not** that an installed operation runs.
+- **Installed-command subprocess coverage** — `test_installed_prefix.py`: the
+  installed launcher, the installed modules and the real operations. This is the
+  only category that satisfies the gate's evidence clause, and it was the gap.
+- **P6.5/P6.6 requirements** — source stamping, dependency-lock and waiver
+  semantics, provisioning authority, filesystem-denied acceptance: out of scope,
+  and none of them is claimed below.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `flow/hardcaml_asic_flow/phase4.py` | `command_output` takes an explicit `env`; new `nixpkgs_pin`; `check` sets `NIX_PATH` from the copied `precheck/default.nix` for both nix-shell invocations |
+| `flow/hardcaml_asic_flow/data/toolchain.sh` | Messages and comments no longer name `scripts/flow.sh` or promise a default Python-mismatch waiver; it is installed data and now reads as such. No provisioning behaviour, pin or exit status changed |
+| `scripts/flow.sh` | Rewritten: example build/emission and path selection only, one command per invocation, every operation routed to `scripts/flow_cli.py` |
+| `scripts/toolchain.sh` | Routed through `flow_cli.py provision` instead of executing the packaged shell with its own `--lock-file` |
+| `bootstrap.sh` | One header line; it still owns the OCaml layer and still reaches flow provisioning only through `scripts/toolchain.sh` |
+| `test/test_phase4.py` | Three cases: the pin comes from the collateral, an unpinned shell adds no `NIX_PATH`, and both postcheck shells receive the pin. Postcheck fixture's `default.nix` now carries a real `fetchTarball` pin |
+| `test/test_flow_cli.py` | New `RepositoryDriverTest`: 11 cases over `scripts/flow.sh`, migrated from the consumer's `check-flow.sh` |
+| `test/test_installed_prefix.py` | Stub-process and bundle fixtures, plus 24 installed-operation cases |
+| `test/dune` | The `test_flow_cli.py` rule also depends on `(source_tree ../scripts)` |
+| `docs/flow.md`, `docs/bootstrap.md`, `docs/usage.md`, `README.md` | The driver's actual interface: one command per invocation, required `STAGE`/`RUN`, no mismatch waiver, no copied preflight, `execute`'s output instead of the old summary |
+| `docs/p6-status.md`, `docs/p6-implementation-plan.md`, `docs/phase_plan.md` | This evidence, the next bounded prompt, and the narrow P6.4 status note |
+
+Not changed, deliberately: the install layout, `flow/dune`, the launcher, `cli.py`
+(execute orchestration stays there, as the unit allows), `identity.py`, the four
+Python adapters, `toolchain.lock`, `lib/`, `examples/`, `evidence/`, any S-series
+document, and every file in `scaf`.
+
+### Retained repository command routing
+
+`scripts/flow.sh` now takes exactly one command and forwards it:
+
+```text
+scripts/flow.sh                 help, exit 0; nothing built, emitted or run
+scripts/flow.sh build           dune build && dune runtest
+scripts/flow.sh emit            dune exec the $KIND example into $BUNDLE
+scripts/flow.sh preflight|run|postcheck|collect|report|archive|execute
+                                -> python3 scripts/flow_cli.py <same operation>
+```
+
+What it keeps is what the P6.3 contract says a consumer owns: which example to
+emit (`KIND`), which testbench and simulator top a development postcheck uses
+(`TESTBENCH`, `TESTBENCH_TOP`), and where things go (`OUT`, `BUNDLE`, `RUNS`,
+`TOOLCHAIN`, `TT`, `PDK`, `FLOW_PY`, `PRECHECK_PY`). Arguments after the command
+are passed through, so no new wrapper option language was invented: `--output`,
+`--list`, `--force`, `--json`, `--native` and the rest are the shared command's
+own spellings.
+
+What it no longer contains: the step sequencer and its summary (that is
+`execute`), the newest-run lookup, the `$OUT/preflight.json` copy a run now makes
+for itself, the archive destination policy, and the acceptance reading. Four
+removed spellings each get one diagnostic naming the replacement, for one
+documented migration window:
+
+| Removed | Diagnostic |
+|---|---|
+| `scripts/flow.sh` with no arguments starting a full flow | Prints help, exit 0 |
+| A step list, e.g. `flow.sh preflight run collect` | "one command per invocation … use `scripts/flow.sh execute` for the fixed sequence" |
+| Implicit newest run for a resumed step | "set `RUN=<run directory>` … the newest run under `$RUNS` is never guessed" |
+| `ALLOW_PYTHON_MISMATCH` (was on by default) | Names `./bootstrap.sh` and the P6.5 recorded `--waiver python-version=REASON`, exit 2 |
+
+`STAGE` is required by `run` and `execute` rather than defaulting to `full`.
+`scripts/phase4.py` keeps its historical command line, including the explicit
+`--allow-python-mismatch` opt-in, because it is the documented development
+adapter for this migration window; there is no default waiver anywhere, and the
+installed command has no such option at all. `report.py --runs` likewise remains
+an explicitly requested development spelling for newest-run selection, and is now
+the only newest-run lookup left in the repository. No development-adapter spelling
+changed apart from `flow.sh`'s own.
+
+`scripts/toolchain.sh` now execs `flow_cli.py provision --toolchain
+<repository .toolchain>`, so a checkout provisions through the same dispatch an
+installed command uses and the lock comes from the package's own `paths`. The
+adapter no longer spells out `--lock-file`. `bootstrap.sh` keeps its OCaml layer
+and reaches flow provisioning only through that adapter.
+
+### The generic Nix environment fix
+
+The consumer's `adopted_phase4.py` differed from the library runner in exactly
+two generic ways, and both are now here: `command_output` accepts an `env`, and
+`check` derives `NIX_PATH` from the `fetchTarball` revision in the copied
+`precheck/default.nix` before running either nix-shell. Nothing else from that
+copy was taken: its `consumer_pins` lock comparison, its `asic-dependencies.lock`
+reading and its design-specific assumptions stay in `scaf`, and its
+non-atomic `save` and `KeyboardInterrupt`-only signal handling are regressions
+against this implementation, not features.
+
+Why it is generic: `nix-shell --run` resolves `<nixpkgs>` for its own
+bashInteractive, and with no channel that lookup fails, prints an evaluation
+error into the postcheck log and falls back to the environment's bash. The
+revision is read from the pinned collateral itself, so no second authority and no
+new pin appears, and when the file names no `fetchTarball` the function returns
+None and the caller leaves `NIX_PATH` alone — an empty search path would be worse
+than the diagnostic. Tests cover the pinned and unpinned files, both shells
+receiving the value in process, and the installed `postcheck` passing it to a stub
+`nix-shell` that records what it was given. No Nix runs.
+
+### Installed-operation coverage
+
+Every row below is an installed-command subprocess: `$PREFIX/bin/hardcaml-asic-flow`
+launched from an unrelated cwd with a rebuilt environment, running the real
+operation implementations. Only the external programs are stubs — a few lines of
+POSIX shell each for `git`, `docker`, `nix-shell`, the LibreLane flow Python and
+the TT precheck Python — so there is no PDK, LibreLane, Docker, Nix, network or
+repository anywhere in them.
+
+| Operation | Installed evidence |
+|---|---|
+| `provision` | Dispatch plumbing with a stub `bash`: the packaged `data/toolchain.sh` under the prefix, `--lock-file` pointing at the packaged lock, `--check/--offline/--no-container` forwarded, `TOOLCHAIN` exported, statuses 0/2/3/4/5/7 returned unflattened, and nothing created including the root it was given. `--lock-file` is not a public option (exit 2) |
+| `preflight` | Ready fixture: `ready: true`, `--output` file identical to stdout. Not-ready at exit 1 for a changed bundle file, a collateral revision that is not the requested one, and a LibreLane that is not the requested one. Container probes present without `--native` and absent with it. Missing tool locations are exit 2 before any work |
+| `run` | Allocation under the named run store, absolute `run_id`/`run_dir`/`run_record` JSON, the attempt's **own** in-run `preflight.json` equal to `run.json`'s `environment`, staged project, and the flow argv carrying the forwarded PDK root and `--to Yosys.Synthesis`. Recorded failure at exit 1 with the path retained. Failure before allocation at exit 2 with empty stdout and no run store created. Missing `--stage`/`--runs` and `--native --stage full` rejected at exit 2. SIGTERM mid-run: exit 143, `status: interrupted`, `interrupted_by: SIGTERM`, finalized record, path still printed |
+| `postcheck` | Both bench arguments required (exit 2, no `checks/` directory). On a completed full run: exit 0, unique `checks/<id>`, `precheck`/`gate_level` pass, copied `testbench.v`, recorded `testbench_top`, KLayout pin agreement, and both nix-shell invocations receiving the pinned `NIX_PATH`. A synthesis-only run is exit 2 |
+| `collect` | Schema-1 result written for the named run; `--stdout` writes nothing. A run whose evidence fails acceptance still collects at exit 0 while `report` on the same run is exit 1 |
+| `report` | P6.1 acceptance unchanged through the installed command: synthesis-only record accepted with physical checks unevaluated, full record accepted, `synthesis_errors = 1` rejected at exit 1 while `--json` still prints the exact stored record |
+| `archive` | `--list` publishes nothing; publication writes `archive.json`, `reports.tar.gz`, `input-bundle.tar.gz`, the digest file matching the tarball's actual SHA-256, and the run records. A second publication without `--force` is exit 2 with the previous archive byte-identical; `--force` replaces it and preserves a human `README.md`; `--force` without a destination and `archive RUN` with no destination are both exit 2; tampered bundle bytes are exit 2 with the previous archive and no staging left behind; a run that is not completed is exit 2 |
+| `execute` | Synthesis: single-line JSON, steps `run, collect, report, archive`, no `checks/` directory, per-step stderr and the run path. Full: steps `run, postcheck, collect, report` with the postcheck in the collected results. Whole-scope validation before starting (full without bench inputs, synthesis with them, `--force` without an archive: all exit 2, no run store). Acceptance rejection: exit 1, `status: rejected`, no `archive` key, no archive directory, run and results retained. Recorded run failure: exit 1, `status: failed`, best-effort collect marked as such, still no promotion |
+| `--version`, `--help`, discovery, read-only prefix | P6.4a's, re-run unchanged |
+
+The 11 `RepositoryDriverTest` cases in `test_flow_cli.py` are labelled as what
+they are: they drive `scripts/flow.sh` with a recording stub in place of `python3`
+and assert the forwarded operation, locations, stage, bench and pass-through
+arguments, plus the five diagnostics above and the emission refusal. One case runs
+the real shared implementation through the driver to show a recorded run is
+reportable with no OCaml toolchain on `PATH`. They prove routing, not operation
+behaviour, and are not counted as installed-operation evidence.
+
+### Commands and results
+
+```text
+python3 test/test_phase4.py            16 tests, OK   (13 + 3 Nix cases)
+python3 test/test_flow_cli.py          28 tests, OK   (17 + 11 driver cases)
+python3 test/test_report.py            15 tests, OK
+python3 test/test_archive.py           20 tests, OK
+python3 test/test_packaging.py         17 tests, OK
+python3 test/test_installed_prefix.py  35 tests, OK   (11 + 24 installed cases)
+python3 -m py_compile flow/hardcaml_asic_flow/*.py scripts/*.py test/test_*.py
+  test/check_bundle.py                                       exit 0
+bash -n flow/hardcaml_asic_flow/data/toolchain.sh scripts/{toolchain,flow}.sh
+  bootstrap.sh scripts/ocaml-deps.sh test/package_consumer_smoke.sh; sh -n
+  flow/hardcaml-asic-flow                                    exit 0
+dune build                                                   exit 0
+dune build @install                                          exit 0
+dune build @test/runtest --force   five Python suites + bundle/lock check, OK
+dune runtest                                                 exit 0
+bash test/package_consumer_smoke.sh   external consumer: address=2 storage=32
+opam lint hardcaml_asic.opam                                 Passed
+local Markdown link/fragment check over the changed docs      all resolve
+git diff --check                                             exit 0
+```
+
+`test_installed_prefix.py` installs into a fresh temporary prefix under the
+session scratch area with `dune install --prefix` and removes it afterwards. No
+opam switch, shared environment or installed package was altered, and no
+provisioning, synthesis, physical flow, Docker, Nix, LibreLane, PDK, bootstrap or
+consumer migration ran.
+
+### Tested source snapshot
+
+Base revision `037e670f51a1d44dbba1a885d9c97e4fd4196a10`, **dirty**: P6.3, P6.4a
+and P6.4b are all uncommitted on it, and the same worktree carries separately
+owned SRAM and consumer-documentation work this session did not touch. That hash
+does not identify what was tested, and P6.4 still produces no artifact identity
+that would; establishing one is P6.5a. Consumer HEAD
+`a0e47ceb096ab710ad5b4b08005dc753222c51d3`, also dirty with consumer-owned work,
+was read only. Nothing was committed, pushed, reset or discarded; no pin, opam
+switch or installed environment changed.
+
+### Parent P6.4 assessment
+
+P6.4b is complete. **Parent P6.4 is not**, and the reason is one clause of its own
+evidence line: "a fresh-prefix install runs from an unrelated directory without
+source-checkout access". Everything else it asks for now has evidence — one
+artifact, reused implementations, `--help`/`--version`, no checkout-relative
+runtime imports, declared runtime dependencies, routed repository commands, and
+per-operation installed regression tests with scope-specific exit statuses. The
+checks deny the checkout through cwd, `PATH`, `PYTHONPATH` and a decoy package and
+prove where imports resolved from, but they do not make the source tree unreadable
+to the process. That is the filesystem-denial gate the phase plan assigns to
+P6.6a, so P6.4 stays open until P6.6a supplies it rather than being closed on a
+weaker check.
+
+### Deliberate limitations and remaining dependencies
+
+- **P6.5a** (source-artifact identity): `--version` still reports
+  `stamped: false`, `revision: null`, `state: "unknown"`,
+  `inventory_digest: null`, `library_artifact_match: null`. The installed tests
+  assert that unknown state rather than papering over it.
+- **P6.5b** (dependency and waiver records): `--dependency-lock` and `--waiver`
+  still parse and are still rejected with an explicit P6.5 diagnostic at exit 2.
+  An installed test pins that, so the option surface cannot quietly start being
+  accepted and ignored.
+- **P6.5c** (provisioning authority): the `provision` tests cover dispatch
+  plumbing only — which script, which lock, which root, which status — with a
+  stub `bash`. They make **no** claim about read-only, offline or exact-version
+  provisioning semantics, and no real provisioner ran.
+- **P6.6a** (independent installation): the filesystem sandbox, and with it the
+  parent gate clause above.
+- **P6.6b**: `docs/flow.md`, `docs/usage.md` and `docs/bootstrap.md` still teach
+  the `scripts/` entry points, which remain correct because the adapters remain.
+  Replacing them with installed commands is still P6.6b; only the statements
+  P6.4b made false were corrected.
+- **P7**: no `scaf` file was read for edit or changed. The consumer still ships
+  `adopted_phase4.py` and `adopted-flow.sh`; retiring them is P7, and the generic
+  assertions migrated out of `check-flow.sh` were copied into this repository's
+  tests, not deleted there.

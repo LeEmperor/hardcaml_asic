@@ -13,7 +13,7 @@
 #   ./bootstrap.sh --no-container   # skip the Docker/Podman prerequisite and image
 #
 # Then:
-#   scripts/flow.sh                 # build, emit, preflight, run, postcheck, collect, report
+#   scripts/flow.sh                 # the flow driver's help; then build, emit, execute
 #
 # The two layers are separate scripts because they fail for unrelated reasons and are
 # fixed by unrelated commands: layer 1 by opam, against a switch shared with every other

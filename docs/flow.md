@@ -18,45 +18,65 @@ from either new or existing run directories. It does not install tools or change
 
 ## Running it
 
-`scripts/flow.sh` runs the whole sequence with the reference paths already
-filled in, and `scripts/report.py` summarizes a finished run. Both take the
-place of assembling the `phase4.py` command lines by hand:
+`scripts/flow.sh` fills in this repository's example, testbench and reference
+paths and hands every flow operation to the shared dispatcher — the same
+implementation the installed `hardcaml-asic-flow` command runs — so there is one
+account of sequencing, acceptance, run selection and archiving. It takes one
+command per invocation, and no argument prints its help rather than starting
+anything:
 
 ```sh
-scripts/flow.sh                      # build, emit, preflight, run, postcheck, collect, report
-scripts/flow.sh report               # just the summary, on the newest run under $RUNS
-OUT=/tmp/try KIND=memory scripts/flow.sh
+scripts/flow.sh                      # help; nothing is built or run
+scripts/flow.sh build                # dune build && dune runtest
+OUT=/tmp/try KIND=memory scripts/flow.sh emit
+OUT=/tmp/try STAGE=synthesis scripts/flow.sh execute   # run -> collect -> report
+OUT=/tmp/try RUN=/tmp/try/runs/<id> scripts/flow.sh report
 scripts/report.py "$RUN"             # a specific run directory
-scripts/report.py --runs "$RUNS"     # the newest run under a run store
+scripts/report.py --runs "$RUNS"     # development only: newest run under a store
 ```
 
+`execute` is the shared command's fixed sequence: run, then postcheck for a full
+stage, then collect, then report, then an archive only if one was asked for. The
+individual commands (`preflight`, `run`, `postcheck`, `collect`, `report`,
+`archive`) are the same operations on their own, and any option the shared
+command accepts can be passed straight through, for example
+`scripts/flow.sh archive --output /tmp/evidence` or `scripts/flow.sh report
+--json`.
+
 Every path is an overridable environment variable (`TOOLCHAIN`, `TT`, `PDK`,
-`FLOW_PY`, `PRECHECK_PY`, `OUT`, `BUNDLE`, `RUNS`, `KIND`, `STAGE`, `TESTBENCH`).
-The defaults come from `.toolchain/toolchain-env.sh`, which `./bootstrap.sh`
-writes and `flow.sh` sources; anything already set in the environment wins over
-it, so `TT=... scripts/flow.sh` still points the run at another checkout.
-`flow.sh` takes the run directory from
-the `run.json` path `phase4.py` prints, since run ids are random hex and do not
-sort by time. For resumed steps it uses the run created by the current invocation,
-then `$RUN`, then the newest directory under `$RUNS` by modification time.
-`report.py --runs "$RUNS"` also selects newest by modification time; use an
+`FLOW_PY`, `PRECHECK_PY`, `OUT`, `BUNDLE`, `RUNS`, `KIND`, `STAGE`, `TESTBENCH`,
+`TESTBENCH_TOP`, `RUN`). The defaults come from `.toolchain/toolchain-env.sh`,
+which `./bootstrap.sh` writes and `flow.sh` sources; anything already set in the
+environment wins over it, so `TT=... scripts/flow.sh preflight` still points the
+run at another checkout. Two of them are required rather than defaulted, because
+guessing either is how an expensive run or a misattributed record happens:
+`STAGE` for `run` and `execute`, since there is no default stage, and `RUN` for
+every resumed operation, since the newest directory under `$RUNS` is never
+assumed to be the one you meant — run ids are random hex and do not sort by time,
+and `run`/`execute` print `run_dir` in their JSON. `ALLOW_PYTHON_MISMATCH` is
+gone: nothing waives the bundle's requested Python by default, and the driver
+says so and stops if it is still set.
+`report.py --runs "$RUNS"` selects newest by modification time; use an
 explicit run path for durable evidence. `report.py` derives its acceptance scope
 from the requested stage recorded consistently in `run.json` and `results.json`.
 For a full run it prints timing per corner, signoff checks, the TT precheck rows,
 and what the post-CTS resizer did about hold. It exits nonzero when required
 evidence is missing or malformed, a required check fails, the requested stage
 did not complete, the records contradict each other, or a full run leaves a
-timing mode unconstrained. The `phase4.py` subcommands below remain the
-interface; the two scripts only drive them.
+timing mode unconstrained. The `phase4.py` subcommands below remain a supported
+development spelling of the same operations: `phase4.py`, `report.py` and
+`archive.py` are adapters onto `flow/hardcaml_asic_flow/`, which is what the
+installed `hardcaml-asic-flow` command runs, so there is one implementation under
+all of them.
 
-`flow.sh` ends with a summary: how long each step took, the end-to-end wall
-time, and the absolute path of every record and log the invocation produced —
-bundle, preflight report, run record, execution log, results, postcheck record
-and log, precheck reports, and the LibreLane run directory. It prints from an
-`EXIT` trap, so a failed or interrupted flow still ends by saying where its
-diagnostics are, and a step that was killed mid-way is listed as `did not
-finish` rather than given a misleading duration. For scale, the reference
-observable bundle is roughly 24 minutes to harden and 8 more to postcheck.
+`execute` ends with an account of what it did: one stderr line per step with its
+status and duration, the absolute run directory, and the archive path when one
+was published, followed by a single JSON object on stdout carrying the run
+identity, per-step statuses and the final outcome. It prints that on failure and
+on interruption too, so an attempt that stopped still names the run holding its
+diagnostics, and a failed step keeps its own status rather than being flattened
+into the sequence's. For scale, the reference observable bundle is roughly 24
+minutes to harden and 8 more to postcheck.
 
 `$OUT` — one bundle and its runs — defaults to `../p4-$KIND`, **outside this
 repository**, and should stay outside it. A completed `full` run directory is
@@ -91,8 +111,8 @@ is a copy of them for the shell, and `test/check_bundle.py` fails `dune runtest`
 if the two ever disagree.
 
 Bootstrapping prepares an environment. It does not prove the design hardens,
-meets timing, or passes precheck: those are `scripts/flow.sh` and its own exit
-codes. `scripts/phase4.py preflight` then checks the particular emitted bundle
+meets timing, or passes precheck: those are the flow operations and their own
+exit codes. `scripts/phase4.py preflight` then checks the particular emitted bundle
 against the installed files, and never fetches or installs anything itself.
 
 The runner uses Dockerized LibreLane by default and needs an accessible Docker
@@ -126,19 +146,22 @@ python3 scripts/phase4.py collect "$RUNS/<printed-run-id>" \
 Use `--stage full` for place and route and LibreLane physical checks. The
 `--native` run option uses locally installed EDA executables, when their versions
 and interfaces are compatible. Preflight rejects a Python minor-version mismatch
-with the bundle's requested version; `--allow-python-mismatch` records the actual
-version and permits an intentional compatibility run. It does not change the
-requested version in the build manifest. A run prints its `run.json` path even
+with the bundle's requested version. `scripts/phase4.py` keeps an explicit
+`--allow-python-mismatch` for a development compatibility run, and it records the
+actual version rather than changing the requested one in the build manifest;
+nothing passes it for you, and the shared command has no such option at all —
+a recorded `--waiver python-version=REASON` replaces it in P6.5. A run prints its `run.json` path even
 if it fails. Its `execution.log` and partial `project/runs/asic` contents remain
 available, and retries receive distinct IDs.
 
 `preflight` prints its report as JSON on stdout, and `--output` writes the same
 report to a file. Use it: the report is the record of why a run was allowed to
 start — every external file hash, the actual tool and container versions, and
-any version waivers — and stdout from a seven-step flow does not survive as
-evidence. `flow.sh` passes it by default and, once the run directory exists,
-copies the report into it as `preflight.json`, so an attempt is self-contained.
-The report is the same structure `run.json` stores under `environment`.
+any version waivers — and scrollback does not survive as evidence. A run no
+longer needs that file copied into it: `run` performs its own preflight and
+saves that one as the attempt's `preflight.json`, so the record in a run is the
+one that actually gated it. The report is the same structure `run.json` stores
+under `environment`.
 
 After a completed full run, check TT's layout rules and simulate the final
 gate-level netlist with the observable wrapper testbench:

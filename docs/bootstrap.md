@@ -19,7 +19,7 @@ from.
 git clone <this repository> hardcaml_asic && cd hardcaml_asic
 ./bootstrap.sh          # opam layer + .toolchain/; expect a few minutes and ~1.5 GB
 ./bootstrap.sh --check  # everything green
-scripts/flow.sh         # build, emit, preflight, run, postcheck, collect, report
+scripts/flow.sh         # its help; then build, then emit, then execute
 ```
 
 If the opam switch is missing packages, `bootstrap.sh` stops and prints the
@@ -102,7 +102,7 @@ the first. On a machine with the opam layer ready and nothing else:
 ==> Checking host prerequisites
     git 2.43.0
     warning: python3.11 not found; using python3 3.12 for .../.toolchain/.venv
-    warning: preflight needs --allow-python-mismatch, which flow.sh passes by default
+    warning: preflight requires the requested minor version; install python3.11
     docker 29.6.1
 
 ==> Resolving tt-support-tools
@@ -120,7 +120,7 @@ A fully provisioned machine ends with:
 ```
 ==> Summary
     the toolchain matches toolchain.lock
-    source .../.toolchain/toolchain-env.sh, or just run scripts/flow.sh
+    source .../.toolchain/toolchain-env.sh, or pass these locations to the flow command
 ```
 
 Exit codes are distinguishable, so a caller can tell a missing tool from a bad
@@ -163,11 +163,12 @@ it until it restarts.
 ### `warning: python3.11 not found`
 
 Expected on a host with a different Python. The bundle requests the minor version
-in `toolchain.lock`; preflight rejects a mismatch unless the caller opts in, and
-`scripts/flow.sh` passes `--allow-python-mismatch` by default. Set
-`ALLOW_PYTHON_MISMATCH=0` to require the exact version. Installing `python3.11`
-and re-running bootstrap removes the warning, since the venv is created with
-`python<version>` when that interpreter exists.
+in `toolchain.lock`, and preflight rejects a mismatch. Nothing waives it for you:
+the shared command has no `--allow-python-mismatch`, and a recorded
+`--waiver python-version=REASON` is P6.5's. `scripts/phase4.py` keeps the flag as
+an explicit development opt-in. Installing `python3.11` and re-running bootstrap
+removes the warning, since the venv is created with `python<version>` when that
+interpreter exists.
 
 ### `<checkout> is at <hash>, not <hash>, and is dirty`
 
@@ -180,7 +181,7 @@ changed.
 
 Reported, never fatal. Upstream's TT precheck wants a pinned native KLayout and
 Magic from its `default.nix`, which pip cannot supply. Precheck is a later step
-than bootstrap; `scripts/flow.sh postcheck` re-checks it.
+than bootstrap; `RUN=<run> scripts/flow.sh postcheck` re-checks it.
 
 ### `nix-shell is installed but Nix is not usable`
 
@@ -229,8 +230,8 @@ TOOLCHAIN=/scratch/asic-toolchain ./bootstrap.sh    # provision somewhere else
 
 The variables are `TOOLCHAIN`, `TT`, `PDK`, `PDK_ROOT`, `FLOW_PY` and
 `PRECHECK_PY`. `scripts/flow.sh` adds its own (`OUT`, `BUNDLE`, `RUNS`, `KIND`,
-`STAGE`, `TESTBENCH`, `RUN`, `ALLOW_PYTHON_MISMATCH`); see
-[execution and results](flow.md).
+`STAGE`, `TESTBENCH`, `TESTBENCH_TOP`, `RUN`), of which `STAGE` and `RUN` are
+required rather than defaulted; see [execution and results](flow.md).
 
 ## Pins and drift
 
@@ -272,8 +273,8 @@ To change a pin:
 ## What bootstrapping does not do
 
 It prepares an environment. It does **not** prove that the design hardens, meets
-timing, passes physical verification, or passes precheck; those are
-`scripts/flow.sh` and its own exit codes.
+timing, passes physical verification, or passes precheck; those are the flow
+operations and their own exit codes.
 
 It also installs nothing outside `.toolchain/` and the opam switch: not `opam`,
 `python3`, `git` or a container runtime, not a container daemon, and nothing on

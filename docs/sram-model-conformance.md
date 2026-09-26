@@ -167,6 +167,10 @@ limit; S.2 overall remains open because S.2b target/submission permission,
 accepted dual-supply connection, and official submission pin remain unresolved.
 S.3 physical feasibility and S.4 backend implementation remain gated.
 
-The next bounded task is S.2b: obtain authoritative target, pin, and power
-requirements for the March 2027 CMOS5L 6x4 submission. Do not infer permission
-from this functional result or begin physical/backend work.
+The subsequent bounded
+[S.2b investigation](sram-target-compatibility.md) established the exact target,
+current mutable branch chain, marker support, and voltage compatibility, but left
+exact macro eligibility, accepted supply commoning, and final immutable
+submission refs unresolved. Do not infer permission from this functional result.
+An S.3 probe may be prepared only as the explicitly experimental activity scoped
+there; do not begin production backend work.

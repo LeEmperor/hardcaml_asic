@@ -1,7 +1,6 @@
 """Run summary fixtures; no PDK, container, or licensed tool is needed."""
 
 import copy
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -12,10 +11,26 @@ import unittest
 
 
 sys.dont_write_bytecode = True
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts/report.py"
-SPEC = importlib.util.spec_from_file_location("report", SCRIPT)
-report = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(report)
+# The modules under test are the ones Dune installs: `flow/hardcaml_asic_flow/`
+# is put on the path and imported as a regular package, so these suites cover the
+# installed implementation rather than a checkout-only copy of it.
+PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "flow"
+sys.path.insert(0, str(PACKAGE_ROOT))
+from hardcaml_asic_flow import report  # noqa: E402
+
+
+def reporter(*arguments):
+    """The reporter as a separate process, run exactly as it is installed.
+
+    `-m hardcaml_asic_flow.report` rather than a path to a file: the module's
+    package-relative imports are the ones an installed command uses, so running
+    it any other way would test a loading mode nothing ships.
+    """
+    environment = dict(os.environ, PYTHONPATH=str(PACKAGE_ROOT),
+                       PYTHONDONTWRITEBYTECODE="1")
+    return subprocess.run(
+        [sys.executable, "-m", "hardcaml_asic_flow.report", *arguments],
+        text=True, capture_output=True, check=False, env=environment)
 
 
 def metric(value, corner=None):
@@ -117,9 +132,7 @@ class ReportTest(unittest.TestCase):
         record.update(record_changes)
         (self.root / "run.json").write_text(json.dumps(record))
         (self.root / "results.json").write_text(json.dumps(results))
-        return subprocess.run(
-            [sys.executable, str(SCRIPT), str(self.root)],
-            text=True, capture_output=True, check=False)
+        return reporter(str(self.root))
 
     def test_completed_synthesis_passes_without_physical_results(self):
         completed = self.run_report(synthesis_results())
@@ -298,14 +311,19 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("synthesis acceptance passed", completed.stdout)
 
-    def test_json_output_remains_the_stored_record(self):
+    def test_json_output_is_exact_record_and_keeps_acceptance_verdict(self):
         results = synthesis_results()
         self.run_report(results)
-        completed = subprocess.run(
-            [sys.executable, str(SCRIPT), str(self.root), "--json"],
-            text=True, capture_output=True, check=False)
+        completed = reporter(str(self.root), "--json")
         self.assertEqual(completed.returncode, 0)
         self.assertEqual(json.loads(completed.stdout), results)
+
+        results["synthesis_checks"]["synthesis_errors"]["value"] = 1.0
+        self.run_report(results)
+        rejected = reporter(str(self.root), "--json")
+        self.assertEqual(rejected.returncode, 1)
+        self.assertEqual(json.loads(rejected.stdout), results)
+        self.assertIn("synthesis_errors = 1", rejected.stderr)
 
     def test_newest_run_is_chosen(self):
         runs = self.root / "runs"

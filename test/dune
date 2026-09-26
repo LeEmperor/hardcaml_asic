@@ -20,17 +20,45 @@
  (action
   (run python3 %{dep:check_bundle.py} %{exe:../examples/tt_bundle_example.exe} %{workspace_root})))
 
+; The flow suites import flow/hardcaml_asic_flow as a package, which is the same
+; tree flow/dune installs, so one dependency covers every module and its runtime
+; data. ../toolchain.lock is named as well: data/toolchain.lock is a symlink to
+; it, and a source_tree dependency does not pull in the file a symlink points at.
+;
+; test/test_installed_prefix.py is deliberately absent from this alias. It runs
+; `dune build @install` and `dune install`, which a runtest rule must not do.
+; Run it explicitly: python3 test/test_installed_prefix.py
+
 (rule
  (alias runtest)
- (deps test_phase4.py ../scripts/phase4.py)
+ (deps test_phase4.py (source_tree ../flow) ../toolchain.lock)
  (action (run python3 %{dep:test_phase4.py})))
 
 (rule
  (alias runtest)
- (deps test_report.py ../scripts/report.py ../scripts/phase4.py)
+ (deps test_report.py (source_tree ../flow) ../toolchain.lock)
  (action (run python3 %{dep:test_report.py})))
 
 (rule
  (alias runtest)
- (deps test_archive.py ../scripts/archive.py ../scripts/phase4.py)
+ (deps test_archive.py (source_tree ../flow) ../toolchain.lock)
  (action (run python3 %{dep:test_archive.py})))
+
+; test_flow_cli.py also drives scripts/flow.sh, the repository's example driver,
+; to check that it routes every operation to this same dispatcher, so it depends
+; on ../scripts as well. It replaces python3 with a recording stub for the
+; routing cases and never runs dune, a provisioner or an external tool.
+
+(rule
+ (alias runtest)
+ (deps
+  test_flow_cli.py
+  (source_tree ../flow)
+  (source_tree ../scripts)
+  ../toolchain.lock)
+ (action (run python3 %{dep:test_flow_cli.py})))
+
+(rule
+ (alias runtest)
+ (deps test_packaging.py (source_tree ../flow) ../toolchain.lock ../dune-project)
+ (action (run python3 %{dep:test_packaging.py})))
