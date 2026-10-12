@@ -30,6 +30,7 @@ type t =
   ; pinout    : Pinout.t
   ; timing    : Timing.t
   ; policy    : Resource_policy.t
+  ; source_inputs : string list
   }
 
 let create
@@ -41,6 +42,7 @@ let create
     ?(clocks = [])
     ?(pinout = [])
     ?(timing = Timing.empty)
+    ?(source_inputs = [])
     ~policy ()
   =
   (* Glorified validation function on all of the inputs;
@@ -84,10 +86,30 @@ let create
   ; pinout
   ; timing
   ; policy
+  ; source_inputs
   }
 ;;
 
 let name t = t.name
+let source_inputs t = t.source_inputs
+
+(* Local declaration inspection only, not a Workbench observation protocol:
+   unpacking does not run D.create, resolve a target, or read files/Git/PDKs. *)
+let describe t =
+  let (module D) = t.design in
+  [%sexp
+    { project_name = (t.name : string)
+    ; top = (D.name : string)
+    ; metadata = (t.metadata : Metadata.t)
+    ; source_inputs = (t.source_inputs : string list)
+    ; target = (t.target : Target.t)
+    ; flow = (t.flow : Flow.t)
+    ; clocks = (t.clocks : Clock.t list)
+    ; pinout = (t.pinout : Pinout.t)
+    ; timing = (t.timing : Timing.t)
+    ; policy = (t.policy : Resource_policy.t)
+    }]
+;;
 
 (* Runs the user's design once, and returns the Elaborated_project.t object *)
 let elaborate t ~mode =
@@ -159,5 +181,30 @@ let elaborate_for_flow ?inputs t =
   let%bind.Or_error elaborated_project = elaborate t ~mode:Elaboration_mode.Implementation in
   Resolved_flow.resolve ?inputs elaborated_project
   |> Or_error.tag_s ~tag:[%message "flow resolution failed" ~project:t.name]
+;;
+
+(* The explicit I/O boundary. Keep render before write, and leave source
+   canonicalization, synthesis-source fallback and output rules to Bundle.
+   Bundle.write requires a new/empty directory and is not atomic. *)
+let emit_bundle ?inputs ?(include_simulation = true) t ~source_root ~output_dir =
+  let open Or_error.Let_syntax in
+  let%bind () =
+    if List.is_empty t.source_inputs
+    then Or_error.error_string "bundle emission requires nonempty source_inputs"
+    else Ok ()
+  in
+  let%bind resolved = elaborate_for_flow ?inputs t in
+  let%bind simulation_project =
+    if include_simulation
+    then
+      let%map project = elaborate t ~mode:Simulation in
+      Some project
+    else Ok None
+  in
+  let%bind bundle =
+    Bundle.render ?simulation_project ~source_root ~input_paths:t.source_inputs resolved
+  in
+  let%map () = Bundle.write bundle ~output_dir in
+  bundle
 ;;
 [@@@ocamlformat "enable"]

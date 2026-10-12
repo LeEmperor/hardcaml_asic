@@ -16,7 +16,8 @@ is Tiny Tapeout 6x4 / IHP CMOS5L / LibreLane, with behavioral and explicitly
 selected flop memory. There is no production SRAM backend or general multi-flow
 implementation. A successful process is not a signoff verdict.
 
-Implemented: project elaboration, target/constraint resolution, immutable bundles,
+Implemented: project declaration inspection and shared emission entry point,
+project elaboration, target/constraint resolution, immutable bundles,
 installed Python dispatcher, separate execution IDs, `run.json`, `results.json`,
 postcheck attempts, operation-aware acceptance and integrity-checked archives.
 Missing: public catalog, early request correlation, durable operation/step updates
@@ -80,6 +81,23 @@ returns `Elaborated_project.t`; `Project.elaborate_for_flow` adds validation and
 returns `Resolved_flow.t`, retaining that project in `elaborated_project`.
 `Bundle.render ?simulation_project` can include a separate simulation elaboration.
 Rendering emits inputs; execution invokes tools separately.
+
+The consumer owns `Fifo_asic.project ()` (in the FIFO specimen) and its declaration,
+wrapper and source inventory. `Project.create ?source_inputs` defaults to `[]`;
+the getter retains the declared list. `Project.describe` returns local declaration
+facts as a S-expression without design construction, resolution or I/O. It is not
+a Workbench observation protocol. Root/output paths are execution arguments, not
+declaration fields.
+
+`Project.emit_bundle ?inputs ?include_simulation t ~source_root ~output_dir` owns
+the shared orchestration: reject empty inventory before design construction,
+elaborate/resolve implementation, optionally elaborate Simulation, render, write.
+Simulation defaults to true; false skips its construction and reuses synthesis
+sources for simulation. No output is written before render succeeds; writing
+retains Bundle's new/empty-directory requirement and non-atomic failure behavior.
+Dependencies remain acyclic: Project composes Bundle and Resolved_flow, which use
+Elaborated_project rather than calling back into Project. Private construction
+boundaries remain intact. See the [entrypoint guide](guides/bundle-emission.md#project-centered-entry-point).
 
 Contexts close on success or failure; registration cannot leak into another elaboration.
 Resource identities use explicit names and scope paths. Inventories are sorted.
@@ -181,7 +199,8 @@ resumable checkpoint. Runtime locking, fsync/data durability, authentic persiste
 history and producer liveness are unproven; deeper hierarchy is unmodeled. Silence
 or reader disconnect never supplies interruption/completion facts.
 
-The next bounded task is the LibreLane observation feasibility probe below. Live
+Next scope requires separate agreement: project run routing or the LibreLane
+observation feasibility probe below. Neither is authorized by this closeout. Live
 catalog, early correlation, step updates and incremental result publication remain
 undelivered.
 
@@ -266,11 +285,15 @@ changes and new observation behavior into one unreviewable rewrite.
 The owner-created [sibling development specimen](../../hardcaml_asic_example/README.md)
 now implements a fixed single-clock 16 × 8 controlled FIFO with explicit register
 storage, a pure list-based scoreboard, directed/seeded regressions, a consumer-owned
-TT wrapper/declaration and a standalone bundle emitter. Its source root is explicit,
+TT wrapper/declaration and a project-centered `describe|emit` CLI. Its public facade
+exposes `project ()` plus `Tt_wrapper`; shared emission belongs to the provider.
+No runtime project `run`/`inspect` command exists yet. Its source root is explicit,
 not a required hardcoded sibling path. Owner initial ref
 `8e4577f6c72cc689cbc92daeb5f8ae083cf970e0` now exists; it alone does not establish
 a clean tree or a dependency pin. The specimen now has a recorded ASIC baseline
-plus an explicit development override; the consumer record awaits owner commit.
+plus an explicit development override. The recorded `171476...` baseline lacks the
+new Project API and is refused by current refresh validation. Development refresh
+works; adopting a committed compatible candidate remains an owner action.
 
 The delivered contract provides synchronous clear with priority over disable,
 registered pop responses, occupancy/full/empty and pre-edge acceptance decisions.
@@ -285,9 +308,9 @@ and window/tile behavior. PDK-free bundle and separately compiled emitted
 synthesis/simulation RTL checks pass after isolated dependency activation. Genuine
 example-root emission also passes complete bundle equality, copied-input hashes,
 actual revision/dirty-input provenance and RTL replay; see the
-[closeout evidence](phase_plan.md#consumer-refresh-and-real-checkout-emitter-closeout).
+[project-entrypoint evidence](phase_plan.md#project-centered-entrypoint-acceptance).
 Synthetic committed fixtures remain separate provenance tests. This does not
 establish full environment locking, embedded source identity, source-access-denied
 P6.6 acceptance or physical acceptance. The separate provisional observation fixture
-slice is accepted; LibreLane observation feasibility is next. FIFO delivery does
+slice is accepted; run routing/LibreLane observation feasibility need separate agreement. FIFO delivery does
 not implement live provider observation or close ASIC P6 gates.

@@ -55,7 +55,7 @@ open Core
 open Hardcaml
 open Hardcaml_asic
 
-let project (design : (module Project.Design)) pinout =
+let project (design : (module Project.Design)) pinout ~source_inputs =
   Project.create
     ~name:"my_asic"
     ~metadata:
@@ -72,6 +72,7 @@ let project (design : (module Project.Design)) pinout =
     ~clocks:[ { Clock.port = "clk"; period = Time_float.Span.of_sec (1. /. 48e6) } ]
     ~timing:Timing.empty
     ~pinout
+    ~source_inputs
     ~policy:(Resource_policy.create ~default:Flops [] |> Or_error.ok_exn)
     ()
   |> Or_error.ok_exn
@@ -130,16 +131,22 @@ BUNDLE=$(mktemp -d)/bundle
 dune exec examples/tt_bundle_example.exe -- memory "$BUNDLE"
 ```
 
-A consumer provides an equivalent executable in its own project. It passes the
-consumer repository as `Bundle.render ~source_root` and enumerates every source
-input needed to reproduce generation. Do not use the library checkout as the
-consumer source root.
+A consumer owns a project constructor and declares every source input needed to
+reproduce generation via `Project.create ~source_inputs`. The default `[]` permits
+ordinary elaboration, but emission rejects it before design construction. Pass the
+consumer repository and destination as execution arguments to
+`Project.emit_bundle project ~source_root ~output_dir`; do not use the library
+checkout as the consumer source root. Optional `?inputs` supplies target inputs.
 
-Pass a separately elaborated `~mode:Simulation` value as
-`Bundle.render ~simulation_project` when behavioral simulation RTL is needed.
-The renderer takes the `Resolved_flow.t` as its final argument; `Bundle.write`
-publishes its files. Tool execution is a separate step. For older consumers,
-see the [source-breaking migration](../phase_plan.md#public-api-rename-migration-and-evidence).
+Emission defaults to a separate Simulation elaboration; `~include_simulation:false`
+skips it and uses synthesis sources for simulation. Shared orchestration resolves,
+renders, then writes; lower-level `Bundle.render`/`Bundle.write` remain available.
+Writing is non-atomic, but starts only after rendering succeeds. Tool execution is
+separate. The FIFO exposes `Fifo_asic.project ()` and a `bin/project.exe` CLI with
+`describe` (local declaration S-expression, no elaboration or I/O) and `emit`.
+It has no runtime `run`/`inspect` operation. See the concrete OCaml and shell
+[entrypoint examples](bundle-emission.md#project-centered-entry-point) and the
+[dependency transition](consumer-installation.md).
 
 Inspect `manifest.json` before execution. The bundle contains synthesis RTL in
 `src/`, independently elaborated behavioral RTL in `simulation/`, generated SDC
@@ -313,7 +320,7 @@ documents the earlier manual procedure and remains historical evidence.
 - Override conflicts: clock, generated source list, die/floorplan/PDK values,
   target constraints, and `MACROS` are protected. Change their typed owner, not
   a raw LibreLane override.
-- Bundle input errors: `input_paths` must be nonempty, relative, present files
+- Bundle input errors: declared `source_inputs` (lower-level `input_paths`) must be nonempty, relative, present files
   inside a committed Git source root. Output must be new or empty.
 - Environment errors: preflight reports missing/mismatched tools, revisions,
   hashes, PDK views, support tools, Python, and container image without installing

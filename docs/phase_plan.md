@@ -1,8 +1,8 @@
 # hardcaml_asic phase plan
 
-Current checkpoint: 2026-10-12 provisional provider observation fixture/model
-acceptance completed, following consumer refresh/activation and real-checkout
-emitter acceptance, public API rename, interface hardening and the FIFO specimen.
+Current checkpoint: 2026-10-12 project-centered entrypoint delivered and reviewed,
+following provisional provider observation fixture/model acceptance, consumer
+refresh/activation, real-checkout emission, API rename, hardening and the FIFO specimen.
 This is the **only active queue**. [Architecture](architecture.md) owns boundaries;
 [P6 details](development/p6-implementation-plan.md) retain the detailed specification
 and exact delivery evidence. Proposed new work below awaits design discussion.
@@ -12,16 +12,20 @@ and exact delivery evidence. Proposed new work below awaits design discussion.
 1. Resolved-build boundary hardening is implemented with the recorded
    [acceptance evidence below](#resolved-build-boundary-hardening-evidence).
 2. The [independent Dune specimen](../../hardcaml_asic_example/README.md) delivers
-   the fixed FIFO contract/core, scoreboard, TT wrapper/declaration and emitter,
+    the fixed FIFO contract/core, scoreboard, TT wrapper/declaration and project CLI,
    with [PDK-free acceptance evidence below](#controlled-fifo-development-specimen-evidence).
    It now uses a recorded ASIC baseline plus an explicit development override,
    with isolated library/CLI installations and plain activated builds; see the
    [refresh/emitter closeout](#consumer-refresh-and-real-checkout-emitter-closeout).
    Read the [source-breaking migration and rename evidence](#public-api-rename-migration-and-evidence)
-   before adopting this provider.
+    before adopting this provider. The [project-centered entrypoint](#project-centered-entrypoint-acceptance)
+    is delivered: consumer `Fifo_asic.project ()`, shared `Project.emit_bundle`, and
+    project `describe|emit`. Current recorded refresh rejects the old API;
+    development refresh works pending owner adoption of a committed candidate.
 3. The provisional provider observation fixtures/model are accepted with
-   [evidence below](#provider-observation-fixture-acceptance). Next bounded task:
-   the LibreLane observation feasibility probe; follow the
+    [evidence below](#provider-observation-fixture-acceptance). Next scope requires
+    separate agreement: project run routing or the LibreLane observation feasibility
+    probe. Neither is authorized here; follow the
    dependencies below for subsequent P6 identity/installation work.
 
 This queue records future ordering, not authorization to proceed beyond the
@@ -48,11 +52,12 @@ recorded below; live observation remains unimplemented.
 | ASIC S.2 | Open; S.2a complete, S.2b research partially resolved | [SRAM checkpoint](sram/sram-status.md) |
 | ASIC S.4 | Gated, unimplemented | Requires S.2 capability gates |
 | ASIC T.1 | Open, independent toolchain follow-up | Scope below |
-| Provider observation | Provisional synthetic fixtures/model accepted; live observation unimplemented; LibreLane feasibility probe next | [Fixture acceptance](#provider-observation-fixture-acceptance), [architecture](architecture.md#8-provider-observation-direction) |
+| Provider observation | Provisional synthetic fixtures/model accepted; live observation unimplemented; LibreLane feasibility probe needs separate agreement | [Fixture acceptance](#provider-observation-fixture-acceptance), [architecture](architecture.md#8-provider-observation-direction) |
 | Resolved-build boundary hardening | Implemented; full runtest passes | [Evidence below](#resolved-build-boundary-hardening-evidence) |
 | Public API rename | Implemented; provider and FIFO acceptance passed, active documentation migrated | [Migration and evidence below](#public-api-rename-migration-and-evidence) |
+| Project-centered entrypoint | Delivered: declaration inventory/description, shared emission, FIFO facade and `describe|emit`; no runtime project run/inspect | [Acceptance below](#project-centered-entrypoint-acceptance) |
 | Controlled-FIFO development specimen | Contract/core, scoreboard, TT wrapper/declaration and emitter delivered; PDK-free acceptance | [Original evidence](#controlled-fifo-development-specimen-evidence), [consumer README](../../hardcaml_asic_example/README.md) |
-| Consumer dependency refresh / emitter | Delivered: recorded ASIC baseline, explicit development override, isolated library/CLI, activation and real-checkout acceptance; record awaits owner commit | [Closeout below](#consumer-refresh-and-real-checkout-emitter-closeout), [commands](development/consumer-dependency-workflow.md#implemented-commands) |
+| Consumer dependency refresh / emitter | Delivered: isolated library/CLI, activation and real-checkout acceptance; development works, old recorded API refused pending owner candidate adoption | [Original closeout](#consumer-refresh-and-real-checkout-emitter-closeout), [current acceptance](#project-centered-entrypoint-acceptance), [commands](development/consumer-dependency-workflow.md#implemented-commands) |
 
 The earlier source-review baseline was clean ASIC `f6e8fd7` before documentation
 consolidation. Workbench has owner changes in its active architecture and construction
@@ -386,6 +391,85 @@ Provider observation remains proposed. No blocker remains for explicit refresh,
 activation, plain consumer builds and emission; see the
 [user commands](development/consumer-dependency-workflow.md#implemented-commands).
 
+### Project-centered entrypoint acceptance
+
+2026-10-12, subsequent bounded implementation and independent documentation review.
+Earlier commands, generations and snapshots above remain historical evidence;
+they are not assertions about today's refs or current API compatibility.
+
+- Provider `Project.create ?source_inputs` defaults to `[]`, with an unchanged-list
+  getter and declaration-only `describe : t -> Sexp.t`. Description performs no
+  elaboration, resolution or I/O and is not a Workbench protocol.
+- `Project.emit_bundle ?inputs ?include_simulation t ~source_root ~output_dir`
+  rejects empty inventory before constructing the design, then composes resolution,
+  optional Simulation (default true), rendering and writing. False skips Simulation
+  construction and uses synthesis sources for simulation. Rendering must succeed
+  before output writes; Bundle's non-atomic new/empty-directory rules still apply.
+- FIFO `asic/project.ml/mli` owns the declaration/inventory; `fifo_asic.ml/mli`
+  exposes `project ()` and `Tt_wrapper`. One `bin/project.ml` implements `describe`
+  and `emit` using the shared operation. Inventories and tests are migrated. There
+  is no runtime project `run` or `inspect` command yet. Concrete code, shell commands
+  and consolidated test coverage live in the [bundle guide](guides/bundle-emission.md).
+
+Completed implementation-pass evidence supplied to this review (suites not repeated):
+
+- `python3 test/check_project_api.py --provider-checks` passed: **146 Python tests**,
+  OCaml tests, **four Icarus simulations**, the external public consumer with
+  **eight private-record negative checks**, and four high-level/manual complete
+  bundle comparisons (observable/memory, Simulation true/false). The helper now
+  preserves normal PATH and isolates Git configuration/identity only; the earlier
+  optional-RTL-skip instruction was stale and has been removed. Disposable fixture
+  commits use `Bundle test <bundle@test.invalid>` for author and committer.
+- Actual development refresh published example generation
+  `69a5db1892234a28b0884442ab0291f1` as default `current`, observing provider base
+  `82c0d7f7fbaa2d1796427de1037644946ceb2294` and snapshot checksum
+  `64b10f0e17e348105053f2f0c095d97bf2a8397a096b135b603c45ca43b2b6ce`.
+  API validation applies to selected bytes; the old record is loaded for comparison.
+  Actual recorded `1714764859274f80a9f5ad207421a04601824e99` refresh failed with
+  `Project.create` incompatibility, preserving current and the unchanged record.
+- Activated plain `dune build @all`, `dune runtest --force`,
+  `dune build @acceptance-strict --force` and `describe` passed. **16 setup tests**
+  and CLI purity checks passed. Core/wrapper each passed **7,330 directed + 20,017
+  seeded edges**; separate synthesis/simulation RTL each passed **11,429 edges**
+  and rejected the corrupted oracle.
+- Saved old executable `/tmp/opencode/project-api-baseline-k9wvcigz/emit_bundle.exe`
+  was independently hash-verified:
+  `739024f92ae88bf45d48e63ed67673b83a73c5fb4c5078db16efe8bbdcfe7cc1`.
+  The union fixture independently validated old **13-input** and new **15-input**
+  inventories. Five hardware artifacts were byte-identical and nonprovenance
+  manifest facts equal. Input-file lists, provenance and identity intentionally
+  differ; this is not old/new whole-tree equality. Repeated new whole trees match.
+- Actual example-root output is preserved in
+  `.dev/emitter-checks/project-entrypoint-slice3/{first,second,evidence.json,...}`
+  with sibling `project-entrypoint-slice3.log`. Snapshot revision:
+  `b3cd3b0095593f4a5c1bac645c6a3e2c2e387e7c`; declared dirty inputs include README
+  and `bin/dune`, with five untracked renamed/added sources. **15 inputs → 21
+  files**, identical first/second trees and all copied-input hashes verified.
+  Bundle identity:
+  `27410b51ee1df628e1906d8a7cbe7f10279bdb23f440f326c0e227377a2eb64e`;
+  manifest SHA-256:
+  `2d5730493b95c22d9e50179d4db6e52e55d7989373b10ae7d9e3c004d210aed4`.
+
+Independent source review found no blocking defect in orchestration, private/acyclic
+boundaries, the FIFO facade/CLI, selected-API versus baseline refresh validation,
+or inventory-aware baseline comparison. No bug fix or new regression was needed.
+The example README is a declared input and its finalized bytes remain preserved.
+Current pin compatibility remains blocked until the owner commits and adopts a
+suitable candidate; explicit development refresh works. CLI identity remains
+unstamped. This is neither a clean/release/signoff claim nor ASIC P6 completion.
+Project run routing and LibreLane observation feasibility are separately agreed
+next scope, not authorized implementation in this closeout.
+
+Final review checks actually run: non-Git read-only
+`python3 /tmp/opencode/check-project-entrypoint-docs.py` passed seven documents'
+whitespace/final-LF and local links/anchors (only two pre-existing historical scaf
+links unavailable). It reverified both preserved 21-file trees, manifest hash and
+recorded provenance, all 15 current source copies including README, saved baseline
+executable hash, current generation/record, 16 setup-test code paths and four
+comparison combinations, and absence of lower-layer Project callbacks. The new
+agent-owned `test/project-api.md` was consolidated into the existing bundle guide
+and removed; no links to it remain. No build/test suite was repeated in this review.
+
 ## ASIC P6 — Shared tooling distribution
 
 Keep existing IDs. The detailed acceptance matrix and original commands are in
@@ -519,7 +603,7 @@ and ASIC P6 work and preserves the successful dependency/emitter closeout above.
 | Milestone | Genuine blockers |
 | --- | --- |
 | Contract fixtures, Workbench reducers/window behavior | Agreed identity/state examples; not P6 completion or a real EDA environment |
-| Example Dune/design/unit tests | Delivered with recorded ASIC baseline plus explicit development refresh/activation; no PDK required; consumer record awaits owner commit, full environment lock absent |
+| Example Dune/design/unit tests | Delivered via explicit development refresh/activation; recorded baseline lacks new Project API pending owner candidate adoption; no PDK required, full environment lock absent |
 | Early discovery and coarse live progress | Catalog/correlation/durable outer observation |
 | Truthful internal progress | Demonstrated LibreLane seam; file absence alone is insufficient |
 | Intermediate timing/resources | Step-aware extraction, producer provenance and complete snapshot publication |
@@ -555,9 +639,10 @@ no shared venv patch or silent baseline pin advance.
 Keep completed IDs and evidence links stable. Add acceptance to the owning task
 when work lands; do not create another session handoff/status queue. Ordinary
 tests stay PDK-free; physical acceptance is explicit and separately recorded.
-Provider observation fixture/model acceptance and the first FIFO example are
-delivered. LibreLane observation feasibility is next; this slice stops before
-live provider features or ASIC P6.
+Provider observation fixture/model acceptance, the FIFO example and project-centered
+entrypoint are delivered. Project run routing or LibreLane observation feasibility
+requires separate agreement; this slice stops before either, live provider features
+or ASIC P6.
 
 ### Consolidation verification
 

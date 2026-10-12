@@ -2,7 +2,8 @@
 
 Implementation contract and command reference, 2026-10-12, for
 `hardcaml_asic_example`. The [central phase plan](../phase_plan.md)
-owns current status and [closeout evidence](../phase_plan.md#consumer-refresh-and-real-checkout-emitter-closeout).
+owns current status, [original closeout evidence](../phase_plan.md#consumer-refresh-and-real-checkout-emitter-closeout)
+and [project-entrypoint acceptance](../phase_plan.md#project-centered-entrypoint-acceptance).
 The original brief below defines the implemented bounded workflow.
 
 ## Goal and ownership
@@ -31,6 +32,13 @@ invent a release or claim the dirty tree is that revision. No dependency fetch,
 opam pin, package installation into a shared switch, or project commit is implicit.
 The implementation requires an existing local repository for both modes and
 diagnoses a missing recorded revision rather than fetching it.
+
+Current API validation applies to the **selected snapshot**, not the baseline
+loaded for comparison. It requires constructor `?source_inputs`, `source_inputs`,
+`describe`, and `emit_bundle` including optional target inputs and Simulation
+selection, as well as the renamed API. Development refresh can therefore use the
+new API while the recorded baseline remains old. Installation repeats interface
+checks and compiles/links external probes before publishing the generation.
 
 ## Refresh and publication
 
@@ -125,12 +133,16 @@ dune build @all
 python3 scripts/asic_dependency.py status --json
 ```
 
-Use `--mode recorded` instead to install the committed baseline selected by
-`asic-dependency.json`. Its initial package/repository are `hardcaml_asic` and
+`--mode recorded` selects the committed baseline in `asic-dependency.json`.
+Its initial package/repository are `hardcaml_asic` and
 `https://github.com/LeEmperor/hardcaml_asic.git`, revision
 `1714764859274f80a9f5ad207421a04601824e99`. Neither refresh mode edits the record.
 It is an explicit consumer expectation, not a shared opam pin or full environment
-lock, and still awaits owner commit.
+lock. **That revision lacks the project-centered API and is currently refused**
+with a `Project.create` incompatibility diagnostic. The actual refusal preserved
+the successful development selection and left the record unchanged. Use development
+mode until the owner commits a suitable candidate and adopts it; do not infer
+compatibility from the historical recorded-mode success.
 
 The global `--store PATH` and `--record PATH` options precede the subcommand.
 `--remove-source-build-override` on refresh explicitly retires the exact selected
@@ -145,7 +157,7 @@ caller's environment, not an embedded identity check. An already activated shell
 keeps its old library/CLI until re-sourced. Subsequent provider documentation edits
 do not require refreshing: the installed generation captures refresh-time bytes.
 
-Setup tests: `python3 scripts/test_asic_dependency.py` (also in ordinary
+Setup tests: `python3 scripts/test_asic_dependency.py` (16 tests, also in ordinary
 `dune runtest`). Full consumer checks are `dune build @all`, `dune runtest --force`
 and `dune build @acceptance-strict --force`. The
 [consumer emitter instructions](../../../hardcaml_asic_example/README.md#bundle-and-generated-rtl-acceptance)

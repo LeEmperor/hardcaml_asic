@@ -3,6 +3,56 @@
 Phase 3 emits a Tiny Tapeout project directory from one validated project
 declaration. It does not run synthesis or hardening.
 
+## Project-centered entry point
+
+The consumer owns a project constructor: the FIFO specimen exposes
+`Fifo_asic.project () : Hardcaml_asic.Project.t Core.Or_error.t` and `Tt_wrapper`
+through its facade. Its `asic/project.ml` owns the declaration and source inventory;
+`bin/project.ml` supplies one CLI with `describe` and `emit` operations. Shared
+emission orchestration belongs to `Hardcaml_asic.Project.emit_bundle`.
+
+OCaml consumer code (inside a function with `source_root` and `output_dir` arguments):
+
+```ocaml
+let open Core.Or_error.Let_syntax in
+let%bind project = Fifo_asic.project () in
+Hardcaml_asic.Project.emit_bundle project ~source_root ~output_dir
+```
+
+Shell commands, from the example checkout after
+[development refresh and activation](../development/consumer-dependency-workflow.md#implemented-commands):
+
+```sh
+dune exec bin/project.exe -- describe
+dune exec bin/project.exe -- emit \
+  --source-root "$PWD" --output-dir /tmp/fifo-project-bundle
+```
+
+`describe` prints a local S-expression of declaration facts, including the top name
+and inventory. It does not construct the design, resolve a flow, read Git/files/PDKs
+or write output. It is not a Workbench observation protocol. `emit` prints JSON
+containing `identity` and `output_dir` after successful writing. This project CLI
+has no runtime `run` or `inspect` command yet; the installed flow CLI remains the
+separate execution interface.
+
+`Project.create ?source_inputs` defaults to `[]`; `Project.source_inputs` returns
+the declaration unchanged, including order and duplicates. Source paths belong to
+the project; the source root and output directory are execution arguments. Creation
+does not read or validate source files, and ordinary elaboration needs no inventory.
+
+`Project.emit_bundle ?inputs ?include_simulation t ~source_root ~output_dir` rejects
+an empty inventory before invoking the design. It then performs implementation
+elaboration/resolution (forwarding optional `Target.Inputs.t`), optional Simulation
+elaboration, `Bundle.render`, and finally `Bundle.write`. `include_simulation`
+defaults to `true`; `false` skips Simulation construction and uses the synthesis
+source set for simulation, without a separately elaborated simulation file.
+The example CLI uses the default. Rendering owns source canonicalization, Git
+provenance and input validation. No output is written before rendering succeeds.
+Writing requires a new/empty destination and is non-atomic: a write failure can
+leave partial output. No external flow tools or PDK reads occur during emission.
+
+## Lower-level composition and provider examples
+
 `Project.elaborate` returns an abstract `Elaborated_project.t` containing the
 Hardcaml circuit, metadata, intent and resources. `Project.elaborate_for_flow`
 performs implementation elaboration and `Resolved_flow.resolve`, producing
@@ -129,3 +179,42 @@ compiles and simulates each RTL source set with Icarus when it is installed.
 The testbench is [`test/tt_bundle_tb.v`](../../test/tt_bundle_tb.v). The
 [Flow guide](flow.md) covers preflight, isolated execution,
 result collection, and physical acceptance evidence.
+
+## Project API regression commands and coverage
+
+From the provider checkout with the existing OCaml tools available:
+
+```sh
+python3 test/check_project_api.py --provider-checks
+# External integration only, after dune build @install:
+python3 test/check_project_api.py
+```
+
+`--provider-checks` runs `dune build @install`, full `dune runtest --force`, the
+external Resolved_flow checker (eight private-record rejection checks), and the
+external Project consumer. It does not install into a shared prefix. The runner
+preserves normal PATH, including available `iverilog` and `vvp`; the existing
+bundle suite skips optional RTL replay only when those tools are absent. Git
+configuration/identity are isolated and inherited Git selectors removed. Temporary
+fixture commits use author and committer `Bundle test <bundle@test.invalid>`, with
+no remotes. Neither external compiler checker is a Dune `runtest` action: each
+builds unrelated consumers against `_build/install/default/lib`.
+
+- `test/test_project.ml`: default empty inventory, declaration-only description,
+  pre-design emission rejection, and ordinary elaboration afterward.
+- `test/project_api_consumer.ml`: public signatures, exact inventory retention,
+  default/explicit-true equivalence, false skipping a rejecting Simulation
+  constructor, synthesis-source fallback, construction/resolution/simulation/
+  render/write failures, no premature output, and nonempty-output preservation.
+- Target overrides cover revisions, floorplan hash and constraints. Observable
+  and memory designs each compare high-level emission with manual lower-level
+  composition, both with and without Simulation: four complete on-disk bundle
+  comparisons, including identity. `examples/tt_bundle_example.ml` remains the
+  low-level oracle; the checker copies its declarations and injects test arguments
+  only in a temporary consumer. Its separate `let simulation_project =`
+  construction remains intact for the existing lower-level checker.
+
+The [project-entrypoint evidence](../phase_plan.md#project-centered-entrypoint-acceptance)
+also records FIFO old/new hardware equivalence with independently validated
+13-input/15-input inventories. Renamed/copied sources and provenance legitimately
+change bundle identity; repeated emission with the new inventory compares whole trees.

@@ -14,6 +14,17 @@ field `build` â†’ `elaborated_project`, and `Bundle.render ?simulation_build` â†
 `hardcaml_protemu` still requires separate migration before adopting this provider.
 This checkpoint publishes no new release or dependency pin.
 
+The project-centered API adds constructor `?source_inputs`, the inventory getter,
+declaration-only `Project.describe`, and shared `Project.emit_bundle`. The migrated
+FIFO owns `Fifo_asic.project ()` and a `project describe|emit` CLI; see the
+[entrypoint guide](bundle-emission.md#project-centered-entry-point).
+Its recorded `1714764859274f80a9f5ad207421a04601824e99` baseline cannot supply this
+API. Recorded refresh now rejects it without replacing the current selection.
+Use explicit [development refresh and activation](../development/consumer-dependency-workflow.md#implemented-commands)
+until the owner commits a suitable provider candidate and deliberately adopts it
+in the consumer record. The successful local refresh is not a published release
+or P6 source stamp.
+
 ## Pin the library source
 
 Choose a full commit hash containing the package files and record it in the

@@ -12,17 +12,25 @@ Current checkpoint (2026-10-12): ASIC P0–P5/M3 and P6.1–P6.3/P6.4a/b have
 evidence. P6.5/P6.6 remain open. The provisional synthetic
 [provider observation fixtures/model](../test/fixtures/provider_observation/v1/README.md)
 are implemented: 50 focused tests and the full provider regression suite pass
-([evidence](phase_plan.md#provider-observation-fixture-acceptance)). The next bounded
-task is the LibreLane observation feasibility probe. Live catalog, early correlation,
+([evidence](phase_plan.md#provider-observation-fixture-acceptance)). Next scope needs
+separate agreement: project run routing or a LibreLane observation feasibility probe.
+Neither is authorized by this closeout. Live catalog, early correlation,
 step updates and incremental result publication remain undelivered.
 The owner's [development specimen](../../hardcaml_asic_example/README.md) now has
 the fixed FIFO contract/core, independent scoreboard, TT wrapper/declaration,
-bundle emitter and PDK-free generated-RTL acceptance. A recorded ASIC baseline
+project-centered `describe|emit` CLI and PDK-free generated-RTL acceptance.
+The consumer owns `Fifo_asic.project ()`; the provider owns shared
+`Project.emit_bundle`. Description is a local declaration S-expression, not a
+Workbench protocol; runtime project `run`/`inspect` commands are not delivered.
+See [entrypoint usage and regression coverage](guides/bundle-emission.md#project-centered-entry-point).
+A recorded ASIC baseline
 and explicit development override now support isolated library/CLI refresh,
 activation, plain builds and real-checkout emitter acceptance; see the
 [commands](development/consumer-dependency-workflow.md#implemented-commands) and
-[closeout evidence](phase_plan.md#consumer-refresh-and-real-checkout-emitter-closeout).
-The record awaits owner commit. Full environment locking, P6 source stamping,
+[project-entrypoint acceptance](phase_plan.md#project-centered-entrypoint-acceptance).
+The recorded `171476...` baseline cannot supply the new API: current recorded
+refresh is refused while development refresh works. A compatible committed
+candidate must be adopted by the owner. Full environment locking, P6 source stamping,
 source-access-denied installation and physical acceptance remain open.
 The old scaf checkout is absent and not required.
 

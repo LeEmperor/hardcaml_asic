@@ -2,6 +2,7 @@
 
 (library
  (name hardcaml_asic_test)
+ (modules (:standard \ project_api_consumer))
  ; The trailing -source-tree-root wins over the one dune passes (%{workspace_root},
  ; .. from here). Works around a ppx_expect v0.18~preview bug: it drops the directory
  ; from the test file's path when registering a test, then rebuilds the path at exit
@@ -32,6 +33,8 @@
 ; check_resolved_flow_api.py also runs separately: it invokes Dune in an
 ; independent consumer. Run from the repository root:
 ; dune build @install && python3 test/check_resolved_flow_api.py
+; Project API public consumer (also no nested Dune in runtest):
+; dune build @install && python3 test/check_project_api.py
 
 (rule
  (alias runtest)
