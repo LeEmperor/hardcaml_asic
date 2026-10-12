@@ -1,0 +1,27 @@
+{
+  "contract": "hardcaml-asic.provider-observation-fixture",
+  "version": 1,
+  "designation": "PROVISIONAL SYNTHETIC FIXTURE-ONLY; minimal old schema1 companion, not a full archival record",
+  "record": {"schema_version": 1, "run_id": "legacy-run", "build_identity": "build-B", "status": "completed", "requested_stage": "full", "completed_stage": "full"},
+  "expected_observation": {
+    "run_id": "legacy-run",
+    "build_identity": "build-B",
+    "implementation_status": "completed",
+    "requested_stage": "full",
+    "completed_stage": "full",
+    "requested_operation": null,
+    "requested_operation_outcome": "unknown",
+    "request_key": null,
+    "operation_id": null,
+    "stream_id": null,
+    "cursor": null,
+    "run_revision": null,
+    "history_status": "unknown",
+    "steps": null,
+    "check_status": "unknown",
+    "acceptance_status": "unknown",
+    "latest_result_id": null,
+    "reason": "Legacy implementation completion does not establish execute completion, step history or signoff"
+  },
+  "in_main_stream": false
+}

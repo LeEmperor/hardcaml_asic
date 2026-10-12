@@ -1,7 +1,8 @@
 # hardcaml_asic phase plan
 
-Current checkpoint: 2026-10-12 consumer refresh/activation and real-checkout emitter
-acceptance completed, following public API rename, interface hardening and the FIFO specimen.
+Current checkpoint: 2026-10-12 provisional provider observation fixture/model
+acceptance completed, following consumer refresh/activation and real-checkout
+emitter acceptance, public API rename, interface hardening and the FIFO specimen.
 This is the **only active queue**. [Architecture](architecture.md) owns boundaries;
 [P6 details](development/p6-implementation-plan.md) retain the detailed specification
 and exact delivery evidence. Proposed new work below awaits design discussion.
@@ -18,8 +19,9 @@ and exact delivery evidence. Proposed new work below awaits design discussion.
    [refresh/emitter closeout](#consumer-refresh-and-real-checkout-emitter-closeout).
    Read the [source-breaking migration and rename evidence](#public-api-rename-migration-and-evidence)
    before adopting this provider.
-3. Next agreed work: concrete provider observation contract examples for
-   runs/operations/steps/results, then prove the LibreLane seam; follow the
+3. The provisional provider observation fixtures/model are accepted with
+   [evidence below](#provider-observation-fixture-acceptance). Next bounded task:
+   the LibreLane observation feasibility probe; follow the
    dependencies below for subsequent P6 identity/installation work.
 
 This queue records future ordering, not authorization to proceed beyond the
@@ -28,8 +30,8 @@ current bounded review/documentation slice.
 The earlier blanket "finish P6, then migrate scaf" queue is superseded. Do not
 execute archived handoff prompts. No feature, source stamp, specimen, observation
 contract or new test pass was claimed by the earlier documentation-only checkpoint.
-The subsequent FIFO delivery is recorded below; provider examples remain
-unimplemented.
+The subsequent FIFO delivery and provisional provider fixture acceptance are
+recorded below; live observation remains unimplemented.
 
 ## Status and preserved history
 
@@ -46,7 +48,7 @@ unimplemented.
 | ASIC S.2 | Open; S.2a complete, S.2b research partially resolved | [SRAM checkpoint](sram/sram-status.md) |
 | ASIC S.4 | Gated, unimplemented | Requires S.2 capability gates |
 | ASIC T.1 | Open, independent toolchain follow-up | Scope below |
-| Provider observation | Proposed, not implemented | [Architecture](architecture.md#8-provider-observation-direction) |
+| Provider observation | Provisional synthetic fixtures/model accepted; live observation unimplemented; LibreLane feasibility probe next | [Fixture acceptance](#provider-observation-fixture-acceptance), [architecture](architecture.md#8-provider-observation-direction) |
 | Resolved-build boundary hardening | Implemented; full runtest passes | [Evidence below](#resolved-build-boundary-hardening-evidence) |
 | Public API rename | Implemented; provider and FIFO acceptance passed, active documentation migrated | [Migration and evidence below](#public-api-rename-migration-and-evidence) |
 | Controlled-FIFO development specimen | Contract/core, scoreboard, TT wrapper/declaration and emitter delivered; PDK-free acceptance | [Original evidence](#controlled-fifo-development-specimen-evidence), [consumer README](../../hardcaml_asic_example/README.md) |
@@ -79,9 +81,9 @@ Recommendation for discussion: **bounded hardening, not a P0–P5 rewrite**.
   rewrite the whole runner or generalize every target/resource API.
 
 The bounded interface slice and subsequent FIFO specimen are delivered, without
-changing historical M3 or P6 completion criteria. Provider observation contract
-examples remain next work; no provider observation or further P6 implementation
-is included.
+changing historical M3 or P6 completion criteria. The separate provisional provider
+observation fixture/model slice is now accepted; live observation and further P6
+implementation remain open.
 
 ### Resolved-build boundary-hardening evidence
 
@@ -426,24 +428,91 @@ another planning document. Every provider slice must work without Workbench.
 
 | Slice | ASIC deliverable and acceptance | Other repository ownership |
 | --- | --- | --- |
-| Contract and feasibility | Two-run examples with distinct operation/occurrence/attempt/result IDs, versions and capabilities; demonstrate an internal-step seam without copying the flow engine | Workbench decoder/reducer fixtures; example design/constraint selection |
+| Contract and feasibility | Provisional two-run fixtures/model accepted; next demonstrate the LibreLane observation seam without copying the flow engine | Workbench decoder/reducer fixtures; example design/constraint selection |
 | Durable catalog and outer observation | Explicit stores, list/inspect, early request correlation, stored operation outcomes, consistent snapshot/cursor and replay; late independent readers observe two runs | Workbench P1 adapter/P2 derived catalog and early run display |
 | Internal step lifecycle | Actual starts/completions/failures/skips/interruption and repeated occurrences, including deferred errors; earlier steps visible while a later one runs | Workbench execution feature/views |
 | Incremental results | Synthesis resources, then one intermediate timing result, then checks; origin/constraints/corner/units preserved and data complete before publication | Workbench timing/resources/check projections |
 | Preservation and installed acceptance | History and referenced evidence survive later failure, archive/restore and scratch cleanup; independent readers, conflicting operations, duplicate/truncated updates and crash tests | Workbench restart/reconnect and cache invalidation |
 | Real specimen handoff | Validate actual supported runtime/container and descendant cancellation; retain final-JSON compatibility and existing acceptance policy | Example pins deliberate provider revision, supplies real flow/test evidence; Workbench live acceptance |
 
-The contract/probe must settle writer ownership/locking, ordering, snapshot/cursor
-consistency, duplicate requests/updates, incomplete writes, stale producers and
-preservation policy before durable implementation. There is no chosen interception
+The fixtures provisionally specify store-wide ordering, idempotency/BUSY ownership,
+fencing, snapshot/cursor consistency, transitive readiness and retention. The probe
+must test lifecycle observability; actual locking, fsync/data durability, incomplete
+writes, crashed-writer reconciliation and preservation mechanisms remain open before
+durable implementation. There is no chosen interception
 mechanism yet. Metric equality cannot establish measurement origin. Archive policy
 must cover advertised evidence, not just final metrics. Failed-run diagnostics
 need an explicit export contract separate from completed-run archives.
 
-Example fixture: build B has runs R1/R2. R1 publishes synthesis and intermediate
-timing, then fails routing; R2 skips a gated step and is interrupted at a later
-occurrence. A later collection attempt revises R1 without rerunning implementation.
-Include inherited timing and equal-valued new measurements with different origins.
+Delivered [synthetic fixture](../test/fixtures/provider_observation/v1/README.md):
+build-B/config-B has runs A/B. A publishes synthesis and intermediate timing, then
+fails routing; B skips a gated step and is interrupted at a later occurrence, with
+an unreached step preserved. A later collection publishes a new snapshot without
+rerunning implementation; postcheck is rejected before execution. Inherited timing
+and equal-valued fresh measurements retain distinct origins. Deeper hierarchy is
+unmodeled, and a snapshot file is not a resumable checkpoint.
+
+### Provider observation fixture acceptance
+
+2026-10-12, independent single-agent review/final acceptance of the provisional
+test-only [v1 contract](../test/fixtures/provider_observation/v1/README.md),
+`test/provider_observation_contract.py`, `test/test_provider_observation.py` and the
+new `test/dune` alias integration:
+
+- Fixed execute failed/interrupted outcomes releasing BUSY before implementation
+  became explicitly terminal; completed implementation can still outer-fail or
+  interrupt. Fixed collect success without a result published by that operation.
+- Recovery copies the supplied snapshot, independently validates the full retained
+  prefix, compares exact typed state, then applies the suffix to the restored reader.
+  Malformed earlier transitions cannot hide behind matching last facts. No expected
+  JSON is generated by the reducer; all seven documents and five evidence files
+  retain their authored bytes.
+- **50 tests** pass (43 initial plus seven review regressions): unchanged 34 store
+  events, six hand-authored snapshots, 13 queries, 15 replay cases and 21 recovery
+  pairs, plus targeted negative branches. Producer/time/run closure and transitive
+  error/result readiness are checked. Silence/disconnect does not generate facts.
+- `python3 test/test_provider_observation.py`: `Ran 50 tests in 0.219s`, `OK`.
+  `dune build @test/provider-observation`: `Ran 50 tests in 0.207s`, `OK`.
+- Full `dune runtest --force`: **exit 0**, Python suites **17 + 16 + 20 + 50 + 28 +
+  15 = 146**, all `OK`; OCaml inline tests and bundle integration passed. Exact
+  bundle output: `bundle determinism, provenance, staging, hashes, RTL and toolchain.lock passed`.
+  `/usr/bin/iverilog` and `/usr/bin/vvp` were available; all four generated-RTL
+  simulations ran, none skipped. No provisioning or physical flow was run.
+
+The full-suite child environment was isolated as follows (no direct Git command;
+the existing bundle script alone creates its temporary synthetic repo, without
+remotes or model attribution):
+
+```python
+import os, shutil, subprocess
+env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+env["PATH"] = os.pathsep.join(
+    p for p in env["PATH"].split(os.pathsep) if p.rstrip("/") != "/tmp/opencode")
+env.update(
+    GIT_AUTHOR_NAME="Bundle test", GIT_AUTHOR_EMAIL="bundle@test.invalid",
+    GIT_COMMITTER_NAME="Bundle test", GIT_COMMITTER_EMAIL="bundle@test.invalid",
+    GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_SYSTEM="/dev/null",
+    GIT_CONFIG_GLOBAL="/dev/null", GIT_ATTR_NOSYSTEM="1", GIT_TEMPLATE_DIR="",
+    GIT_CONFIG_COUNT="2", GIT_CONFIG_KEY_0="core.hooksPath",
+    GIT_CONFIG_VALUE_0="/dev/null", GIT_CONFIG_KEY_1="commit.gpgsign",
+    GIT_CONFIG_VALUE_1="false")
+for tool in ("dune", "git", "iverilog", "vvp"):
+    print(tool + ": " + str(shutil.which(tool, path=env["PATH"])), flush=True)
+raise SystemExit(subprocess.run(["dune", "runtest", "--force"], env=env).returncode)
+```
+
+The successful invocation used `python3 -c` with this body. An earlier wrapper
+attempt had a Python quoting SyntaxError before starting Dune; corrected above.
+Final non-Git verification (`python3 /tmp/opencode/check-provider-observation-review.py`)
+passed: seven scoped files' whitespace/final LF, two Python ASTs, four Markdown
+documents and 82 local links/anchors (none unavailable), plus fixture/test counts.
+The provisional store-wide cursor, idempotency/BUSY/fencing/readiness/retention
+decisions are logical assertions, not live locking/fsync or data-durability proof.
+No live catalog, early correlation, step/result publication or deeper hierarchy is
+delivered. Prefix validation requires the full catalog/journal; no durable snapshot
+store or execution resumption is implemented. The next bounded task is the
+LibreLane observation feasibility probe. This acceptance stops before that probe
+and ASIC P6 work and preserves the successful dependency/emitter closeout above.
 
 ## Dependency triage
 
@@ -486,8 +555,9 @@ no shared venv patch or silent baseline pin advance.
 Keep completed IDs and evidence links stable. Add acceptance to the owning task
 when work lands; do not create another session handoff/status queue. Ordinary
 tests stay PDK-free; physical acceptance is explicit and separately recorded.
-Provider observation contract examples remain next work; the first FIFO example
-implementation is delivered. This review stops before provider features or ASIC P6.
+Provider observation fixture/model acceptance and the first FIFO example are
+delivered. LibreLane observation feasibility is next; this slice stops before
+live provider features or ASIC P6.
 
 ### Consolidation verification
 

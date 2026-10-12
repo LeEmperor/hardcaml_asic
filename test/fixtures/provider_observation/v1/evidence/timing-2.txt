@@ -1,0 +1,3 @@
+PROVISIONAL SYNTHETIC FIXTURE-ONLY; not tool output.
+m-timing-2: a-timing-2 attempt 1, measured_at 12, setup slack -0.25 ns.
+Immutable second report complete at boundary 14; independent remeasurement.

@@ -1,0 +1,2 @@
+PROVISIONAL SYNTHETIC FIXTURE-ONLY; not tool output.
+m-area: a-synth attempt 1, measured_at 6, mapped area 12.5 um^2.

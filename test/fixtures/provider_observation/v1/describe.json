@@ -1,0 +1,16 @@
+{
+  "contract": "hardcaml-asic.provider-observation-fixture",
+  "version": 1,
+  "designation": "PROVISIONAL SYNTHETIC FIXTURE-ONLY",
+  "capability_status": "MODELED; not installed CLI features",
+  "scope": {"project_id": "project-fixture", "provider_id": "provider-fixture", "store_id": "store-fixture"},
+  "stream_id": "stream-fixture-1",
+  "writer_generation": 7,
+  "cursor": {"first_sequence": 1, "head": 34, "minimum_replay_cursor": 0},
+  "modeled_capabilities": ["describe", "request_lookup", "list_runs", "inspect_at_cursor", "snapshot_and_suffix", "immutable_result_history", "evidence_references"],
+  "readers": {"execution_acknowledgments": false, "mutations": false},
+  "mutator_policy": {"same_run": "BUSY", "store_journal_and_allocation": "short_serialization", "stale_generation": "FENCED"},
+  "retention": {"minimum": "entire stream lifetime: all accepted facts, snapshots and referenced objects; entire store lifetime: request key bindings and original operation/run outcomes", "expiry": "explicit stream retirement only; RESET_REQUIRED; never silently truncate a suffix"},
+  "time_model": {"epoch": "2000-01-01T00:00:00Z", "unit": "integer_seconds", "event_recorded_at": "sequence", "wall_clock_claim": false},
+  "resume": "unsupported; observation replay does not resume execution"
+}

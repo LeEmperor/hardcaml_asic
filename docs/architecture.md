@@ -21,6 +21,9 @@ installed Python dispatcher, separate execution IDs, `run.json`, `results.json`,
 postcheck attempts, operation-aware acceptance and integrity-checked archives.
 Missing: public catalog, early request correlation, durable operation/step updates
 and incremental result snapshots. Source-artifact stamping remains ASIC P6.5a.
+The provisional synthetic [observation fixtures](../test/fixtures/provider_observation/v1/README.md)
+and test-only validator/replayer are implemented and accepted; they add no installed
+or live provider capability.
 
 ## 2. Responsibilities and dependency direction
 
@@ -158,6 +161,30 @@ not a reason to discard the current manifest or rewrite elaboration.
 
 ## 8. Provider observation direction
 
+### Provisional fixture/model boundary
+
+The [v1 corpus and executable contract](../test/fixtures/provider_observation/v1/README.md)
+model one immutable build/configuration, two executions, deferred checks, delayed
+results, inherited versus equal-valued fresh timing, explicit skip/unreached/
+interruption, later collection and prerequisite-rejected postcheck. Independent
+acceptance covers six hand-authored snapshots, 13 queries, 15 replay cases and
+21 recovery pairs; [test evidence](phase_plan.md#provider-observation-fixture-acceptance)
+records the 50-test suite and full provider regression pass.
+
+Store-wide cursor, request idempotency, BUSY ownership through outer outcome,
+generation fencing, transitive readiness and history/evidence retention are
+**provisional logical decisions**. Execute termination requires explicit terminal
+implementation; completed implementation can still outer-fail. Collect success
+requires its own publication. Recovery validates a full retained prefix separately
+and restores the supplied snapshot for suffix replay. A snapshot file is not a
+resumable checkpoint. Runtime locking, fsync/data durability, authentic persistent
+history and producer liveness are unproven; deeper hierarchy is unmodeled. Silence
+or reader disconnect never supplies interruption/completion facts.
+
+The next bounded task is the LibreLane observation feasibility probe below. Live
+catalog, early correlation, step updates and incremental result publication remain
+undelivered.
+
 ### Domain facts and identities
 
 Proposed contract: describe capabilities/versions; list/inspect explicit stores;
@@ -261,6 +288,6 @@ actual revision/dirty-input provenance and RTL replay; see the
 [closeout evidence](phase_plan.md#consumer-refresh-and-real-checkout-emitter-closeout).
 Synthetic committed fixtures remain separate provenance tests. This does not
 establish full environment locking, embedded source identity, source-access-denied
-P6.6 acceptance or physical acceptance. Concrete provider observation identity/state
-examples remain next work; FIFO delivery does not implement that provider contract
-or close ASIC P6 gates.
+P6.6 acceptance or physical acceptance. The separate provisional observation fixture
+slice is accepted; LibreLane observation feasibility is next. FIFO delivery does
+not implement live provider observation or close ASIC P6 gates.

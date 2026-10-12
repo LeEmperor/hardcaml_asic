@@ -1,0 +1,69 @@
+{
+  "contract": "hardcaml-asic.provider-observation-fixture",
+  "version": 1,
+  "designation": "PROVISIONAL SYNTHETIC FIXTURE-ONLY",
+  "bundle": {"build_identity": "build-B", "configuration_id": "config-B", "immutable": true, "ready_before": 0, "artifact_id": "artifact-input", "description": "Synthetic emitted bundle identity, not an Elaborated_project or Resolved_flow value; not a runnable bundle"},
+  "tool": {"id": "tool-synthetic", "name": "fixture-tool", "installed_version": null, "identity_status": "synthetic; no installed executable claimed", "ready_before": 0},
+  "constraints": {"id": "constraints-B", "ready_before": 0, "clock": "clk", "period_ns": 10, "input_delay_ns": 1, "output_delay_ns": 1, "artifact_id": "artifact-input"},
+  "configurations": [
+    {"id": "config-B", "ready_before": 0, "enable_optional_timing": false}
+  ],
+  "operations": [
+    {"id": "op-reject", "attempt": 1, "request_key": "req-reject", "intent": {"action": "execute", "build_identity": "build-B", "target_run_id": null, "stage": "full", "configuration_id": "config-B", "checks": "full", "archive": false}},
+    {"id": "op-a", "attempt": 1, "request_key": "req-a", "intent": {"action": "execute", "build_identity": "build-B", "target_run_id": null, "stage": "full", "configuration_id": "config-B", "checks": "full", "archive": false}},
+    {"id": "op-b", "attempt": 2, "request_key": "req-b", "intent": {"action": "execute", "build_identity": "build-B", "target_run_id": null, "stage": "full", "configuration_id": "config-B", "checks": "full", "archive": false}},
+    {"id": "op-collect", "attempt": 1, "request_key": "req-collect", "intent": {"action": "collect", "build_identity": "build-B", "target_run_id": "run-a", "stage": "full", "configuration_id": "config-B", "checks": "none", "archive": false}},
+    {"id": "op-postcheck", "attempt": 1, "request_key": "req-postcheck", "intent": {"action": "postcheck", "build_identity": "build-B", "target_run_id": "run-a", "stage": "full", "configuration_id": "config-B", "checks": "full", "archive": false}}
+  ],
+  "runs": [
+    {"id": "run-a", "build_identity": "build-B", "implementation_operation_id": "op-a", "configuration_id": "config-B", "requested_stage": "full", "completed_stage": null},
+    {"id": "run-b", "build_identity": "build-B", "implementation_operation_id": "op-b", "configuration_id": "config-B", "requested_stage": "full", "completed_stage": null}
+  ],
+  "step_columns": ["id", "run_id", "operation_id", "attempt", "type", "display_name"],
+  "steps": [
+    ["a-synth", "run-a", "op-a", 1, "synthesis", "Synthesis"],
+    ["a-timing-1", "run-a", "op-a", 1, "timing", "Timing"],
+    ["a-timing-2", "run-a", "op-a", 1, "timing", "Timing"],
+    ["a-route", "run-a", "op-a", 1, "routing", "Routing"],
+    ["b-gated", "run-b", "op-b", 1, "timing", "Timing"],
+    ["b-active", "run-b", "op-b", 1, "timing", "Timing"],
+    ["b-unreached", "run-b", "op-b", 1, "routing", "Routing"],
+    ["a-collect", "run-a", "op-collect", 1, "collection", "Collect retained evidence"]
+  ],
+  "reasons": {
+    "prerequisite_absent": "Execution prerequisite absent for op-reject; rejected before run allocation, with the same immutable build/configuration as op-a and op-b",
+    "publication_pending": "Producer has not yet published this requested result",
+    "deferred_timing_violation": "During a-timing-2, a deferred check discovers the existing negative m-timing-1 in the already-ready first report; enclosing outcome deferred, not evidence of a completed second report",
+    "routing_failed": "Synthetic routing tool failure after intermediate evidence publication",
+    "deferred_and_routing_failed": "Execute failed with both the earlier deferred timing verdict and routing failure preserved",
+    "config_gate_false": "Optional timing disabled by immutable configuration",
+    "producer_interrupted": "Synthetic producer reports interruption; this is not inferred from a reader disconnect",
+    "full_run_required": "Postcheck requires status completed and completed_stage full; run-a is failed",
+    "routing_no_final_timing": "Routing failed before final timing could be measured",
+    "power_not_requested": "Power analysis not requested by this fixture",
+    "cts_not_supported": "CTS analytics not modeled by this fixture provider"
+  },
+  "gates": {"b-gated": {"configuration_id": "config-B", "condition": "enable_optional_timing == true", "observed_value": false, "reason": "config_gate_false"}},
+  "errors": [
+    {"id": "error-timing", "run_id": "run-a", "operation_id": "op-a", "step_id": "a-timing-2", "attempt": 1, "discovered_at": 13, "recorded_at": 13, "verdict": "failed", "deferred": true, "reason": "deferred_timing_violation", "measurement_id": "m-timing-1", "artifact_id": "artifact-timing-1"}
+  ],
+  "artifacts": [
+    {"id": "artifact-input", "path": "evidence/input.txt", "sha256": "fac63caba2e27bbbad642d8f5cd68ae372436fac28373d92b41939b2b32a593f", "ready_before": 0, "media_type": "text/plain", "synthetic": true},
+    {"id": "artifact-resources", "path": "evidence/resources.txt", "sha256": "ebafef0ed60186863277e0711322f8e6badc7c7da0e1daf352f7b7bf8ce0848a", "ready_before": 7, "media_type": "text/plain", "synthetic": true},
+    {"id": "artifact-timing-1", "path": "evidence/timing-1.txt", "sha256": "1288ce1600898be7856aca8605b11aa622f2fc13f1cb868c99b155bb45891080", "ready_before": 10, "media_type": "text/plain", "synthetic": true},
+    {"id": "artifact-timing-2", "path": "evidence/timing-2.txt", "sha256": "a393432b6caf3073e59b087e99fce6477839727454cbe13750032dd67d0b395c", "ready_before": 14, "media_type": "text/plain", "synthetic": true},
+    {"id": "artifact-diagnostic", "path": "evidence/diagnostic.txt", "sha256": "c0cc14a4a766ff62619946cb731ca6b449bfbcbde1e46ccfe6eb9c1e078dcbc5", "ready_before": 30, "media_type": "text/plain", "synthetic": true}
+  ],
+  "measurements": [
+    {"id": "m-area", "ready_before": 7, "run_id": "run-a", "producer": {"operation_id": "op-a", "step_id": "a-synth", "attempt": 1}, "tool_id": "tool-synthetic", "metric": "mapped_area", "value": 12.5, "unit": "um^2", "stage": "synthesis", "corner": null, "mode": "mapped", "constraints_id": "constraints-B", "artifact_ids": ["artifact-resources"], "measured_at": 6, "published_at": 8},
+    {"id": "m-timing-1", "ready_before": 10, "run_id": "run-a", "producer": {"operation_id": "op-a", "step_id": "a-timing-1", "attempt": 1}, "tool_id": "tool-synthetic", "metric": "setup_slack", "value": -0.25, "unit": "ns", "stage": "placement", "corner": "synthetic-typical", "mode": "setup", "constraints_id": "constraints-B", "artifact_ids": ["artifact-timing-1"], "measured_at": 9, "published_at": 11},
+    {"id": "m-timing-2", "ready_before": 14, "run_id": "run-a", "producer": {"operation_id": "op-a", "step_id": "a-timing-2", "attempt": 1}, "tool_id": "tool-synthetic", "metric": "setup_slack", "value": -0.25, "unit": "ns", "stage": "placement", "corner": "synthetic-typical", "mode": "setup", "constraints_id": "constraints-B", "artifact_ids": ["artifact-timing-2"], "measured_at": 12, "published_at": 15}
+  ],
+  "result_columns": ["id", "run_id", "ready_before", "published_at", "publisher_operation_id", "publisher_step_id", "publisher_attempt", "slots", "artifact_ids"],
+  "results": [
+    ["result-a1", "run-a", 7, 8, "op-a", "a-synth", 1, {"resources": ["available", "m-area", null], "timing_reference": ["pending", null, "publication_pending"], "timing_latest": ["pending", null, "publication_pending"], "final_timing": ["pending", null, "publication_pending"], "power": ["not_requested", null, "power_not_requested"], "cts": ["unsupported", null, "cts_not_supported"]}, []],
+    ["result-a2", "run-a", 10, 11, "op-a", "a-timing-1", 1, {"resources": ["available", "m-area", null], "timing_reference": ["available", "m-timing-1", null], "timing_latest": ["available", "m-timing-1", null], "final_timing": ["pending", null, "publication_pending"], "power": ["not_requested", null, "power_not_requested"], "cts": ["unsupported", null, "cts_not_supported"]}, []],
+    ["result-a3", "run-a", 14, 15, "op-a", "a-timing-2", 1, {"resources": ["available", "m-area", null], "timing_reference": ["available", "m-timing-1", null], "timing_latest": ["available", "m-timing-2", null], "final_timing": ["pending", null, "publication_pending"], "power": ["not_requested", null, "power_not_requested"], "cts": ["unsupported", null, "cts_not_supported"]}, []],
+    ["result-a4", "run-a", 30, 31, "op-collect", "a-collect", 1, {"resources": ["available", "m-area", null], "timing_reference": ["available", "m-timing-1", null], "timing_latest": ["available", "m-timing-2", null], "final_timing": ["unavailable", null, "routing_no_final_timing"], "power": ["not_requested", null, "power_not_requested"], "cts": ["unsupported", null, "cts_not_supported"]}, ["artifact-diagnostic"]]
+  ]
+}

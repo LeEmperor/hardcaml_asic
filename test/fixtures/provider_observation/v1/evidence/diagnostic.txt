@@ -1,0 +1,2 @@
+PROVISIONAL SYNTHETIC FIXTURE-ONLY; not tool output.
+Routing failed after intermediate results. Standalone collection preserves evidence, not signoff.

@@ -66,3 +66,16 @@
  (alias runtest)
  (deps test_packaging.py (source_tree ../flow) ../toolchain.lock ../dune-project)
  (action (run python3 %{dep:test_packaging.py})))
+
+; Pure fixture model: no nested Dune, production imports or external toolchain.
+(rule
+ (alias provider-observation)
+ (deps
+  test_provider_observation.py
+  provider_observation_contract.py
+  (source_tree fixtures/provider_observation))
+ (action (run python3 %{dep:test_provider_observation.py})))
+
+(alias
+ (name runtest)
+ (deps (alias provider-observation)))

@@ -1,0 +1,2 @@
+PROVISIONAL SYNTHETIC FIXTURE-ONLY; not an emitted runnable bundle or real constraints.
+build-B: one immutable modeled input; clk period 10 ns; input/output delays 1 ns.

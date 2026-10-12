@@ -9,8 +9,12 @@
 3. **[User workflow](guides/usage.md)** — how to use the existing library and CLI.
 
 Current checkpoint (2026-10-12): ASIC P0–P5/M3 and P6.1–P6.3/P6.4a/b have
-evidence. P6.5/P6.6 remain open. Incremental provider observation is proposed,
-not delivered; concrete provider observation contract examples are next work.
+evidence. P6.5/P6.6 remain open. The provisional synthetic
+[provider observation fixtures/model](../test/fixtures/provider_observation/v1/README.md)
+are implemented: 50 focused tests and the full provider regression suite pass
+([evidence](phase_plan.md#provider-observation-fixture-acceptance)). The next bounded
+task is the LibreLane observation feasibility probe. Live catalog, early correlation,
+step updates and incremental result publication remain undelivered.
 The owner's [development specimen](../../hardcaml_asic_example/README.md) now has
 the fixed FIFO contract/core, independent scoreboard, TT wrapper/declaration,
 bundle emitter and PDK-free generated-RTL acceptance. A recorded ASIC baseline

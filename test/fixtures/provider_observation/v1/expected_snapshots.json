@@ -1,0 +1,47 @@
+{
+  "contract": "hardcaml-asic.provider-observation-fixture",
+  "version": 1,
+  "designation": "PROVISIONAL SYNTHETIC FIXTURE-ONLY; hand-authored expectations, not reducer output",
+  "stream_id": "stream-fixture-1",
+  "columns": {
+    "operations": ["id", "run_id", "status", "reason"],
+    "runs": ["id", "revision", "implementation_status", "implementation_reason", "latest_result_id", "check_status", "acceptance_status"],
+    "steps": ["id", "status", "reason"]
+  },
+  "snapshots": [
+    {"cursor": 3,
+      "operations": [["op-reject", null, "rejected", "prerequisite_absent"], ["op-a", null, "running", null]],
+      "runs": [], "steps": [], "errors": [], "published_results": []
+    },
+    {"cursor": 7,
+      "operations": [["op-reject", null, "rejected", "prerequisite_absent"], ["op-a", "run-a", "running", null]],
+      "runs": [["run-a", 4, "running", null, null, "not_evaluated", "pending"]],
+      "steps": [["a-synth", "completed", null], ["a-timing-1", "not_started", null], ["a-timing-2", "not_started", null], ["a-route", "not_started", null]],
+      "errors": [], "published_results": []
+    },
+    {"cursor": 13,
+      "operations": [["op-reject", null, "rejected", "prerequisite_absent"], ["op-a", "run-a", "running", null]],
+      "runs": [["run-a", 10, "running", null, "result-a2", "failed", "failed"]],
+      "steps": [["a-synth", "completed", null], ["a-timing-1", "completed", null], ["a-timing-2", "running", null], ["a-route", "not_started", null]],
+      "errors": ["error-timing"], "published_results": ["result-a1", "result-a2"]
+    },
+    {"cursor": 15,
+      "operations": [["op-reject", null, "rejected", "prerequisite_absent"], ["op-a", "run-a", "running", null]],
+      "runs": [["run-a", 12, "running", null, "result-a3", "failed", "failed"]],
+      "steps": [["a-synth", "completed", null], ["a-timing-1", "completed", null], ["a-timing-2", "completed", null], ["a-route", "not_started", null]],
+      "errors": ["error-timing"], "published_results": ["result-a1", "result-a2", "result-a3"]
+    },
+    {"cursor": 27,
+      "operations": [["op-reject", null, "rejected", "prerequisite_absent"], ["op-a", "run-a", "failed", "deferred_and_routing_failed"], ["op-b", "run-b", "interrupted", "producer_interrupted"]],
+      "runs": [["run-a", 16, "failed", "routing_failed", "result-a3", "failed", "failed"], ["run-b", 7, "interrupted", "producer_interrupted", null, "not_evaluated", "failed"]],
+      "steps": [["a-synth", "completed", null], ["a-timing-1", "completed", null], ["a-timing-2", "completed", null], ["a-route", "failed", "routing_failed"], ["b-gated", "skipped", "config_gate_false"], ["b-active", "interrupted", "producer_interrupted"], ["b-unreached", "not_started", null]],
+      "errors": ["error-timing"], "published_results": ["result-a1", "result-a2", "result-a3"]
+    },
+    {"cursor": 34,
+      "operations": [["op-reject", null, "rejected", "prerequisite_absent"], ["op-a", "run-a", "failed", "deferred_and_routing_failed"], ["op-b", "run-b", "interrupted", "producer_interrupted"], ["op-collect", "run-a", "succeeded", null], ["op-postcheck", "run-a", "rejected", "full_run_required"]],
+      "runs": [["run-a", 23, "failed", "routing_failed", "result-a4", "failed", "failed"], ["run-b", 7, "interrupted", "producer_interrupted", null, "not_evaluated", "failed"]],
+      "steps": [["a-synth", "completed", null], ["a-timing-1", "completed", null], ["a-timing-2", "completed", null], ["a-route", "failed", "routing_failed"], ["b-gated", "skipped", "config_gate_false"], ["b-active", "interrupted", "producer_interrupted"], ["b-unreached", "not_started", null], ["a-collect", "completed", null]],
+      "errors": ["error-timing"], "published_results": ["result-a1", "result-a2", "result-a3", "result-a4"]
+    }
+  ]
+}
