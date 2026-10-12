@@ -5,8 +5,8 @@
    "what does each Tiny Tapeout pin do?";
 
    Project.create takes it through its optional [pinout] argument, defaulting to the empty
-   list, and does NOT check it; Build carries it through unchanged; Resolved_build.resolve
-   checks it with [validate_tiny_tapeout] alongside the other TT checks, and
+   list, and does NOT check it; Elaborated_project carries it through unchanged.
+   Resolved_flow.resolve checks it with [validate_tiny_tapeout] alongside the TT checks, and
    Bundle.info_yaml renders it into the pinout section of the TT info.yaml.
 
    Checking at resolution rather than declaration is on purpose: a pinout only means
@@ -14,7 +14,7 @@
    empty without failing Project.create.
 
    It does NOT look at the design; which ports exist, and their widths and directions, is
-   Resolved_build's job. A pin entry is only a description for the TT submission.
+   Resolved_flow's job. A pin entry is only a description for the TT submission.
 *)
 
 open! Core
@@ -72,7 +72,7 @@ type entry =
 type t = entry list [@@deriving sexp_of]
 
 (* Check a pinout is complete for a Tiny Tapeout submission; returns Or_error rather than
-   raising since Resolved_build.resolve folds it into one combined TT error;
+   raising since Resolved_flow.resolve folds it into one combined TT error;
 
    invalid   : every entry with a bit outside 0 to 7 or a blank description, reported
                together;
@@ -88,7 +88,7 @@ type t = entry list [@@deriving sexp_of]
    An out of range entry is reported as invalid only; it does not count toward any
    expected pin, so the pin it was probably meant for shows up as missing as well.
 
-   -> see expect tests (test/test_resolved_build.ml)
+   -> see expect tests (test/test_resolved_flow.ml)
 *)
 let validate_tiny_tapeout entries =
 

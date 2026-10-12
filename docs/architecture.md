@@ -66,31 +66,40 @@ observation. Another real backend should drive future extraction. See the
 Project declaration
   → fresh Elaboration_context for one elaboration
   → construct/register resources and validate policy
-  → finalize immutable Build
-  → resolve target/interface/constraints into Resolved_build
+  → finalize abstract Elaborated_project (circuit + metadata/intent/resources)
+  → resolve concrete TT/LibreLane facts into Resolved_flow
   → Bundle.render / Bundle.write
   → separate execution(s), observations and results
 ```
 
-Contexts close on success or failure; registration cannot leak into another build.
+Elaboration constructs a Hardcaml circuit, not a synthesis result. `Project.elaborate`
+returns `Elaborated_project.t`; `Project.elaborate_for_flow` adds validation and
+returns `Resolved_flow.t`, retaining that project in `elaborated_project`.
+`Bundle.render ?simulation_project` can include a separate simulation elaboration.
+Rendering emits inputs; execution invokes tools separately.
+
+Contexts close on success or failure; registration cannot leak into another elaboration.
 Resource identities use explicit names and scope paths. Inventories are sorted.
 Simulation and implementation elaboration remain separate; bundle source sets
 must not mix behavioral models and implementation definitions accidentally.
 
-**Boundary hardening implemented (2026-10-12):** `Resolved_build.mli` exposes a
+**Boundary hardening implemented (2026-10-12):** `Resolved_flow.mli` exposes a
 private result record, constructed only by `resolve` (also used by
 `Project.elaborate_for_flow`). Existing field reads and pattern matching remain
 available; construction and record updates are compiler errors. Settings and
 converted delays are private records too. Their JSON/list/scalar contents are
 immutable; copying an exposed target or clock cannot replace the stored value.
-There is no unchecked constructor or deserializer for a resolved build.
+There is no unchecked constructor or deserializer for a resolved flow.
 
 This enforces the resolution boundary, not deep immutability of Hardcaml circuit
-internals or a redesign of the existing `Build.Private.create` convention.
+internals or a redesign of the existing `Elaborated_project.Private.create` convention.
 Resolution still relies on declaration/elaboration invariants. External target
 files are still references, not verified physical evidence. Independent-consumer
 compiler checks and pre-/post-hardening bundle byte comparisons are recorded in
 the [phase plan](phase_plan.md#resolved-build-boundary-hardening-evidence).
+The subsequent [source-breaking rename](phase_plan.md#public-api-rename-migration-and-evidence)
+preserves that boundary, `Target.Resolved`, and persisted build/bundle/run identities.
+Workbench build/run identity types describe different concepts and are unchanged.
 
 ## 5. Resources and policies
 
@@ -203,8 +212,8 @@ they do not claim that future observation requirements have already been met.
 
 | Area | Recommendation | Timing |
 | --- | --- | --- |
-| Project/context/Build, resource semantics | Reuse with current tests | No rewrite prerequisite |
-| `Resolved_build` construction | Private interface enforces resolution-only construction; readers preserved | Implemented; evidence in phase plan |
+| Project/context/Elaborated_project, resource semantics | Reuse with current tests | No rewrite prerequisite |
+| `Resolved_flow` construction | Private interface enforces resolution-only construction; readers preserved | Implemented; evidence in phase plan |
 | Bundle/manifest | Preserve format and determinism; additive provenance and declared-fact export | Coordinate with P6.5a and result contract |
 | Runner/dispatcher | Extract operation/publication logic behind existing entry points | As durable observation is added |
 | Collection/reporting | Step-aware extractors plus final aggregation; retain existing acceptance policy | Before incremental result publication |
@@ -217,23 +226,27 @@ changes and new observation behavior into one unreviewable rewrite.
 
 ### `hardcaml_asic_example`
 
-The owner created this sibling repository under `~/devel/jane/`; it has no commits
-or implementation as of this review. It replaces the generic "test-asic" placeholder.
-Its root will be configured, never a required hardcoded sibling path.
+The owner-created [sibling development specimen](../../hardcaml_asic_example/README.md)
+now implements a fixed single-clock 16 × 8 controlled FIFO with explicit register
+storage, a pure list-based scoreboard, directed/seeded regressions, a consumer-owned
+TT wrapper/declaration and a standalone bundle emitter. Its source root is explicit,
+not a required hardcoded sibling path. Owner initial ref
+`8e4577f6c72cc689cbc92daeb5f8ae083cf970e0` now exists; it alone does not establish
+a clean tree or a dependency pin. The specimen remains unpinned.
 
-Proposed first design: a small single-clock controlled FIFO (e.g. 16 × 8), explicit
-register storage, enable/reset, enqueue/dequeue handshakes and occupancy/full/empty
-status, wrapped by a consumer-owned TT interface. Width/depth, pin map, reset and
-simultaneous-operation behavior still need agreement. A conventional FIFO can
-enqueue and dequeue concurrently; the library's 1RW RAM cannot perform two
-accesses per cycle. Start with registers rather than silently changing either
-contract. A separate registered-memory specimen can follow if resource coverage
-needs it. No asynchronous FIFO, SRAM, CPU or production protocol dependency.
+The delivered contract provides synchronous clear with priority over disable,
+registered pop responses, occupancy/full/empty and pre-edge acceptance decisions.
+Empty simultaneous requests accept only push (no bypass); full simultaneous
+requests accept both and return the old head. Registers support these concurrent
+operations without changing the library's 1RW RAM contract. The TT wrapper owns
+pin mapping and combinational output/OE masking separately from synchronous reset.
 
 The example owns Dune files, design, scoreboard, seeded regression, emitter and
 ordinary commands. ASIC owns flow/report semantics; Workbench owns adaptation
-and window/tile behavior. Pin a deliberate library revision and use its tool pins;
-keep deterministic fixtures distinct from one later real physical acceptance run.
-Next agreed work is to settle the FIFO contract and concrete provider identity/state
-examples. Neither that contract work nor specimen scaffolding is implemented by
-the `Resolved_build` hardening slice.
+and window/tile behavior. PDK-free bundle and separately compiled emitted
+synthesis/simulation RTL checks pass against the hardened public development tree;
+see the [evidence](phase_plan.md#controlled-fifo-development-specimen-evidence).
+Synthetic committed fixtures enable provenance tests, not genuine root emission
+or installed/pinned/physical acceptance. Concrete provider observation identity/state
+examples remain next work; FIFO delivery does not implement that provider contract
+or close ASIC P6 gates.

@@ -65,14 +65,20 @@ file presence and revision/hash checks belong to the explicit P4 preflight befor
 physical execution; no PDK is present in ordinary library tests. These
 standard-cell views do not establish an SRAM macro.
 
-## Validated TT/LibreLane build
+## Validated TT/LibreLane flow
 
 `Project.elaborate_for_flow` elaborates an implementation and calls
-`Resolved_build.resolve`. It returns the resolved target, checked interface,
+`Resolved_flow.resolve`. Its private result retains the abstract
+`Elaborated_project.t` in `elaborated_project`, alongside the resolved target,
+facts validated against the checked interface,
 clock and I/O delays in nanoseconds, clock frequency in hertz, and LibreLane
 settings with an owner for each value. `Project.elaborate` still supports
 resource-only examples and behavioral simulation without requiring a supported
-physical target. [P3 emission](../guides/bundle-emission.md) consumes the validated result.
+physical target. Elaboration produces a circuit with metadata, intent and resources,
+without synthesis. `Resolved_flow.Setting.t` and `Resolved_flow.Delay_ns.t` are
+private too: callers can read and pattern-match but cannot construct or update
+these records. `Target.Resolved` is unchanged.
+[P3 emission](../guides/bundle-emission.md) consumes the validated result.
 
 The TT top has exactly these ports:
 
@@ -136,7 +142,7 @@ Liberty's own limits then apply.
 The existing consumer's `src/config.json` settings fit this boundary: clock
 values come from the typed clock, `FP_SIZING` and `RUN_LINTER` have defaults,
 and its other keys can be supplied as reasoned overrides. P3 populates the
-generated RTL list from emitted files. `Resolved_build` rejects protected keys
+generated RTL list from emitted files. `Resolved_flow` rejects protected keys
 even when the proposed value matches, so a raw setting cannot become a second
 authority. Its adapter capability check accepts implementation elaborations for
 LibreLane synthesis and hardening. Synthesis requires the PDK configuration,

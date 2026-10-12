@@ -100,8 +100,8 @@ let trace =
    of the contract. [expected] is [None] whenever the contract leaves the output
    unspecified. *)
 let run_scoreboard mode =
-  let build = elaborate ~mode ~policy:(policy Flops) () |> ok_exn in
-  let record = List.hd_exn (Build.resources build) in
+  let elaborated_project = elaborate ~mode ~policy:(policy Flops) () |> ok_exn in
+  let record = List.hd_exn (Elaborated_project.resources elaborated_project) in
   assert (String.equal (Resource_id.to_string record.id) "program");
   assert (
     Resource_request.equal
@@ -123,7 +123,7 @@ let run_scoreboard mode =
     | Implementation -> Generated_synthesis_rtl
   in
   assert (List.equal Resource_record.Source.equal record.sources [ expected_source ]);
-  let sim = Cyclesim.create (Build.circuit build) in
+  let sim = Cyclesim.create (Elaborated_project.circuit elaborated_project) in
   let set port value =
     Cyclesim.in_port sim port
     := Bits.of_int_trunc ~width:(Bits.width !(Cyclesim.in_port sim port)) value
@@ -181,17 +181,17 @@ let run_scoreboard mode =
     if operation.enable && operation.write
     then stored.(operation.address) <- Some operation.data;
     prior := Some actual);
-  build
+  elaborated_project
 ;;
 
 let%test_unit "one scoreboard checks behavioral and flop elaborations" =
-  ignore (run_scoreboard Simulation : Build.t);
-  ignore (run_scoreboard Implementation : Build.t)
+  ignore (run_scoreboard Simulation : Elaborated_project.t);
+  ignore (run_scoreboard Implementation : Elaborated_project.t)
 ;;
 
 let%test_unit "behavioral out-of-range access is diagnostic and does not wrap" =
-  let build = elaborate ~mode:Simulation ~policy:(policy Flops) () |> ok_exn in
-  let sim = Cyclesim.create (Build.circuit build) in
+  let elaborated_project = elaborate ~mode:Simulation ~policy:(policy Flops) () |> ok_exn in
+  let sim = Cyclesim.create (Elaborated_project.circuit elaborated_project) in
   let set port width value =
     Cyclesim.in_port sim port := Bits.of_int_trunc ~width value
   in
@@ -215,8 +215,9 @@ let%test_unit "behavioral out-of-range access is diagnostic and does not wrap" =
 let%test_unit "flop RTL renders without behavioral initialization" =
   let flop = elaborate ~mode:Implementation ~policy:(policy Flops) () |> ok_exn in
   let behavioral = elaborate ~mode:Simulation ~policy:(policy Flops) () |> ok_exn in
-  let render build =
-    Rtl.create Verilog [ Build.circuit build ] |> Rtl.full_hierarchy |> Rope.to_string
+  let render elaborated_project =
+    Rtl.create Verilog [ Elaborated_project.circuit elaborated_project ]
+    |> Rtl.full_hierarchy |> Rope.to_string
   in
   let flop_rtl = render flop in
   let behavioral_rtl = render behavioral in
@@ -230,11 +231,12 @@ let%test_unit "RAM inventory is repeatable and fallback is recorded" =
   let explicit = elaborate ~mode:Implementation ~policy:(policy Flops) () |> ok_exn in
   let repeated = elaborate ~mode:Implementation ~policy:(policy Flops) () |> ok_exn in
   assert (
-    List.equal Resource_record.equal (Build.resources explicit) (Build.resources repeated));
+    List.equal Resource_record.equal
+      (Elaborated_project.resources explicit) (Elaborated_project.resources repeated));
   let fallback =
     elaborate ~mode:Implementation ~policy:(policy Exact_or_flop_fallback) () |> ok_exn
   in
-  let selected = (List.hd_exn (Build.resources fallback)).selection in
+  let selected = (List.hd_exn (Elaborated_project.resources fallback)).selection in
   assert (Selection.Implementation.equal selected.implementation Flops);
   assert (
     Selection.Reason.equal
@@ -243,8 +245,8 @@ let%test_unit "RAM inventory is repeatable and fallback is recorded" =
 ;;
 
 let%test_unit "an unimplemented macro mapping cannot masquerade as RAM hardware" =
-  let build = elaborate ~mode:Implementation ~policy:(policy Flops) () |> ok_exn in
-  let request = (List.hd_exn (Build.resources build)).request in
+  let elaborated_project = elaborate ~mode:Implementation ~policy:(policy Flops) () |> ok_exn in
+  let request = (List.hd_exn (Elaborated_project.resources elaborated_project)).request in
   let technology =
     Technology.create_exn
       ~name:"test-macro-technology"
@@ -254,7 +256,7 @@ let%test_unit "an unimplemented macro mapping cannot masquerade as RAM hardware"
     Fixture.project ~technology ~design:(design ()) ~policy:(policy Exact) () |> ok_exn
   in
   let simulation = Project.elaborate project ~mode:Simulation |> ok_exn in
-  let record = List.hd_exn (Build.resources simulation) in
+  let record = List.hd_exn (Elaborated_project.resources simulation) in
   assert (Resource_record.Elaborated_as.equal record.elaborated_as Behavioral_model);
   match Project.elaborate project ~mode:Implementation with
   | Ok _ -> failwith "unimplemented macro backend was accepted"
@@ -274,9 +276,9 @@ let%expect_test "invalid RAM port and unsupported selection identify the instanc
       ~design:(design ~bad_address:true ())
       ()
   in
-  print_s [%sexp (bad : Build.t Or_error.t)];
+  print_s [%sexp (bad : Elaborated_project.t Or_error.t)];
   let unsupported = elaborate ~mode:Implementation ~policy:(policy Exact) () in
-  print_s [%sexp (unsupported : Build.t Or_error.t)];
+  print_s [%sexp (unsupported : Elaborated_project.t Or_error.t)];
   [%expect
     {|
     (Error (

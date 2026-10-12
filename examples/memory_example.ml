@@ -59,8 +59,8 @@ let make_project requirement =
   |> Or_error.ok_exn
 ;;
 
-let simulate build =
-  let sim = Cyclesim.create (Build.circuit build) in
+let simulate elaborated_project =
+  let sim = Cyclesim.create (Elaborated_project.circuit elaborated_project) in
   let written = Array.create ~len:4 false in
   let set port width value =
     Cyclesim.in_port sim port := Bits.of_int_trunc ~width value
@@ -89,14 +89,14 @@ let simulate build =
 let run () =
   let project = make_project Flops in
   List.iter [ Elaboration_mode.Simulation; Implementation ] ~f:(fun mode ->
-    let build = Project.elaborate project ~mode |> Or_error.ok_exn in
-    let resource = List.hd_exn (Build.resources build) in
+    let elaborated_project = Project.elaborate project ~mode |> Or_error.ok_exn in
+    let resource = List.hd_exn (Elaborated_project.resources elaborated_project) in
     printf
       "%s: %s, %s\n"
       (Sexp.to_string (Elaboration_mode.sexp_of_t mode))
       (Resource_id.to_string resource.id)
       (Sexp.to_string (Selection.sexp_of_t resource.selection));
-    simulate build);
+    simulate elaborated_project);
   (match Project.elaborate (make_project Exact) ~mode:Implementation with
    | Ok _ -> failwith "an unsupported macro-required request was accepted"
    | Error _ -> print_endline "macro-required request: rejected as expected");
@@ -104,7 +104,7 @@ let run () =
     Project.elaborate (make_project Exact_or_flop_fallback) ~mode:Implementation
     |> Or_error.ok_exn
   in
-  let resource = List.hd_exn (Build.resources fallback) in
+  let resource = List.hd_exn (Elaborated_project.resources fallback) in
   printf "fallback: %s\n" (Sexp.to_string (Selection.sexp_of_t resource.selection))
 ;;
 
@@ -112,11 +112,11 @@ let () =
   let argv = Stdlib.Sys.argv in
   if Array.length argv = 3 && String.equal argv.(1) "--rtl"
   then (
-    let build =
+    let elaborated_project =
       Project.elaborate (make_project Flops) ~mode:Implementation |> Or_error.ok_exn
     in
     let rtl =
-      Rtl.create Verilog [ Build.circuit build ]
+      Rtl.create Verilog [ Elaborated_project.circuit elaborated_project ]
       |> Rtl.full_hierarchy
       |> Rope.to_string
     in

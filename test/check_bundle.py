@@ -175,11 +175,11 @@ def main(executable, source_root):
         assert "Generated_synthesis_rtl" in mem_manifest["resources"][0]["source_roles"]
         assert obs_manifest["resources"] == []
 
-        with (source / "lib/build.ml").open("a") as stream:
+        with (source / "lib/elaborated_project.ml").open("a") as stream:
             stream.write("\n(* provenance change *)\n")
         _, changed = emit("memory", "memory-dirty")
         assert changed["identity"] != mem_manifest["identity"]
-        assert any(entry["path"] == "lib/build.ml" and entry["git_status"].startswith(" M")
+        assert any(entry["path"] == "lib/elaborated_project.ml" and entry["git_status"].startswith(" M")
                    for entry in changed["source_inputs"])
 
         (source / "lib/untracked_probe.ml").write_text("(* new source input *)\n")

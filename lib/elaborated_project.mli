@@ -1,16 +1,17 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
-(* Module: "build.mli" *)
+(* Module: "elaborated_project.mli" *)
 (* The immutable result of one successful project elaboration.
 
-   A build can be inspected without running any tool. It keeps portable design intent
+   An elaborated project can be inspected without running any tool. It keeps design intent
    (metadata, target selection, clocks, resource inventory) separate from adapter
-   settings. It is NOT a LibreLane configuration; {!Bundle.render} renders one.
+   settings. It contains an elaborated Hardcaml circuit, NOT a synthesis result or a
+   LibreLane configuration; {!Bundle.render} renders the latter.
 
-   Nothing can be added to a build after finalization: the elaboration context that
-   produced it is closed. A failed elaboration produces no build at all.
+   Nothing can be added after finalization: the elaboration context that produced it
+   is closed. A failed elaboration produces no elaborated project at all.
 
-   The TT/LibreLane resolution result is a separate {!Resolved_build.t}. The
+   The TT/LibreLane resolution result is a separate {!Resolved_flow.t}. The
    bundle renderer consumes that validated result and emits flattened RTL and
    provenance. Hierarchical RTL emission is deferred.
 *)
@@ -29,13 +30,13 @@ val metadata : t -> Metadata.t
 (** The mode passed to {!Project.elaborate}. *)
 val mode : t -> Elaboration_mode.t
 
-(** The declared harness and technology selection. Use {!Resolved_build.resolve}
+(** The declared harness and technology selection. Use {!Resolved_flow.resolve}
     or {!Project.elaborate_for_flow} for a checked TT/LibreLane target. *)
 val target : t -> Target.t
 
 val flow : t -> Flow.t
 
-(** The declared clocks. Their ports are checked by {!Resolved_build.resolve}. *)
+(** The declared clocks. Their ports are checked by {!Resolved_flow.resolve}. *)
 val clocks : t -> Clock.t list
 
 val pinout : t -> Pinout.t

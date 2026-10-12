@@ -3,6 +3,16 @@
 Phase 3 emits a Tiny Tapeout project directory from one validated project
 declaration. It does not run synthesis or hardening.
 
+`Project.elaborate` returns an abstract `Elaborated_project.t` containing the
+Hardcaml circuit, metadata, intent and resources. `Project.elaborate_for_flow`
+performs implementation elaboration and `Resolved_flow.resolve`, producing
+validated concrete TT/LibreLane facts plus the `elaborated_project` field.
+`Bundle.render ~source_root ~input_paths resolved_flow` renders that result;
+its optional `~simulation_project` takes a separate Simulation elaboration.
+`Bundle.write` writes the bundle, and execution happens separately.
+The [API migration](../phase_plan.md#public-api-rename-migration-and-evidence)
+changes source names without changing persisted keys, schema or hashing.
+
 From this repository's root:
 
 ```sh

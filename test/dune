@@ -29,9 +29,9 @@
 ; `dune build @install` and `dune install`, which a runtest rule must not do.
 ; Run it explicitly: python3 test/test_installed_prefix.py
 ;
-; check_resolved_build_api.py also runs separately: it invokes Dune in an
+; check_resolved_flow_api.py also runs separately: it invokes Dune in an
 ; independent consumer. Run from the repository root:
-; dune build @install && python3 test/check_resolved_build_api.py
+; dune build @install && python3 test/check_resolved_flow_api.py
 
 (rule
  (alias runtest)

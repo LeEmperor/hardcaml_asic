@@ -176,7 +176,7 @@ OCaml interfaces here without freezing a broad public framework.
   elaboration/finalization in `elaborate`), [`Elaboration_context`](../../lib/elaboration_context.mli),
   [`Elaboration_mode`](../../lib/elaboration_mode.ml), [`Target`](../../lib/target.ml)/
   [`Harness`](../../lib/harness.ml)/[`Technology`](../../lib/technology.mli),
-  [`Flow`](../../lib/flow.ml), [`Build`](../../lib/build.mli). Evidence:
+  [`Flow`](../../lib/flow.ml), [`Build`](../../lib/elaborated_project.mli). Evidence:
   [`test_lifecycle.ml`](../../test/test_lifecycle.ml) "declaration to finalized
   implementation build" and "simulation mode elaborates behavioural models and
   simulates"; the fixture is [`test/fixture.ml`](../../test/fixture.ml).
@@ -218,7 +218,7 @@ OCaml interfaces here without freezing a broad public framework.
   and adapter-specific settings without using LibreLane JSON as the core model.
   Evidence: the finalized build can be inspected without tool execution and
   cannot acquire new registrations or change through a retained context.
-  *Done:* [`Build`](../../lib/build.mli) is abstract and inspectable (`sexp_of_t`),
+  *Done:* [`Build`](../../lib/elaborated_project.mli) is abstract and inspectable (`sexp_of_t`),
   holding metadata, mode, target selection, declared clocks, the resource
   inventory, and adapter identity/operation/settings (LibreLane overrides with
   required reasons). The target is the declared selection; P2 resolution returns
@@ -325,12 +325,12 @@ record the revisions actually adopted rather than assuming upstream defaults.
   names, widths, directions, and metadata against the harness. Evidence: the
   reference wrapper passes and malformed interfaces fail with precise diagnostics.
   Wrapper reset/disable behavior and pin arbitration remain consumer logic.
-  *Done:* [`Resolved_build.validate_interface`](../../lib/resolved_build.ml) checks
+  *Done:* [`Resolved_build.validate_interface`](../../lib/resolved_flow.ml) checks
   the TT wrapper's exact input/output names, directions, and widths, including
   Hardcaml phantom inputs; TT metadata requires a nonblank author/description and
   all 24 [pin descriptions](../../lib/pinout.ml). The TT-shaped Hardcaml wrapper and
   malformed width/direction/metadata cases are in
-  [`test_resolved_build.ml`](../../test/test_resolved_build.ml).
+  [`test_resolved_build.ml`](../../test/test_resolved_flow.ml).
 - [x] **P2.3 — Implement the first typed constraint subset.** Inventory the clocks
   and timing assumptions required by the reference flow, settle endpoint identity
   and unit conversion, then implement that subset and its validation. Evidence:
@@ -339,10 +339,10 @@ record the revisions actually adopted rather than assuming upstream defaults.
   an identified owner and rendering path. Do not expand to all SDC commands.
   *Done:* [`Clock`](../../lib/clock.ml) uses a floating span to retain the 48 MHz
   fractional-nanosecond period. [`Timing`](../../lib/timing.ml) declares optional
-  maximum I/O delays; [`Resolved_build`](../../lib/resolved_build.ml) requires one
+  maximum I/O delays; [`Resolved_build`](../../lib/resolved_flow.ml) requires one
   clock on `clk`, validates endpoint direction and finite nonnegative delays,
   rejects duplicates/additional clocks, and converts to nanoseconds and hertz.
-  The [target reference](../reference/target-reference.md#validated-ttlibrelane-build) assigns
+  The [target reference](../reference/target-reference.md#validated-ttlibrelane-flow) assigns
   `CLOCK_PORT`/`CLOCK_PERIOD`, TT `clock_hz`, and future SDC rendering to their
   owners. Tests cover 48 MHz, invalid endpoints, and malformed delays.
 - [x] **P2.4 — Resolve flow defaults and overrides.** Add LibreLane key/JSON/reason
@@ -352,7 +352,7 @@ record the revisions actually adopted rather than assuming upstream defaults.
   retain provenance, and conflicting protected assignments fail. A raw `MACROS`
   setting cannot silently replace registered resources.
   *Done:* [`Flow`](../../lib/flow.ml) rejects malformed keys, non-JSON values, and
-  missing reasons. [`Resolved_build`](../../lib/resolved_build.ml) produces sorted
+  missing reasons. [`Resolved_build`](../../lib/resolved_flow.ml) produces sorted
   settings owned by design, target, clock, default, or reasoned override. Tests
   cover the pinned consumer's configurable keys and conflicts on generated
   sources, target facts, clocks, SDC paths, and `MACROS`.
@@ -368,7 +368,7 @@ record the revisions actually adopted rather than assuming upstream defaults.
   missing views, missing synthesis source roles, and macro selections fail at
   this boundary. A LibreLane setting belongs to the LibreLane adapter by type;
   there is no other adapter in this initial API. The capability cases are in
-  [`test_resolved_build.ml`](../../test/test_resolved_build.ml).
+  [`test_resolved_build.ml`](../../test/test_resolved_flow.ml).
 
 **Exit gate:** the reference target and required configuration resolve from one
 declaration, interface/constraint checks pass, and unsupported or conflicting
@@ -445,7 +445,7 @@ the output; exact staging paths follow the pinned TT tools.
   repeats emission byte-for-byte, and runs the synthesis and simulation RTL
   benches when Icarus is installed. It checks the flop selection and the absence
   of a macro collateral requirement. Configuration ownership error cases remain
-  in [`test_resolved_build.ml`](../../test/test_resolved_build.ml). External PDK file
+  in [`test_resolved_build.ml`](../../test/test_resolved_flow.ml). External PDK file
   availability is the explicit P4.1 preflight, not an ordinary bundle test.
 
 **Exit gate / M2:** an independent script can consume complete, validated inputs

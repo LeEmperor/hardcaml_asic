@@ -7,7 +7,7 @@
    {v
    Project.create ~target        declared pair; accepted as is, the pair is NOT checked
    Project.elaborate             uses [technology] for resource selection only
-   Project.elaborate_for_flow    Resolved_build.resolve -> Target.resolve
+   Project.elaborate_for_flow    Resolved_flow.resolve -> Target.resolve
                                  -> unsupported pair or bad inputs: Error
                                  -> Resolved.t: geometry, floorplan, pins, layers, views
    Bundle                        writes the Resolved.t references into the manifest
@@ -21,7 +21,7 @@
    (for the floorplan) hash. It does NOT open, fetch or hash any of them; checking them
    against a real support-tools checkout and PDK is P4 preflight. It does NOT check the
    design either; the TT top-level interface, metadata, pinout and timing are checked by
-   {!Resolved_build.resolve}.
+   {!Resolved_flow.resolve}.
 *)
 
 open! Core

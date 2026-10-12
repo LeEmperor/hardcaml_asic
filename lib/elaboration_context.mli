@@ -7,7 +7,7 @@
    Resource constructors register through it and receive their implementation selection.
 
    The context closes when elaboration finalizes OR fails; every operation on a closed
-   context raises, so a retained context cannot add to a finished build or leak into a
+   context raises, so a retained context cannot add to a finalized project or leak into a
    retry. Future logging capabilities for context debugging will come, but not now.
 
    The context carries the current Hardcaml [Scope.t], which determines the hierarchical

@@ -5,7 +5,7 @@
    "what exactly would be handed to the flow, and where did every byte come from?";
 
    It is an in-memory list of files plus a manifest describing them. [render] builds one
-   out of a Resolved_build.t (and optionally a separately elaborated simulation Build.t),
+   out of a Resolved_flow.t (and optionally a Simulation Elaborated_project.t),
    reading the declared source inputs and git state under [source_root]; [write] then puts
    it on disk. examples/tt_bundle_example.ml is the caller today: it runs
    Project.elaborate_for_flow and Project.elaborate ~mode:Simulation, renders, writes, and
@@ -16,7 +16,7 @@
    inspected through [file], [paths] and [manifest] before anything lands on disk, and a
    render failure (a missing input, no git commit) writes nothing.
 
-   It does NOT validate the design, the target or the settings; Resolved_build already
+   It does NOT validate the design, the target or the settings; Resolved_flow already
    did, and this module leans on those guarantees (one clock on "clk", nonempty views, no
    override of a generated setting). It does NOT run any EDA tool, touch the PDK or link
    the TT support-tools checkout at OUTPUT/tt; running the flow is P4 work. Layout and
@@ -83,7 +83,7 @@ let sexp to_sexp value = string (Sexp.to_string_hum (to_sexp value))
    [root] outside any repository is an ordinary [render] failure, not a bug;
 
    Only trailing newlines are dropped, never leading whitespace: porcelain status lines
-   start with a meaningful space (" M lib/build.ml" is a modified, unstaged file), and
+   start with a meaningful space (" M lib/elaborated_project.ml" is an unstaged edit), and
    test/check_bundle.py checks for exactly that prefix.
 
    git's own stderr is not captured; it goes straight to the process stderr.
@@ -176,7 +176,7 @@ let read_input ~source_root path =
    and a min line per declared I/O delay;
 
    The clock name and port are both hardcoded to "clk"; that is safe because
-   Resolved_build.validate_timing only accepts exactly one clock, on "clk". Delays arrive
+   Resolved_flow.validate_timing only accepts exactly one clock, on "clk". Delays arrive
    already sorted by port from the same function, and the port lists below are sorted
    here, so the file is deterministic;
 
@@ -208,24 +208,24 @@ let read_input ~source_root path =
    MAX_TRANSITION_CONSTRAINT and MAX_CAPACITANCE_CONSTRAINT unset, so base.sdc would not
    have written them either, and the Liberty's own limits apply.
 *)
-let sdc (resolved : Resolved_build.t) =
+let sdc (resolved : Resolved_flow.t) =
 
   let number value = Printf.sprintf "%.17g" value in
   let constraints = resolved.target.constraints in
 
   (* The ports of one direction as a sorted "a b c" list for get_ports; taken from the
-     wrapper interface Resolved_build.validate_interface has already matched the design
+     wrapper interface Resolved_flow.validate_interface has already matched the design
      against, so every name here is a real port *)
   let ports names = String.concat ~sep:" " (List.sort names ~compare:String.compare) in
 
   (* Every input but the clock; the clock gets its own driving cell line, as base.sdc
      does, since a technology may characterise a different cell for it *)
   let signal_inputs =
-    List.filter_map Resolved_build.expected_inputs ~f:(fun (name, _) ->
+    List.filter_map Resolved_flow.expected_inputs ~f:(fun (name, _) ->
       Option.some_if (not (String.equal name "clk")) name)
   in
 
-  let outputs = List.map Resolved_build.expected_outputs ~f:fst in
+  let outputs = List.map Resolved_flow.expected_outputs ~f:fst in
 
   (* One "set_driving_cell" line for a get_ports list *)
   let driving_cell port_list =
@@ -237,7 +237,7 @@ let sdc (resolved : Resolved_build.t) =
   in
 
   (* The "-max" then "-min" "set_<direction>_delay" lines for one resolved delay *)
-  let delay direction ({ port; minimum; maximum } : Resolved_build.Delay_ns.t) =
+  let delay direction ({ port; minimum; maximum } : Resolved_flow.Delay_ns.t) =
     let line bound value =
       Printf.sprintf
         "set_%s_delay %s %s -clock clk [get_ports {%s}]\n"
@@ -291,10 +291,10 @@ let sdc (resolved : Resolved_build.t) =
    lists only [source_name] (the synthesis RTL, never the simulation RTL), and
    yaml_version is 6, the version the pinned TT support tools read;
 *)
-let info_yaml (resolved : Resolved_build.t) source_name =
+let info_yaml (resolved : Resolved_flow.t) source_name =
 
-  let build = resolved.build in
-  let metadata = Build.metadata build in
+  let elaborated_project = resolved.elaborated_project in
+  let metadata = Elaborated_project.metadata elaborated_project in
   let yaml_string value = Yojson.Safe.to_string (`String value) in
 
   (* ui, then uo, then uio, the order TT's project_info.py reads them; no wildcard, so a
@@ -303,7 +303,7 @@ let info_yaml (resolved : Resolved_build.t) source_name =
 
   (* Pin lines sorted by bank, then bit, whatever order they were declared in *)
   let pins =
-    List.sort (Build.pinout build) ~compare:(fun a b ->
+    List.sort (Elaborated_project.pinout elaborated_project) ~compare:(fun a b ->
       let c = Int.compare (bank_order a.bank) (bank_order b.bank) in
       if c <> 0 then c else Int.compare a.bit b.bit)
     |> List.map ~f:(fun pin ->
@@ -324,7 +324,8 @@ let info_yaml (resolved : Resolved_build.t) source_name =
     ; "  language: \"Verilog\"\n"
     ; "  clock_hz: " ^ Printf.sprintf "%.12g" resolved.clock_hz ^ "\n"
     ; "  tiles: " ^ yaml_string resolved.target.tiles ^ "\n"
-    ; "  top_module: " ^ yaml_string (Circuit.name (Build.circuit build)) ^ "\n"
+    ; "  top_module: "
+      ^ yaml_string (Circuit.name (Elaborated_project.circuit elaborated_project)) ^ "\n"
     ; "  source_files:\n    - " ^ yaml_string source_name ^ "\n"
     ; "\npinout:\n"
     ; pins
@@ -342,14 +343,14 @@ let info_yaml (resolved : Resolved_build.t) source_name =
    FP_DEF_TEMPLATE -> rewritten from a support-tools relative path to "dir::../tt/<path>",
                       since the TT checkout is expected to be linked at OUTPUT/tt;
 
-   Keys are sorted, so the JSON is deterministic whatever order Resolved_build produced.
+   Keys are sorted, so the JSON is deterministic whatever order Resolved_flow produced.
    Why no duplicate keys: VERILOG_FILES and anything containing "SDC" are protected keys
-   in Resolved_build, so no override can collide with a generated setting here;
+   in Resolved_flow, so no override can collide with a generated setting here;
 
    TODO (future fix): the three generated settings are written out again in [render]'s
    "generated_settings"; one shared list would stop the two from drifting apart;
 *)
-let config (resolved : Resolved_build.t) source_name =
+let config (resolved : Resolved_flow.t) source_name =
 
   (* Resolved settings as (key, value), with only the floorplan path rewritten *)
   let settings =
@@ -409,21 +410,21 @@ let reference_json (reference : Target.Reference.t) =
 (* One resolved setting as a manifest entry; unlike config.json, this keeps the [owner],
    so an override is recorded along with its reason;
 *)
-let setting_json (setting : Resolved_build.Setting.t) =
+let setting_json (setting : Resolved_flow.Setting.t) =
   assoc
     [ "key", string setting.key
     ; "value", setting.value
-    ; "owner", sexp Resolved_build.Setting.Owner.sexp_of_t setting.owner
+    ; "owner", sexp Resolved_flow.Setting.Owner.sexp_of_t setting.owner
     ]
 ;;
 
-(* The main sauce here for bundles; given a resolved build, produce every file of the
+(* The main sauce here for bundles; given a resolved flow, produce every file of the
    bundle and a manifest that pins down where each byte came from;
 
-   1. [simulation_build], if given, must be a Simulation build of the same project and
+   1. [simulation_project], if given, must be a Simulation elaboration of the same project and
       top module -> otherwise error;
-   2. generate synthesis RTL from the resolved build, and simulation RTL from
-      [simulation_build] when there is one;
+   2. generate synthesis RTL from the resolved flow's elaborated project, and simulation
+      RTL from [simulation_project] when there is one;
    3. dedup and sort [input_paths]; none left -> error;
    4. read git HEAD of [source_root] -> error when there is no repository or no commit;
    5. read every input's bytes (see [read_input]) and its git status -> every input that
@@ -446,44 +447,47 @@ let setting_json (setting : Resolved_build.Setting.t) =
    renaming one, or bumping a requested tool version below changes every identity even
    when no design changed; bump "schema_version" when that is intended.
 
-   Careful: without [simulation_build], "simulation_sources" points at the synthesis RTL
+   Careful: without [simulation_project], "simulation_sources" points at the synthesis RTL
    under src/, and "simulation_resources" is empty. A simulation consumer then compiles
    the synthesis RTL, without any simulation only behavior (the memory example's
    diagnostic initialisation, for one), and nothing says so apart from that path.
 *)
 let render
-    ?simulation_build (* a separate Simulation elaboration of the same project; *)
+    ?simulation_project (* a separate Simulation elaboration of the same project; *)
     ~source_root (* git checkout that [input_paths] are relative to; *)
     ~input_paths (* generator sources to copy and hash; order and repeats ignored; *)
-    (resolved : Resolved_build.t)
+    (resolved : Resolved_flow.t)
   =
-  let build = resolved.build in
-  let top = Circuit.name (Build.circuit build) in
+  let elaborated_project = resolved.elaborated_project in
+  let top = Circuit.name (Elaborated_project.circuit elaborated_project) in
   let source_name = top ^ ".v" in
 
-  (* The simulation build must describe the same design, or the two RTL sets disagree *)
+  (* The simulation project must describe the same design, or the two RTL sets disagree *)
   let%bind.Or_error () =
-    match simulation_build with
+    match simulation_project with
     | None -> Ok ()
     | Some simulation ->
-      if Elaboration_mode.equal (Build.mode simulation) Simulation
-         && String.equal (Build.project_name simulation) (Build.project_name build)
-         && String.equal (Circuit.name (Build.circuit simulation)) top
+      if Elaboration_mode.equal (Elaborated_project.mode simulation) Simulation
+         && String.equal
+              (Elaborated_project.project_name simulation)
+              (Elaborated_project.project_name elaborated_project)
+         && String.equal (Circuit.name (Elaborated_project.circuit simulation)) top
       then Ok ()
       else
         Or_error.error_string
-          "simulation build must have Simulation mode and the same project and top"
+           "simulation project must have Simulation mode and the same project and top"
   in
 
   (* Synthesis RTL, one file holding the full module hierarchy *)
   let rtl =
-    Rtl.create Verilog [ Build.circuit build ] |> Rtl.full_hierarchy |> Rope.to_string
+    Rtl.create Verilog [ Elaborated_project.circuit elaborated_project ]
+    |> Rtl.full_hierarchy |> Rope.to_string
   in
 
   (* Simulation RTL from its own elaboration; never meant to be compiled with [rtl] *)
   let simulation_rtl =
-    Option.map simulation_build ~f:(fun simulation ->
-      Rtl.create Verilog [ Build.circuit simulation ]
+    Option.map simulation_project ~f:(fun simulation ->
+      Rtl.create Verilog [ Elaborated_project.circuit simulation ]
       |> Rtl.full_hierarchy
       |> Rope.to_string)
   in
@@ -496,7 +500,7 @@ let render
 
   (* TODO (possible optimization): this check runs after both RTL sets are generated; it
      could move to the top, since it needs nothing computed above; *)
-  (* TODO (future fix): this message and the simulation build one above use
+   (* TODO (future fix): this message and the simulation project one above use
      error_string with no fix, against docs/development/comment_guidelines.md section 9; see
      [read_input] for the other messages in this file; *)
   let%bind.Or_error () =
@@ -530,7 +534,7 @@ let render
          path, contents, status))
   in
 
-  (* Files generated from the declaration; simulation/ only with a simulation build *)
+  (* Files generated from the declaration; simulation/ only with a simulation project *)
   let produced =
     [ "src/" ^ source_name, rtl
     ; "src/config.json", json flow_configuration
@@ -573,13 +577,13 @@ let render
   in
 
   (* Only [operation] is used; the adapter is always LibreLane here *)
-  let flow = Build.flow build in
+  let flow = Elaborated_project.flow elaborated_project in
 
   (* Step 7; the manifest without its identity; see the header for why field ORDER
      matters;
 
      pdk_revision: the first view's revision. The [] arm is unreachable in practice, since
-     Resolved_build.validate_capabilities requires the PDK configuration view for every
+     Resolved_flow.validate_capabilities requires the PDK configuration view for every
      operation; if views ever come from different PDK revisions, only the first is kept.
 
      librelane and python are the versions the bundle asks for, NOT versions that ran;
@@ -588,17 +592,17 @@ let render
   let payload =
     assoc
       [ "schema_version", `Int 1
-      ; "project", string (Build.project_name build)
+      ; "project", string (Elaborated_project.project_name elaborated_project)
       ; "top_module", string top
       ; "source_revision", string source_revision
       ; "source_inputs", inputs_json
       ; "files", list file_json files
       ; "synthesis_sources", `List [ string ("src/" ^ source_name) ]
       ; "simulation_sources", `List [ string simulation_source ]
-      ; "resources", list resource_json (Build.resources build)
+      ; "resources", list resource_json (Elaborated_project.resources elaborated_project)
       ; ( "simulation_resources"
-        , Option.value_map simulation_build ~default:(`List []) ~f:(fun simulation ->
-            list resource_json (Build.resources simulation)) )
+        , Option.value_map simulation_project ~default:(`List []) ~f:(fun simulation ->
+            list resource_json (Elaborated_project.resources simulation)) )
       ; ( "target"
         , assoc
             [ "harness", sexp Harness.sexp_of_t resolved.target.harness

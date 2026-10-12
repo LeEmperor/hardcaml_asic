@@ -6,14 +6,14 @@
    decide?";
 
    Nothing in the library calls into this module. A consumer's declaration does:
-   [I] and [O] become the design's own interfaces, so the ports Resolved_build.
+   [I] and [O] become the design's own interfaces, so the ports Resolved_flow.
    validate_interface checks are the ports the design was written against; [overrides]
    builds the Flow.Librelane.Override.t list that Project.create takes as [~flow], where
-   Flow.Librelane.validate checks it and Resolved_build.resolve_settings merges it over
+   Flow.Librelane.validate checks it and Resolved_flow.resolve_settings merges it over
    the derived settings; [synchronised_reset] and [gate] are built inside the design's
    own [create], like any other Hardcaml combinator.
 
-   WHY the overrides are values here rather than settings Resolved_build derives: they
+   WHY the overrides are values here rather than settings Resolved_flow derives: they
    are the pinned template's tuning, not facts the declaration knows. A project that
    disagrees with one replaces it through [overrides] and its own [reason] is what the
    manifest records; a project that disagrees with a derived setting cannot, because
@@ -21,7 +21,7 @@
    values the library chose and which the consumer did.
 
    It does NOT validate anything. A key here is an ordinary override: Flow.Librelane.
-   validate checks its shape at declaration time and Resolved_build.protected_key refuses
+   validate checks its shape at declaration time and Resolved_flow.protected_key refuses
    it if it collides with a derived setting, and both of those run on a library default
    exactly as they would on a consumer's. It does NOT know the die, the clock or the
    pinout either; those come from Target, Clock and Pinout.
@@ -39,13 +39,13 @@ let template_revision = "b86a2a781484bcab7ba522dc5de540086695a430"
 
 (* The Tiny Tapeout user-module inputs; the TT template's ports, in its order;
 
-   Resolved_build.expected_inputs is the same list of (name, width) pairs, and
-   Resolved_build.validate_interface refuses anything else, so this is not a convenience
+   Resolved_flow.expected_inputs is the same list of (name, width) pairs, and
+   Resolved_flow.validate_interface refuses anything else, so this is not a convenience
    spelling of the ports, it is the only spelling that resolves.
 
    Careful: [ena] and [rst_n] are phantom inputs for a design that ignores them. They are
    still ports of the emitted wrapper, and a timing delay may be declared on them; see
-   Resolved_build.ports.
+   Resolved_flow.ports.
 *)
 module I = struct
   type 'a t =
@@ -59,7 +59,7 @@ module I = struct
 end
 
 (* The Tiny Tapeout user-module outputs; fixed the same way [I] is, and checked against
-   Resolved_build.expected_outputs;
+   Resolved_flow.expected_outputs;
 *)
 module O = struct
   type 'a t =
@@ -83,7 +83,7 @@ let reason why = why ^ "; ttihp-verilog-template " ^ template_revision
 
    The template's four other settings are absent because the declaration owns them:
    CLOCK_PORT and CLOCK_PERIOD come from the project's Clock and are protected keys,
-   FP_SIZING and RUN_LINTER are Resolved_build Default settings an override may replace.
+   FP_SIZING and RUN_LINTER are Resolved_flow Default settings an override may replace.
 
    Values are exactly the template's. The two KLayout settings are the only ones this
    library keeps as a decision of its own rather than an inherited value, and their

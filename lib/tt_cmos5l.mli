@@ -13,7 +13,7 @@
    synchronised_reset   the TT wrapper's reset idiom, with [gate] for the pads
    v}
 
-   {!I} and {!O} are exactly the ports {!Resolved_build} checks a design against, so a
+   {!I} and {!O} are exactly the ports {!Resolved_flow} checks a design against, so a
    design built on them cannot fail that check. {!overrides} returns the template's raw
    LibreLane settings as {!Flow.Librelane.Override.t} values, each carrying a [reason]
    that says what the setting does and where the value came from; the consumer's own
@@ -21,7 +21,7 @@
 
    It does NOT decide anything about a design: the top module name, geometry, clock,
    pinout, timing, resource policy and source inputs are the project's. It does NOT
-   relax the protected settings either; {!Resolved_build} still refuses an override of
+   relax the protected settings either; {!Resolved_flow} still refuses an override of
    CLOCK_PERIOD, VERILOG_FILES, DIE_AREA and the rest, whether the override came from a
    consumer or from {!overrides}. Nothing here is a functor or a module type to satisfy:
    a design picks up the ports with two aliases and instantiates its core itself, so a
@@ -37,14 +37,14 @@ open! Hardcaml
 val template_revision : string
 
 (** The Tiny Tapeout user-module inputs, in the order the TT template declares them.
-    Fixed by Tiny Tapeout: {!Resolved_build} refuses to emit a design whose top level has
+    Fixed by Tiny Tapeout: {!Resolved_flow} refuses to emit a design whose top level has
     any other input port, width or direction. *)
 module I : sig
   type 'a t =
     { ui_in : 'a [@bits 8] (** Dedicated input pins. *)
     ; uio_in : 'a [@bits 8] (** Bidirectional pins, as seen by the design. *)
     ; ena : 'a (** High while this design is the one selected on the die. *)
-    ; clk : 'a (** The one primary clock; {!Resolved_build} requires this name. *)
+    ; clk : 'a (** The one primary clock; {!Resolved_flow} requires this name. *)
     ; rst_n : 'a (** Active low reset from the harness, NOT synchronised. *)
     }
   [@@deriving hardcaml]
@@ -68,7 +68,7 @@ end
     list a project passes with {!overrides} rather than editing a copy of this one. The
     template's other settings are not here because the declaration derives them:
     CLOCK_PORT and CLOCK_PERIOD from the clock, FP_SIZING and RUN_LINTER as
-    {!Resolved_build} defaults. *)
+    {!Resolved_flow} defaults. *)
 val template_overrides : Flow.Librelane.Override.t list
 
 (** [overrides ()] is {!template_overrides}; [overrides ~extra ()] is
@@ -77,7 +77,7 @@ val template_overrides : Flow.Librelane.Override.t list
     defaults instead of replacing them, which is how a project asks LibreLane for its own
     value of a setting the template pins.
 
-    Order is not meaningful: {!Resolved_build} sorts the resolved settings by key.
+    Order is not meaningful: {!Resolved_flow} sorts the resolved settings by key.
 
     Raises, naming the keys, if [without] names a key that is not a template default (so
     a typo cannot silently leave the default in place), or if [without] and [extra] name

@@ -7,8 +7,9 @@
    Elaboration_context.register_exn builds one per registered resource, after
    Resource_policy.lookup, Selection.select and Elaboration_context.sources_of have each
    made their decision, and keeps it in the context keyed by identity.
-   Elaboration_context.Private.finalize hands the records over, and Build.Private.create
-   sorts them by Resource_id.compare into the build's inventory (Build.resources);
+   Elaboration_context.Private.finalize hands the records over, and
+   Elaborated_project.Private.create sorts them by Resource_id.compare into the
+   elaborated project's inventory (Elaborated_project.resources);
 
    It does NOT make any of those decisions or check that they agree with each other; the
    policy, the selection and the mode own them, and this module only writes them down.
@@ -53,7 +54,7 @@ module Elaborated_as = struct
   [@@deriving compare, equal, sexp_of]
 end
 
-(* One entry in the build's inventory;
+(* One entry in the elaborated project's inventory;
 
    id            : the resource's identity, its scope path plus name;
    request       : what the design asked for, kind plus contract;

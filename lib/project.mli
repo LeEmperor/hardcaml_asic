@@ -10,13 +10,13 @@
                               -> run the design constructor; resources register and
                                  select implementations (selection failures raise here)
                               -> finalize: validate collected state, close the context
-                              -> immutable Build.t
+                              -> immutable Elaborated_project.t
    v}
 
    Elaboration never invokes an external tool. Each call is independent: a failed
    elaboration leaves nothing behind for the next one. [elaborate_for_flow]
    applies target, interface, constraint, and adapter validation to an
-   implementation build before flow emission.
+   implementation elaboration before flow emission.
 *)
 
 open! Core
@@ -77,10 +77,11 @@ val create
 (* Of a type t, retrieve a string to be used as a name; *)
 val name : t -> string
 
-(* Of a type t, retrieve an elaboration mode item and return a build error shape; *)
-val elaborate : t -> mode:Elaboration_mode.t -> Build.t Or_error.t
+(** Elaborate the design in the selected mode, retaining its intent and resources.
+    Returns an elaborated Hardcaml circuit, not a synthesis result. *)
+val elaborate : t -> mode:Elaboration_mode.t -> Elaborated_project.t Or_error.t
 
 (** Elaborate the selected implementation and validate the TT/LibreLane target,
     wrapper, timing, metadata, and configuration before emission. *)
-val elaborate_for_flow : ?inputs:Target.Inputs.t -> t -> Resolved_build.t Or_error.t
+val elaborate_for_flow : ?inputs:Target.Inputs.t -> t -> Resolved_flow.t Or_error.t
 [@@@ocamlformat "enable"]

@@ -7,8 +7,8 @@
    Project.elaborate takes it as [~mode] and hands it to
    Elaboration_context.Private.create, which keeps it for the whole run.
    Elaboration_context.sources_of matches on it to decide what each registered resource
-   is elaborated as and which sources it carries, and Build records it so a finished
-   build says which mode produced it;
+   is elaborated as and which sources it carries, and Elaborated_project records it so a
+   finalized project says which mode produced it;
 
    It does NOT change selection. Selection runs the same way in both modes, so a policy
    that cannot be satisfied fails before any simulation result can be mistaken for an

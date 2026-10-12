@@ -137,8 +137,8 @@ let project
     ()
 ;;
 
-let print_inventory build =
-  List.iter (Build.resources build) ~f:(fun (r : Resource_record.t) ->
+let print_inventory elaborated_project =
+  List.iter (Elaborated_project.resources elaborated_project) ~f:(fun (r : Resource_record.t) ->
     print_s
       [%message
         ""

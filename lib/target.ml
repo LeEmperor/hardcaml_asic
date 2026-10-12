@@ -7,9 +7,9 @@
 
    The declaration is two separately selected axes, a harness and a technology, handed to
    Project.create as one record. Project.elaborate takes [technology] out of it to create
-   the Elaboration_context, and Build carries the whole record through. Only
-   Project.elaborate_for_flow goes further: Resolved_build.resolve calls [resolve] on
-   Build.target, and the Resolved.t it gets back supplies the target owned LibreLane
+   the Elaboration_context, and Elaborated_project carries the whole record through. Only
+   Project.elaborate_for_flow goes further: Resolved_flow.resolve calls [resolve] on
+   Elaborated_project.target; its Resolved.t supplies the target owned LibreLane
    settings (die area, floorplan, power pins, routing layer) and the references Bundle
    writes into its manifest;
 
@@ -20,7 +20,7 @@
 
    It does NOT open, fetch or hash any file; paths and hashes are recorded as given, and
    checking them against a real checkout is P4 preflight. It does NOT look at the design
-   either; TT top-level ports, metadata, pinout and timing are Resolved_build's job.
+   either; TT top-level ports, metadata, pinout and timing are Resolved_flow's job.
    Project.create still does not check the pair (see its TODO), so an unsupported pair is
    only caught when someone asks for a flow.
 *)
@@ -128,7 +128,7 @@ end
                             [support_tools_revision];
    technology_views       : the PDK views to reference, relative to the PDK checkout;
    constraints            : the timing and drive environment Bundle.sdc renders and
-                            Resolved_build emits configuration keys for; read off the
+                            Resolved_flow emits configuration keys for; read off the
                             PDK's own standard-cell LibreLane configuration at
                             [pdk_revision], see Technology.Cmos5l.Constraints;
 
@@ -190,7 +190,7 @@ end
    views                    : every PDK view, in the order Inputs listed them;
    constraints              : the checked timing and drive environment, copied from
                               Inputs; Bundle.sdc renders it into constraints/top.sdc and
-                              Resolved_build derives the matching LibreLane settings;
+                              Resolved_flow derives the matching LibreLane settings;
 
    Careful: only [resolve] builds one in this library, but the mli does NOT make the type
    private, so a Resolved.t built by hand skips every check in this module.
@@ -439,7 +439,7 @@ let validate_inputs (inputs : Inputs.t) =
 
 (* The main sauce here for targets; given a declared pair, return its resolved target, or
    say why the pair or its inputs cannot be resolved; returns Or_error rather than raising
-   since Resolved_build.resolve binds it ahead of its own checks, long after design
+   since Resolved_flow.resolve binds it ahead of its own checks, long after design
    construction, so there is an Or_error chain to join;
 
    Harness            Technology                        Inputs     Result
@@ -449,7 +449,7 @@ let validate_inputs (inputs : Inputs.t) =
 
    [inputs] defaults to [Inputs.reference_cmos5l_6x4]; a caller only passes it to pin
    different revisions, and it reaches here from Project.elaborate_for_flow through
-   Resolved_build.resolve. Inputs are only validated once the pair is supported, so an
+   Resolved_flow.resolve. Inputs are only validated once the pair is supported, so an
    unsupported pair reports that alone, even when [inputs] is broken too.
 
    Why the name AND the empty mapping list: Technology.t is private and create_exn

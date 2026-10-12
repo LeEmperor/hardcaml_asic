@@ -1,7 +1,7 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
 (* Module: "test_lifecycle.ml" *)
-(* P0.1, P0.2, P0.4: declaration to finalized build, registration identity and ordering,
+(* P0.1, P0.2, P0.4: declaration to elaborated project, registration identity and ordering,
    and closing the context. *)
 
 open! Core
@@ -13,9 +13,9 @@ let elaborate ?(mode = Elaboration_mode.Implementation) project =
   Project.elaborate (ok_exn project) ~mode
 ;;
 
-let%expect_test "declaration to finalized implementation build" =
-  let build = elaborate (Fixture.project ()) |> ok_exn in
-  print_s [%sexp (build : Build.t)];
+let%expect_test "declaration to finalized implementation project" =
+  let elaborated_project = elaborate (Fixture.project ()) |> ok_exn in
+  print_s [%sexp (elaborated_project : Elaborated_project.t)];
   [%expect
     {|
     ((project_name fixture)
@@ -68,8 +68,8 @@ let%expect_test "declaration to finalized implementation build" =
 ;;
 
 let%expect_test "simulation mode elaborates behavioural models and simulates" =
-  let build = elaborate ~mode:Simulation (Fixture.project ()) |> ok_exn in
-  List.iter (Build.resources build) ~f:(fun r ->
+  let elaborated_project = elaborate ~mode:Simulation (Fixture.project ()) |> ok_exn in
+  List.iter (Elaborated_project.resources elaborated_project) ~f:(fun r ->
     print_s
       [%message
         ""
@@ -82,7 +82,7 @@ let%expect_test "simulation mode elaborates behavioural models and simulates" =
     (right/buf Behavioral_model (Generated_behavioral_model))
     (status Behavioral_model (Generated_behavioral_model))
     |}];
-  let sim = Cyclesim.create (Build.circuit build) in
+  let sim = Cyclesim.create (Elaborated_project.circuit elaborated_project) in
   Cyclesim.in_port sim "d" := Bits.of_int_trunc ~width:8 0x5a;
   Cyclesim.cycle sim;
   print_s [%message "" ~status:(!(Cyclesim.out_port sim "status") : Bits.t)];
@@ -93,7 +93,7 @@ let%expect_test "identities and inventory order do not depend on registration or
   let inventory order =
     elaborate (Fixture.project ~design:(Fixture.design ~order ()) ())
     |> ok_exn
-    |> Build.resources
+    |> Elaborated_project.resources
   in
   let forward = inventory `Forward in
   require_equal
@@ -126,7 +126,7 @@ let%expect_test "duplicate names in one scope are rejected" =
            : Signal.t))
       ()
   in
-  print_s [%sexp (elaborate (Fixture.project ~design ()) : Build.t Or_error.t)];
+  print_s [%sexp (elaborate (Fixture.project ~design ()) : Elaborated_project.t Or_error.t)];
   [%expect
     {|
     (Error (
@@ -142,7 +142,7 @@ let%expect_test "duplicate names in one scope are rejected" =
 let%expect_test "a retained context cannot register after finalization" =
   let retained = ref None in
   let design = Fixture.design ~before:(fun context -> retained := Some context) () in
-  let build = elaborate (Fixture.project ~design ()) |> ok_exn in
+  let elaborated_project = elaborate (Fixture.project ~design ()) |> ok_exn in
   let context = Option.value_exn !retained in
   require_does_raise (fun () ->
     Fixture.Store.create
@@ -151,7 +151,7 @@ let%expect_test "a retained context cannot register after finalization" =
       ~clock:(Signal.input "clock" 1)
       (Signal.input "d" 8));
   require_does_raise (fun () -> Elaboration_context.scope context);
-  print_s [%sexp (List.length (Build.resources build) : int)];
+  print_s [%sexp (List.length (Elaborated_project.resources elaborated_project) : int)];
   [%expect
     {|
     ("elaboration context is closed; each elaboration uses a fresh context"
@@ -175,7 +175,8 @@ let%expect_test "failed construction is closed and a retry starts clean" =
       ()
   in
   let project = Fixture.project ~design () |> ok_exn in
-  print_s [%sexp (Project.elaborate project ~mode:Implementation : Build.t Or_error.t)];
+  print_s
+    [%sexp (Project.elaborate project ~mode:Implementation : Elaborated_project.t Or_error.t)];
   [%expect
     {|
     (Error (
@@ -197,9 +198,9 @@ let%expect_test "failed construction is closed and a retry starts clean" =
      (state     Failed))
     |}];
   fail := false;
-  let build = Project.elaborate project ~mode:Implementation |> ok_exn in
+  let elaborated_project = Project.elaborate project ~mode:Implementation |> ok_exn in
   require (not (phys_equal (Option.value_exn !retained) failed_context));
-  Fixture.print_inventory build;
+  Fixture.print_inventory elaborated_project;
   [%expect
     {|
     (left/buf Default ((implementation Flops) (reason Explicit_flops)))
@@ -220,9 +221,9 @@ let%expect_test "a registration failure caught by the design still fails elabora
     with
     | _ -> ()
   in
-  (* Swallowed after every resource registered: finalization refuses the build. *)
+  (* Swallowed after every resource registered: finalization refuses the elaboration. *)
   let design = Fixture.design ~after:swallow_duplicate () in
-  print_s [%sexp (elaborate (Fixture.project ~design ()) : Build.t Or_error.t)];
+  print_s [%sexp (elaborate (Fixture.project ~design ()) : Elaborated_project.t Or_error.t)];
   [%expect
     {|
     (Error (
@@ -239,7 +240,7 @@ let%expect_test "a registration failure caught by the design still fails elabora
         swallow_duplicate context)
       ()
   in
-  print_s [%sexp (elaborate (Fixture.project ~design ()) : Build.t Or_error.t)];
+  print_s [%sexp (elaborate (Fixture.project ~design ()) : Elaborated_project.t Or_error.t)];
   [%expect
     {|
     (Error (
@@ -260,7 +261,7 @@ let%expect_test "a scope from another elaboration is rejected" =
           (Elaboration_context.in_scope context (Scope.create ()) : Elaboration_context.t))
       ()
   in
-  print_s [%sexp (elaborate (Fixture.project ~design ()) : Build.t Or_error.t)];
+  print_s [%sexp (elaborate (Fixture.project ~design ()) : Elaborated_project.t Or_error.t)];
   [%expect
     {|
     (Error (

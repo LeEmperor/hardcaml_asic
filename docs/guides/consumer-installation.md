@@ -6,6 +6,14 @@ and uses modules such as `Hardcaml_asic.Project` and
 `Hardcaml_asic.Single_port_ram`. The generated [`hardcaml_asic.opam`](../../hardcaml_asic.opam)
 lists the library's OCaml dependencies. Registry publication is unnecessary.
 
+Before adopting the current development provider, apply the
+[source-breaking API migration](../phase_plan.md#public-api-rename-migration-and-evidence):
+`Build` → `Elaborated_project`, `Resolved_build` → `Resolved_flow`, resolved
+field `build` → `elaborated_project`, and `Bundle.render ?simulation_build` →
+`?simulation_project`. There are no aliases. The FIFO specimen is migrated;
+`hardcaml_protemu` still requires separate migration before adopting this provider.
+This checkpoint publishes no new release or dependency pin.
+
 ## Pin the library source
 
 Choose a full commit hash containing the package files and record it in the

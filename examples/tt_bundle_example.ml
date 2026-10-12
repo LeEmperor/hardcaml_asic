@@ -135,12 +135,12 @@ let () =
   let source_root = if Array.length argv = 4 then argv.(3) else "." in
   let project = project kind in
   let resolved = Project.elaborate_for_flow project |> Or_error.ok_exn in
-  let simulation_build =
+  let simulation_project =
     Project.elaborate project ~mode:Simulation |> Or_error.ok_exn
   in
   let bundle =
     Bundle.render
-      ~simulation_build
+      ~simulation_project
       ~source_root
       ~input_paths:(source_inputs source_root)
       resolved

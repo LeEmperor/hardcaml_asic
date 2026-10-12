@@ -5,8 +5,8 @@
    late may a signal arrive at an input, or leave an output, relative to the clock?";
 
    Project.create takes it through its optional [timing] argument, defaulting to [empty],
-   and does NOT check it; Build carries it through unchanged;
-   Resolved_build.validate_timing checks every delay against the elaborated ports and
+   and does NOT check it; Elaborated_project carries it through unchanged;
+   Resolved_flow.validate_timing checks every delay against the elaborated ports and
    converts it to nanoseconds, sorted by port; Bundle.sdc renders those into one
    "set_input_delay" or "set_output_delay" line each in constraints/top.sdc.
 
@@ -37,7 +37,7 @@ open! Core
 
    Careful: nothing here checks [port], [minimum] or [maximum]. A delay on "ui_in" placed
    in [output_delays], a negative [maximum], or a [minimum] above [maximum], builds fine
-   and ends up in the build as is; all are caught by Resolved_build.validate_timing,
+   and enters the elaborated project as is; all are caught by Resolved_flow.validate_timing,
    before flow emission.
 *)
 module Delay = struct
@@ -59,7 +59,7 @@ end
    as a plain record literal -> see examples/tt_bundle_example.ml.
 
    Two lists rather than one list tagged with a direction on purpose: the direction is
-   stated once by which field a delay sits in, and Resolved_build.validate_timing checks
+   stated once by which field a delay sits in, and Resolved_flow.validate_timing checks
    each list against the ports of that direction only, so a delay in the wrong list is
    reported as naming no such port.
 

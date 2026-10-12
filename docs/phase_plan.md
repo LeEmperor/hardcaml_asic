@@ -1,7 +1,7 @@
 # hardcaml_asic phase plan
 
-Current checkpoint: 2026-10-12 Resolved_build interface hardening after documentation
-consolidation and core review.
+Current checkpoint: 2026-10-12 public API rename implemented and active documentation
+migrated, following Resolved_build interface hardening and the controlled-FIFO specimen.
 This is the **only active queue**. [Architecture](architecture.md) owns boundaries;
 [P6 details](development/p6-implementation-plan.md) retain the detailed specification
 and exact delivery evidence. Proposed new work below awaits design discussion.
@@ -10,20 +10,24 @@ and exact delivery evidence. Proposed new work below awaits design discussion.
 
 1. Resolved-build boundary hardening is implemented with the recorded
    [acceptance evidence below](#resolved-build-boundary-hardening-evidence).
-2. Next agreed work: settle the controlled-FIFO contract in `hardcaml_asic_example`
-   and concrete provider observation examples for runs/operations/steps/results.
-   These precede broader P6 identity/installation work.
-3. After that agreement, scaffold the independent Dune consumer and prove the
-   LibreLane seam; follow the dependencies below for subsequent P6 work. The
-   example is currently empty; no provider pin is chosen.
+2. The [independent Dune specimen](../../hardcaml_asic_example/README.md) delivers
+   the fixed FIFO contract/core, scoreboard, TT wrapper/declaration and emitter,
+   with [PDK-free acceptance evidence below](#controlled-fifo-development-specimen-evidence).
+   It remains an unpinned development consumer, migrated to the renamed API.
+   Read the [source-breaking migration and rename evidence](#public-api-rename-migration-and-evidence)
+   before adopting this provider.
+3. Next agreed work: concrete provider observation contract examples for
+   runs/operations/steps/results, then prove the LibreLane seam; follow the
+   dependencies below for subsequent P6 identity/installation work.
 
 This queue records future ordering, not authorization to proceed beyond the
-current boundary-hardening task.
+current bounded review/documentation slice.
 
 The earlier blanket "finish P6, then migrate scaf" queue is superseded. Do not
 execute archived handoff prompts. No feature, source stamp, specimen, observation
 contract or new test pass was claimed by the earlier documentation-only checkpoint.
-FIFO contracts/scaffolding and provider examples remain unimplemented here.
+The subsequent FIFO delivery is recorded below; provider examples remain
+unimplemented.
 
 ## Status and preserved history
 
@@ -42,9 +46,11 @@ FIFO contracts/scaffolding and provider examples remain unimplemented here.
 | ASIC T.1 | Open, independent toolchain follow-up | Scope below |
 | Provider observation | Proposed, not implemented | [Architecture](architecture.md#8-provider-observation-direction) |
 | Resolved-build boundary hardening | Implemented; full runtest passes | [Evidence below](#resolved-build-boundary-hardening-evidence) |
+| Public API rename | Implemented; provider and FIFO acceptance passed, active documentation migrated | [Migration and evidence below](#public-api-rename-migration-and-evidence) |
+| Controlled-FIFO development specimen | Contract/core, scoreboard, TT wrapper/declaration and emitter delivered; unpinned, PDK-free acceptance | [Evidence below](#controlled-fifo-development-specimen-evidence), [consumer README](../../hardcaml_asic_example/README.md) |
 
-The source-review baseline is clean ASIC `f6e8fd7` before these documentation
-edits. Workbench has owner changes in its active architecture and construction
+The earlier source-review baseline was clean ASIC `f6e8fd7` before documentation
+consolidation. Workbench has owner changes in its active architecture and construction
 plan; those files are not modified here. Its P0–P7 numbering is independent.
 
 Historical task text remains in the archive rather than being rewritten to match
@@ -56,9 +62,9 @@ current `Timing.Delay` and rendering support both minimum and maximum. The
 
 Recommendation for discussion: **bounded hardening, not a P0–P5 rewrite**.
 
-- Keep immutable project/build/bundle separation, explicit resource policy,
+- Keep declaration/elaborated-project/resolved-flow/bundle separation, explicit resource policy,
   deterministic identities, behavioral/flop conformance and ordinary CLI operation.
-- Implemented `Resolved_build.mli`: only resolution constructs a resolved build.
+- Implemented `Resolved_flow.mli`: only resolution constructs a resolved flow.
   An external consumer can inspect/use results but cannot construct or update
   them; both existing example bundles remain byte-identical to the pre-change
   emitter for identical inputs. Invalid target/timing/override tests still pass.
@@ -69,11 +75,16 @@ Recommendation for discussion: **bounded hardening, not a P0–P5 rewrite**.
   preserving the current CLI and report/archive acceptance tests. Do not first
   rewrite the whole runner or generalize every target/resource API.
 
-This bounded interface slice is delivered, without changing historical M3 or P6
-completion criteria. FIFO contract/provider examples are the next agreed work;
-no FIFO, provider observation or P6 implementation is included.
+The bounded interface slice and subsequent FIFO specimen are delivered, without
+changing historical M3 or P6 completion criteria. Provider observation contract
+examples remain next work; no provider observation or further P6 implementation
+is included.
 
 ### Resolved-build boundary-hardening evidence
+
+Historical names and commands in this record are preserved as executed. The
+subsequent [API migration](#public-api-rename-migration-and-evidence) gives current
+module and checker paths; it does not retroactively rename this hardening pass.
 
 2026-10-12, starting from clean `main` at `12a428b`:
 
@@ -147,6 +158,129 @@ not freeze exposed Hardcaml circuit internals. Target references are not checked
 against physical files. No EDA flow, fresh physical run, shared installation or
 installed-release completion is claimed. Historical IDs and gates below remain.
 
+### Controlled-FIFO development-specimen evidence
+
+2026-10-12, preceding sequential implementation/acceptance passes, using explicit
+`OCAMLPATH=/home/wayne/devel/jane/hardcaml_asic/_build/install/default/lib` to
+select the hardened public development tree:
+
+- In the example, `dune build @all`, `dune runtest --force` and
+  `dune build @acceptance-strict --force` passed. Core and TT wrapper each passed
+  7,330 directed and 20,017 seeded/reset/drain edges; public resolution passed.
+  Earlier core seed 42 with 100,000 traffic cycles passed 100,018 total edges.
+- Actual emitted synthesis and simulation RTL were compiled separately; each
+  passed 11,429 edges (7,330 directed plus seed 20261012 with 4,096 traffic cycles
+  and reset/drain) and rejected a deliberately corrupted expected response.
+- Bundle repeat bytes, inventory/hashes/config/SDC, two dirty-source probes and
+  five failure cases passed. Temporary fixture checks assert both author and
+  committer `Bundle test <bundle@test.invalid>`, message `baseline`, and no remotes.
+- This bounded source review found no substantial defect in full old-head
+  replacement, empty no-bypass, disabled reset priority, pre-/post-edge sampling,
+  independent list-based scoring, emitted-RTL replay or fixture attribution.
+  Already-passing suites were not repeated for this documentation slice.
+
+See the [consumer README](../../hardcaml_asic_example/README.md) for the delivered
+contract, pin map, commands and acceptance details. Owner initial ref
+`8e4577f6c72cc689cbc92daeb5f8ae083cf970e0` now exists. That ref alone proves neither
+a clean working tree nor a dependency pin. The acceptance above used an explicit
+synthetic fixture source root; genuine example-root emission acceptance has not
+been recorded here. A committed dependency pin remains absent.
+This evidence establishes an unpinned development specimen, not source-artifact
+identity, independent installed/pinned-provider acceptance or physical acceptance.
+Provider observation contract examples and ASIC P6 gates remain open.
+
+### Public API rename: migration and evidence
+
+2026-10-12, subsequent bounded rename and consumer migration:
+
+| Previous OCaml API | Current OCaml API |
+| --- | --- |
+| `Build` | `Elaborated_project` |
+| `Resolved_build` | `Resolved_flow` |
+| Resolved record field `build` | `elaborated_project` |
+| `Bundle.render ?simulation_build` | `Bundle.render ?simulation_project` |
+
+This is **source-breaking, with no compatibility aliases**. `Project.elaborate`
+and `Project.elaborate_for_flow` keep their names, as does `Target.Resolved`.
+`Elaborated_project.t` remains abstract; `Resolved_flow.t`, `Resolved_flow.Setting.t`
+and `Resolved_flow.Delay_ns.t` remain private records. The lifecycle is declaration
+→ elaborated project (Hardcaml circuit plus metadata, intent and resources, no
+synthesis) → resolved flow (validated concrete TT/LibreLane facts plus that
+elaborated project) → bundle → separate execution.
+
+True emitted build/bundle/run identities and persisted `identity`, `build_identity`,
+schema, field ordering and hashing remain unchanged. Workbench's build/run identity
+types describe different concepts and are untouched. Source moves or revisions
+legitimately change provenance; byte-equality evidence below holds both executable
+inputs to the **same source bytes, paths, revision and state**.
+
+Current source navigation: [`elaborated_project.mli`](../lib/elaborated_project.mli),
+[`resolved_flow.mli`](../lib/resolved_flow.mli),
+[`test_resolved_flow.ml`](../test/test_resolved_flow.ml), and
+[`check_resolved_flow_api.py`](../test/check_resolved_flow_api.py).
+The current external checker command is
+`python3 test/check_resolved_flow_api.py --baseline-emitter PATH`.
+Old commands, hashes, task IDs and hardening names above and in the historical
+archive remain evidence of their original passes, not current command instructions.
+
+Recorded completed acceptance from the implementation passes (not rerun for this
+documentation review):
+
+- Provider `dune build @all @install`, focused OCaml tests, the independent public
+  consumer and eight private-API rejection cases passed. Full `dune runtest --force`
+  passed: 96 Python tests, OCaml tests and four Icarus simulations.
+- Saved pre-rename provider emitter
+  `/tmp/opencode/api-slice1-baseline-6lta960s/provider-prechange.exe`, SHA-256
+  `f61dcc698f74bf7d88f62f10c1420e9a6f700944b05412d4d5d13c529881b948`,
+  versus the independently built new consumer: all 43 files byte-identical for
+  each observable/memory bundle on the same input snapshot. Source-token comparison
+  with the original snapshot found only intended identifiers, comments, whitespace
+  and simulation-build diagnostic wording; persisted serialization was unchanged.
+- FIFO migrated `bin/emit_bundle.ml`, `asic_test/resolution_test.ml`, README and
+  optional acceptance `--baseline-emitter`. With explicit
+  `OCAMLPATH=/home/wayne/devel/jane/hardcaml_asic/_build/install/default/lib`,
+  `dune build @all`, `dune runtest --force`, `dune build @acceptance-strict --force`
+  and the baseline comparison passed. Core and wrapper each passed 7,330 directed
+  plus 20,017 seeded edges. Separately compiled synthesis/simulation RTL each
+  passed 11,429 edges and rejected a corrupted oracle.
+- Saved FIFO emitter
+  `/tmp/opencode/api-slice1-baseline-6lta960s/fifo-prechange.exe`, SHA-256
+  `6110e955119d0d0b9c78bfd2435a862d2ec58ff5b8f82fcddc61c1ef23609ed1`,
+  was hash-verified before execution. Old/new emitters used the same synthetic
+  fixture, with author and committer `Bundle test <bundle@test.invalid>`.
+  All 18 files, including manifest, were byte-identical: each generated RTL file
+  11,851 bytes, config 1,343, SDC 1,275 and info.yaml 1,656.
+  Fixture revision: `773f9511eb48414cc87399adcb3ebedcd02a3f94`;
+  bundle identity: `41094b14026bb8040fc82ad9d59de38325e1b06bfe8a864573b00b179291310f`.
+  These identify the tested snapshot, not a published release or pin.
+
+Independent consistency review of the renamed library and current FIFO source
+found no functional rename defect: resolution still gates rendering, simulation
+is elaborated separately, and serialization/identity handling retains its existing
+meaning. Existing limitations of the conventional `Private.create` and exposed
+Hardcaml circuit internals remain as described in the architecture.
+One pre-existing comment typo remains at `lib/project.ml`'s Private-convention
+explanation (`Built.t`); it is not a public type or compatibility alias.
+
+Final read-only review checks: 41 Markdown files and 369 local link destinations,
+no broken anchors on available files and no whitespace errors in the ten changed
+documents. The 39 unavailable link occurrences all refer to historical scaf
+material. Archive edits change only link destinations (eight moved-source links
+and one renamed heading anchor); labels, prose, commands and hashes are preserved.
+Active old-API matches are historical hardening records, explicit migration notes
+or ordinary English, not stale current instructions. Independent token comparison
+of all 33 library OCaml files against the saved original confirms only the intended
+identifier/diagnostic changes after excluding comments and whitespace. Migrated
+FIFO OCaml tokens likewise match; its core, wrapper, scoreboard and other baseline
+files retain their bytes. All 2,535 baseline-tracked flow, script, evidence,
+experiment, toolchain and package/dependency files checked retain their SHA-256.
+This final slice changes documentation only and reruns no build or test suite.
+
+**External migration blocker:** `hardcaml_protemu` still uses `Build` and
+`simulation_build`. It requires a separate source migration before adopting this
+provider. Its source and dependency pin have not been changed. No published
+release/pin, genuine example-root emission or physical acceptance is claimed.
+
 ## ASIC P6 — Shared tooling distribution
 
 Keep existing IDs. The detailed acceptance matrix and original commands are in
@@ -213,7 +347,7 @@ Include inherited timing and equal-valued new measurements with different origin
 | Milestone | Genuine blockers |
 | --- | --- |
 | Contract fixtures, Workbench reducers/window behavior | Agreed identity/state examples; not P6 completion or a real EDA environment |
-| Example Dune/design/unit tests | FIFO behavior, installed OCaml dependencies and chosen development library resolution; no PDK required |
+| Example Dune/design/unit tests | Delivered against explicitly selected hardened development library; no PDK required; dependency pin remains absent |
 | Early discovery and coarse live progress | Catalog/correlation/durable outer observation |
 | Truthful internal progress | Demonstrated LibreLane seam; file absence alone is insufficient |
 | Intermediate timing/resources | Step-aware extraction, producer provenance and complete snapshot publication |
@@ -249,7 +383,8 @@ no shared venv patch or silent baseline pin advance.
 Keep completed IDs and evidence links stable. Add acceptance to the owning task
 when work lands; do not create another session handoff/status queue. Ordinary
 tests stay PDK-free; physical acceptance is explicit and separately recorded.
-New provider phases and the first example implementation await this design review.
+Provider observation contract examples remain next work; the first FIFO example
+implementation is delivered. This review stops before provider features or ASIC P6.
 
 ### Consolidation verification
 

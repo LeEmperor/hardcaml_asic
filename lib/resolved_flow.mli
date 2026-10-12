@@ -1,6 +1,6 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
-(* Module: "resolved_build.mli" *)
+(* Module: "resolved_flow.mli" *)
 (* Validated TT/LibreLane resolution results for Bundle and design observers.
 
    Only [resolve], also called by Project.elaborate_for_flow, constructs a result.
@@ -9,7 +9,7 @@
 
    Resolution checks the target first, then combines wrapper port, submission metadata,
    pinout and implementation capability diagnostics in one stage. Timing is checked
-   next, followed by settings and protected overrides. It relies on Build's
+   next, followed by settings and protected overrides. It relies on Elaborated_project's
    declaration/elaboration invariants; it does not freeze Hardcaml circuit internals
    or verify external target files. Bundle owns emission.
 *)
@@ -50,7 +50,8 @@ end
 (** Read-only resolution facts. Subordinate target and clock records can be copied,
     but copies cannot be inserted into this private record. *)
 type t = private
-  { build : Build.t (** Implementation build supplied to resolution. *)
+  { elaborated_project : Elaborated_project.t
+    (** Implementation elaboration supplied to resolution, retained unchanged. *)
   ; target : Target.Resolved.t (** Checked, pinned target references. *)
   ; clock : Clock.t (** The sole primary clock, on [clk]. *)
   ; clock_period_ns : float (** Clock period converted to nanoseconds. *)
@@ -60,11 +61,11 @@ type t = private
   ; settings : Setting.t list (** Merged assignments sorted by unique key. *)
   }
 
-(** Resolve an implementation build; defaults to {!Target.Inputs.reference_cmos5l_6x4}.
+(** Resolve an implementation elaboration; defaults to {!Target.Inputs.reference_cmos5l_6x4}.
     Returns an error on unsupported targets, missing capabilities, invalid wrapper,
     metadata, pinout or timing, or overrides of protected facts. No files are read.
     A failure stops subsequent validation stages; no partial result is returned. *)
-val resolve : ?inputs:Target.Inputs.t -> Build.t -> t Or_error.t
+val resolve : ?inputs:Target.Inputs.t -> Elaborated_project.t -> t Or_error.t
 
 (** Required TT input names and widths, including phantom inputs. *)
 val expected_inputs : (string * int) list
@@ -76,5 +77,5 @@ val expected_outputs : (string * int) list
 val protected_key : string -> bool
 
 (** Check implementation mode, required technology views and resource source support.
-    Useful for capability diagnostics; success does not construct a resolved build. *)
-val validate_capabilities : Build.t -> Target.Resolved.t -> unit Or_error.t
+    Useful for capability diagnostics; success does not construct a resolved flow. *)
+val validate_capabilities : Elaborated_project.t -> Target.Resolved.t -> unit Or_error.t

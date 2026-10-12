@@ -196,7 +196,7 @@ let%expect_test "the constraint environment reaches the settings as target facts
         [%sexp
           (List.find_exn resolved.settings ~f:(fun setting ->
              String.equal setting.key key)
-           : Resolved_build.Setting.t)]);
+           : Resolved_flow.Setting.t)]);
   [%expect
     {|
     ((key   SYNTH_DRIVING_CELL)
@@ -223,7 +223,7 @@ let%expect_test "the constraint environment reaches the settings as target facts
 let%expect_test "unused declared wrapper inputs remain part of the interface" =
   ignore
     (resolve ~design:(module Unused_inputs : Project.Design) () |> ok_exn
-     : Resolved_build.t);
+     : Resolved_flow.t);
   [%expect {| |}]
 ;;
 
@@ -282,8 +282,8 @@ let%expect_test "clock and I/O delay endpoints resolve with nanosecond units" =
   let resolved = resolve ~timing () |> ok_exn in
   print_s
     [%sexp
-      (resolved.input_delays_ns : Resolved_build.Delay_ns.t list)
-      , (resolved.output_delays_ns : Resolved_build.Delay_ns.t list)];
+      (resolved.input_delays_ns : Resolved_flow.Delay_ns.t list)
+      , (resolved.output_delays_ns : Resolved_flow.Delay_ns.t list)];
   [%expect {|
     ((((port ui_in)  (minimum 0.5) (maximum 3)))
      (((port uo_out) (minimum -1)  (maximum 4))))
@@ -341,7 +341,7 @@ let%expect_test "LibreLane override provenance and protected assignments" =
     List.find_exn resolved.settings ~f:(fun setting ->
       String.equal setting.key "PL_TARGET_DENSITY_PCT")
   in
-  print_s [%sexp (density : Resolved_build.Setting.t)];
+  print_s [%sexp (density : Resolved_flow.Setting.t)];
   [%expect
     {|
     ((key   PL_TARGET_DENSITY_PCT)
@@ -381,9 +381,9 @@ let%expect_test "LibreLane override provenance and protected assignments" =
 
 (* The library's own TT CMOS5L defaults, resolved: every one has to survive as the value
    it declares, owned by Override with its reason. A default that collided with a
-   protected key would fail [resolve] outright, and one Resolved_build also derives would
+   protected key would fail [resolve] outright, and one Resolved_flow also derives would
    be dropped silently, so both are checked here rather than in test_tt_cmos5l.ml, which
-   never resolves a build. *)
+   never resolves an elaborated project. *)
 let%expect_test "the TT CMOS5L template defaults fit the override boundary" =
   let overrides = Tt_cmos5l.overrides () in
   let resolved = resolve ~flow:(Flow.librelane Hardening ~overrides) () |> ok_exn in
@@ -395,14 +395,15 @@ let%expect_test "the TT CMOS5L template defaults fit the override boundary" =
     require (Yojson.Safe.equal setting.value override.value);
     require
       (Sexp.equal
-         (Resolved_build.Setting.Owner.sexp_of_t setting.owner)
-         (Resolved_build.Setting.Owner.sexp_of_t (Override override.reason))));
+         (Resolved_flow.Setting.Owner.sexp_of_t setting.owner)
+         (Resolved_flow.Setting.Owner.sexp_of_t (Override override.reason))));
   [%expect {| |}]
 ;;
 
 let%expect_test "simulation elaboration is not a runnable flow input" =
-  let build = Project.elaborate (project ()) ~mode:Simulation |> ok_exn in
-  error_contains (Resolved_build.resolve build) "requires implementation elaboration";
+  let elaborated_project = Project.elaborate (project ()) ~mode:Simulation |> ok_exn in
+  error_contains
+    (Resolved_flow.resolve elaborated_project) "requires implementation elaboration";
   [%expect {| |}]
 ;;
 
@@ -416,7 +417,7 @@ let%expect_test "unsupported target fails at the flow boundary" =
 let%expect_test "adapter view requirements differ by operation" =
   let target =
     Target.resolve
-      (Build.target (Project.elaborate (project ()) ~mode:Implementation |> ok_exn))
+      (Elaborated_project.target (Project.elaborate (project ()) ~mode:Implementation |> ok_exn))
     |> ok_exn
   in
   let without_gds =
@@ -433,9 +434,9 @@ let%expect_test "adapter view requirements differ by operation" =
     |> ok_exn
   in
   let hardening = Project.elaborate (project ()) ~mode:Implementation |> ok_exn in
-  ignore (Resolved_build.validate_capabilities synthesis without_gds |> ok_exn : unit);
+  ignore (Resolved_flow.validate_capabilities synthesis without_gds |> ok_exn : unit);
   error_contains
-    (Resolved_build.validate_capabilities hardening without_gds)
+    (Resolved_flow.validate_capabilities hardening without_gds)
     "lacks required technology views";
   [%expect {| |}]
 ;;

@@ -37,7 +37,7 @@ let elaborate ?(mode = Elaboration_mode.Implementation) ?design ~technology poli
 
 let show ?mode ?design ~technology policy =
   match elaborate ?mode ?design ~technology policy with
-  | Ok build -> Fixture.print_inventory build
+  | Ok elaborated_project -> Fixture.print_inventory elaborated_project
   | Error error -> print_s [%sexp (error : Error.t)]
 ;;
 
@@ -46,13 +46,13 @@ let instance = Resource_policy.Selector.instance_exn
 let subtree = Resource_policy.Selector.subtree_exn
 
 let%expect_test "exact mapping is selected and carries its collateral" =
-  let build =
+  let elaborated_project =
     elaborate
       ~technology:technology_with_width_8_mapping
       (Resource_policy.create ~default:Exact [])
     |> ok_exn
   in
-  let status = List.last_exn (Build.resources build) in
+  let status = List.last_exn (Elaborated_project.resources elaborated_project) in
   print_s [%sexp (status : Resource_record.t)];
   [%expect
     {|
@@ -259,14 +259,14 @@ let%expect_test "simulation elaboration still applies policy" =
       ("technology has no exact implementation for the requested contract, and flop fallback is not permitted"
        (technology ihp-sg13cmos5l))))
     |}];
-  let build =
+  let elaborated_project =
     elaborate
       ~mode:Simulation
       ~technology:technology_with_width_8_mapping
       (Resource_policy.create ~default:Exact [])
     |> ok_exn
   in
-  let status = List.last_exn (Build.resources build) in
+  let status = List.last_exn (Elaborated_project.resources elaborated_project) in
   print_s
     [%message
       ""

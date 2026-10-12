@@ -7,7 +7,7 @@
    Elaboration_context.register_open_exn flattens the Hardcaml scope path and builds one
    through [create_exn]; Resource_policy.Selector.instance_exn parses one out of a policy
    string through [of_string_exn]. Elaboration_context keys its records map by it through
-   the comparator, and Build.Private.create sorts the final inventory with [compare];
+   the comparator; Elaborated_project.Private.create sorts the inventory with [compare];
 
    [is_valid_component] is shared on purpose: Resource_policy.Selector.subtree_exn,
    Resource_request and Project use it too, so every name in the system follows one

@@ -4,13 +4,13 @@ open! Hardcaml_asic
 open! Expect_test_helpers_core
 
 (* The ports a TT design gets by using the library's interface have to be the ports
-   Resolved_build.validate_interface insists on; if these ever disagree, every design
+   Resolved_flow.validate_interface insists on; if these ever disagree, every design
    built on Tt_cmos5l.I fails to resolve. *)
 let%expect_test "the wrapper interface is the TT wrapper interface" =
   let inputs = Tt_cmos5l.I.(to_list port_names_and_widths) in
   let outputs = Tt_cmos5l.O.(to_list port_names_and_widths) in
-  require (List.equal Poly.equal inputs Resolved_build.expected_inputs);
-  require (List.equal Poly.equal outputs Resolved_build.expected_outputs);
+  require (List.equal Poly.equal inputs Resolved_flow.expected_inputs);
+  require (List.equal Poly.equal outputs Resolved_flow.expected_outputs);
   print_s [%sexp { inputs : (string * int) list; outputs : (string * int) list }];
   [%expect
     {|
@@ -61,7 +61,7 @@ let%expect_test "template defaults" =
 ;;
 
 (* Two things that would make a default useless: a reason that does not carry the
-   provenance, and a key Resolved_build would refuse as an override anyway. *)
+   provenance, and a key Resolved_flow would refuse as an override anyway. *)
 let%expect_test "every default carries its provenance and is overridable" =
   let missing_revision =
     List.filter_map Tt_cmos5l.template_overrides ~f:(fun o ->
@@ -71,7 +71,7 @@ let%expect_test "every default carries its provenance and is overridable" =
   in
   let protected =
     List.filter_map Tt_cmos5l.template_overrides ~f:(fun o ->
-      if Resolved_build.protected_key o.key then Some o.key else None)
+      if Resolved_flow.protected_key o.key then Some o.key else None)
   in
   print_s
     [%sexp

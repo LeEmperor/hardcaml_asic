@@ -5,10 +5,10 @@
    input is a clock, and how fast does it run?";
 
    Project.create takes the list through its optional [clocks] argument and checks it with
-   [validate_list], alongside the other declaration checks; Build carries the list through
+   [validate_list], alongside the declaration checks; Elaborated_project carries the list
    unchanged so adapters can render it later.
 
-   It does NOT look at the design; Resolved_build resolves [port] against the
+   It does NOT look at the design; Resolved_flow resolves [port] against the
    elaborated interface and converts [period] to nanoseconds and hertz.
 *)
 
@@ -23,8 +23,8 @@ open! Core
             (including a 48 MHz period) remain representable;
 
    Careful: nothing checks [port] against the circuit yet. A clock declared on "clk" for a
-   design whose input is "clock" validates fine and ends up in the build as is; that is
-   caught by Resolved_build, before flow emission.
+   design whose input is "clock" validates fine and enters the elaborated project as is;
+   that is caught by Resolved_flow, before flow emission.
 *)
 type t =
   { port   : string
@@ -42,7 +42,7 @@ type t =
    Both checks run even when the other fails, so one call reports both problems.
 
    Blank ports and nonfinite periods fail here. A port that is not a real input is
-   caught by Resolved_build.
+   caught by Resolved_flow.
 
    Duplicates compare [port] only; two clocks on the same port with different periods are
    still a duplicate, since one input cannot have two periods.

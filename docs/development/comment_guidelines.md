@@ -18,7 +18,7 @@ Look at the file that matches what you are writing before starting.
 | Small file: one record plus one validator, no `.mli` | `lib/metadata.ml` |
 | Validator with several checks combined into one error | `lib/clock.ml` |
 | Types only: multi-line constructor and field tables | `lib/resource_record.ml` |
-| Accessors, a hand-written `sexp_of_t`, a `Private` constructor | `lib/build.ml` |
+| Accessors, a hand-written `sexp_of_t`, a `Private` constructor | `lib/elaborated_project.ml` |
 | Mid-size module: comparator, `Why:`, `A consequence:`, numbered parsing steps | `lib/resource_id.ml` |
 | Large module: selectors, precedence, the "main sauce" function | `lib/resource_policy.ml` |
 | Decision table, `TODO (...)` notes, commented match arms | `lib/selection.ml` |
@@ -26,7 +26,7 @@ Look at the file that matches what you are writing before starting.
 | *Mutable* state, `Private` module, re-raise handling, outcome tables | `lib/elaboration_context.ml` |
 | `.mli`: every value documented, record field docs, "Raises ..." paragraphs | `lib/resource_id.mli` |
 | `.mli`: constructor docs, a pitfall stated in the interface | `lib/technology.mli` |
-| `.mli`: accessor docs with phase notes, `Private` sig | `lib/build.mli` |
+| `.mli`: accessor docs with lifecycle boundaries, `Private` sig | `lib/elaborated_project.mli` |
 | `.mli`: failure and lifecycle behavior | `lib/elaboration_context.mli` |
 
 `lib/elaboration_context.ml` is still a good reference for structure, but many of its
@@ -64,10 +64,10 @@ The `Module:` line names the file, including its extension, in double quotes.
 1. **What it is.** Open with "Source implementation of ...", then frame the module
    as a question it answers: "A clock is the project's answer to "which input is a
    clock, and how fast does it run?";". Use "the answer to" when the question is not
-   the project's (a build, a technology, an identity).
+   the project's (an elaborated project, a technology, an identity).
 2. **Wiring.** Name the modules that call into it and the functions they call it
    through, in the order things happen: "Project.create takes the list through its
-   optional [clocks] argument and checks it with [validate_list] ...; Build carries the
+   optional [clocks] argument and checks it with [validate_list] ...; Elaborated_project carries the
    list through unchanged ...".
 3. **Boundary.** Say what it does NOT do and which module owns that job instead. Work
    deferred to a later phase is named by phase: "resolving those is P2 work".
@@ -83,8 +83,9 @@ The `.mli` header describes what the module guarantees to callers, not how it wo
 - guarantees and ordering or precedence rules, with numbered lists where there is an
   order (`resource_policy.mli`);
 - how it fails, and when (at declaration, registration or finalization);
-- what is not present yet, by phase: "Not yet present: the resolved target and validated
-  constraints (P2), and emitted artifacts and provenance (P3)." (`build.mli`);
+- which lifecycle boundary owns each result: `Elaborated_project` holds the circuit,
+  metadata, intent and resources; `Resolved_flow` adds validated TT/LibreLane facts;
+  `Bundle` emits inputs, and execution runs tools separately (`elaborated_project.mli`);
 - a `{v ... v}` diagram when a lifecycle has several stages (`project.mli`).
 
 ### Modules without an `.mli`
@@ -309,7 +310,7 @@ Every non-obvious decision gives its reason in the comment that introduces it.
   ```
 
   `Why:` is also used for a guarantee kept even though it looks redundant
-  (`Build.Private.create` sorts records that already arrive sorted, "so the mli promise
+  (`Elaborated_project.Private.create` sorts records that already arrive sorted, "so the mli promise
   does not silently depend on how the context stores records").
 
 - **Choice of error style.** Every function that can fail says why it returns
@@ -372,7 +373,7 @@ Every non-obvious decision gives its reason in the comment that introduces it.
   ```
 
 - **Hand-written derivers.** When `sexp_of_t`, `compare` or similar is written by hand
-  instead of derived, say why (`Build.sexp_of_t`: "Circuit.t has no useful sexp").
+  instead of derived, say why (`Elaborated_project.sexp_of_t`: "Circuit.t has no useful sexp").
 
 - **Deferred work.** Name the phase it belongs to (`P2`, `P3`) and, when useful, the
   document that plans it ("see docs/architecture.md section 3").

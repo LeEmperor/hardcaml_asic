@@ -1,10 +1,10 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
-(* Module: "resolved_build.ml" *)
-(* Source implementation of the flow resolution boundary. A resolved build is the answer
-   to "is this build ready for a TT/LibreLane flow, and with exactly which settings?";
+(* Module: "resolved_flow.ml" *)
+(* Source implementation of the flow resolution boundary. A resolved flow answers
+   "is this elaborated project ready for TT/LibreLane, and with which settings?";
 
-   Project.elaborate_for_flow elaborates in Implementation mode and hands the build to
+   Project.elaborate_for_flow elaborates in Implementation mode and hands the project to
    [resolve]. That calls Target.resolve for the pinned target, checks the TT top-level
    interface, the metadata, Pinout.validate_tiny_tapeout and the technology capabilities,
    converts the clock and I/O delays to nanoseconds, and merges the Flow LibreLane
@@ -83,17 +83,17 @@ module Delay_ns = struct
   [@@deriving sexp_of]
 end
 
-(* The resolved build itself; the build plus everything checked and derived for the flow;
+(* The resolved flow; the elaborated project plus checked and derived flow facts;
 
-   build            : the Implementation build it was resolved from, unchanged;
-   target           : the resolved target from Target.resolve, with every file pinned;
-   clock            : the one primary clock, already known to be on "clk";
-   clock_period_ns  : [clock]'s period in nanoseconds, fractions kept;
-   clock_hz         : 1e9 /. [clock_period_ns];
-   input_delays_ns  : one Delay_ns.t per input delay, sorted by port;
-   output_delays_ns : one Delay_ns.t per output delay, sorted by port;
-   settings         : derived settings merged with the overrides, sorted by key, one per
-                      key;
+   elaborated_project : the Implementation elaboration it was resolved from, unchanged;
+   target             : the resolved target from Target.resolve, with every file pinned;
+   clock              : the one primary clock, already known to be on "clk";
+   clock_period_ns    : [clock]'s period in nanoseconds, fractions kept;
+   clock_hz           : 1e9 /. [clock_period_ns];
+   input_delays_ns    : one Delay_ns.t per input delay, sorted by port;
+   output_delays_ns   : one Delay_ns.t per output delay, sorted by port;
+   settings           : derived settings merged with the overrides, sorted by key,
+                        one per key;
 
    Private in the mli: only [resolve] can construct or update this record. Field reads
    remain public, but a caller cannot replace validated facts before Bundle consumes
@@ -101,14 +101,14 @@ end
    immutable, so inspection does not provide a mutation path.
 *)
 type t =
-  { build            : Build.t
-  ; target           : Target.Resolved.t
-  ; clock            : Clock.t
-  ; clock_period_ns  : float
-  ; clock_hz         : float
-  ; input_delays_ns  : Delay_ns.t list
-  ; output_delays_ns : Delay_ns.t list
-  ; settings         : Setting.t list
+  { elaborated_project : Elaborated_project.t
+  ; target             : Target.Resolved.t
+  ; clock              : Clock.t
+  ; clock_period_ns    : float
+  ; clock_hz           : float
+  ; input_delays_ns    : Delay_ns.t list
+  ; output_delays_ns   : Delay_ns.t list
+  ; settings           : Setting.t list
   }
 
 (* The name a port is known by at the top level; its first Hardcaml name;
@@ -127,7 +127,7 @@ let port_name signal =
    Phantom inputs are included on purpose: Hardcaml leaves an interface input the design
    never reads out of Circuit.inputs and records it as a phantom input instead, but it is
    still a port of the emitted wrapper. Without them a design that ignores "ena" would
-   fail as missing it -> see expect tests (test/test_resolved_build.ml);
+   fail as missing it -> see expect tests (test/test_resolved_flow.ml);
 *)
 let ports circuit =
 
@@ -165,7 +165,7 @@ let expected_outputs = [ "uo_out", 8; "uio_out", 8; "uio_oe", 8 ]
    TODO (future fix): these messages do not follow docs/development/comment_guidelines.md section 9,
    which wants "what went wrong; how to fix it". Something like "TT top-level port has
    the wrong width; match the TT user module template". Changing them changes the
-   fragments test/test_resolved_build.ml looks for, so update those in the same commit;
+   fragments test/test_resolved_flow.ml looks for, so update those in the same commit;
 *)
 let validate_interface circuit =
 
@@ -263,14 +263,14 @@ let span_ns span = Time_float.Span.to_sec span *. 1e9
    NOT checked: a maximum longer than the clock period, and a delay on a phantom input
    (those are real wrapper ports, see [ports]); both are accepted as declared.
 *)
-let validate_timing build =
+let validate_timing elaborated_project =
 
-  let circuit = Build.circuit build in
+  let circuit = Elaborated_project.circuit elaborated_project in
   let inputs, outputs = ports circuit in
 
   (* The one primary clock; TT wires its clock to "clk" and the SDC assumes it *)
   let%bind.Or_error clock =
-    match Build.clocks build with
+    match Elaborated_project.clocks elaborated_project with
     | [ clock ] when String.equal clock.port "clk" -> Ok clock
     | clocks ->
       Or_error.error_s
@@ -280,7 +280,7 @@ let validate_timing build =
   in
 
   let period_ns = span_ns clock.period in
-  let timing = Build.timing build in
+  let timing = Elaborated_project.timing elaborated_project in
 
   (* Steps 2 to 6 for one direction; [actual] is that direction's (name, width) ports *)
   let check_delays direction actual delays =
@@ -378,17 +378,17 @@ let required_views operation =
     ]
 ;;
 
-(* Check the build and resolved target can actually run the selected flow; returns
+(* Check the elaborated project and resolved target can run the selected flow; returns
    Or_error rather than raising since [resolve] folds it into one combined TT error;
 
-   mode    : the build must come from Implementation elaboration; a Simulation build
+   mode    : the project must come from Implementation elaboration; Simulation
              carries behavioral models, not synthesis RTL;
    views   : every role [required_views] names for the flow's operation has a
              Technology_view in [target.views]; a Floorplan_def never counts;
    macros  : no resource may be selected as a Macro; this reference adapter does not
              emit macro collateral (MACROS, EXTRA_LEFS, ...) yet;
    sources : every resource carries Generated_synthesis_rtl; skipped for a Simulation
-             build, since the mode check already fails and would otherwise be followed by
+             elaboration, since the mode check already fails and would be followed by
              every resource again;
 
    All four checks run even when another fails, so one call reports every problem.
@@ -398,11 +398,11 @@ let required_views operation =
    [sources]. The sources check stays as a guard in case sources_of changes.
 
    Taking the target separately rather than resolving it here lets a test hand it a
-   target with a view removed -> see expect tests (test/test_resolved_build.ml);
+   target with a view removed -> see expect tests (test/test_resolved_flow.ml);
 *)
-let validate_capabilities build target =
+let validate_capabilities elaborated_project target =
 
-  let flow = Build.flow build in
+  let flow = Elaborated_project.flow elaborated_project in
   let operation = flow.operation in
 
   (* Required roles with no matching technology view in the target *)
@@ -415,7 +415,7 @@ let validate_capabilities build target =
            | Floorplan_def -> false)))
   in
 
-  let resources = Build.resources build in
+  let resources = Elaborated_project.resources elaborated_project in
 
   (* Resources selected as a hard macro *)
   let unsupported_macros =
@@ -425,9 +425,10 @@ let validate_capabilities build target =
       | Flops -> false)
   in
 
-  (* Resources with no synthesis RTL; empty for a Simulation build, see above *)
+  (* Resources with no synthesis RTL; empty for Simulation elaboration, see above *)
   let missing_synthesis_sources =
-    if Elaboration_mode.equal (Build.mode build) Elaboration_mode.Simulation
+    if Elaboration_mode.equal
+         (Elaborated_project.mode elaborated_project) Elaboration_mode.Simulation
     then []
     else
       List.filter resources ~f:(fun resource ->
@@ -440,7 +441,8 @@ let validate_capabilities build target =
 
   (* Checking with the above in a list format, fold any errors into the result; *)
   Or_error.combine_errors_unit
-    [ (if Elaboration_mode.equal (Build.mode build) Elaboration_mode.Implementation
+    [ (if Elaboration_mode.equal
+            (Elaborated_project.mode elaborated_project) Elaboration_mode.Implementation
        then Ok ()
        else
          Or_error.error_s
@@ -587,7 +589,7 @@ let protected_key key =
    agree if a later LibreLane reads them. Every one of the ten keys involved is protected
    -> see [protected_keys].
 *)
-let resolve_settings build target clock_period_ns =
+let resolve_settings elaborated_project target clock_period_ns =
 
   let mk key value owner : Setting.t = { key; value; owner } in
   let rect = target.Target.Resolved.die_area_um in
@@ -602,7 +604,8 @@ let resolve_settings build target clock_period_ns =
      literal too; fine while only ihp-sg13cmos5l resolves, but both should come from the
      resolved target once a second technology does; *)
   let derived =
-    [ mk "DESIGN_NAME" (`String (Circuit.name (Build.circuit build))) Design
+    [ mk "DESIGN_NAME"
+        (`String (Circuit.name (Elaborated_project.circuit elaborated_project))) Design
     ; mk
         "DIE_AREA"
         (`String
@@ -636,7 +639,7 @@ let resolve_settings build target clock_period_ns =
 
   (* Step 2; no wildcard, so a new Flow.Adapter fails to compile here *)
   let overrides =
-    match (Build.flow build).adapter with
+    match (Elaborated_project.flow elaborated_project).adapter with
     | Flow.Adapter.Librelane settings -> settings.overrides
   in
 
@@ -664,7 +667,7 @@ let resolve_settings build target clock_period_ns =
   List.sort entries ~compare:(fun a b -> String.compare a.key b.key)
 ;;
 
-(* The main sauce here for flow resolution; given an Implementation build, check it
+(* The main sauce here for flow resolution; given an Implementation elaboration, check it
    against the TT/LibreLane flow and return everything Bundle needs;
 
    1. resolve the target -> an unsupported harness and technology pair stops here, with
@@ -685,17 +688,19 @@ let resolve_settings build target clock_period_ns =
    Returns Or_error rather than raising since it runs after elaboration, outside any
    design constructor; Project.elaborate_for_flow tags the error with the project name.
    [inputs] passes straight through to Target.resolve, which defaults it to
-   Target.Inputs.reference_cmos5l_6x4 -> see expect tests (test/test_resolved_build.ml);
+   Target.Inputs.reference_cmos5l_6x4 -> see expect tests (test/test_resolved_flow.ml);
 *)
-let resolve ?inputs build =
+let resolve ?inputs elaborated_project =
 
-  let%bind.Or_error target = Target.resolve ?inputs (Build.target build) in
-  let metadata = Build.metadata build in
+  let%bind.Or_error target =
+    Target.resolve ?inputs (Elaborated_project.target elaborated_project)
+  in
+  let metadata = Elaborated_project.metadata elaborated_project in
 
   (* Step 2 *)
   let%bind.Or_error () =
     Or_error.combine_errors_unit
-      [ validate_interface (Build.circuit build)
+      [ validate_interface (Elaborated_project.circuit elaborated_project)
 
       ; (if String.is_empty (String.strip metadata.author)
             || String.is_empty (String.strip metadata.description)
@@ -704,20 +709,20 @@ let resolve ?inputs build =
              [%message "TT metadata needs a nonblank author and description"]
          else Ok ())
 
-      ; Pinout.validate_tiny_tapeout (Build.pinout build)
+      ; Pinout.validate_tiny_tapeout (Elaborated_project.pinout elaborated_project)
 
-      ; validate_capabilities build target
+      ; validate_capabilities elaborated_project target
       ]
   in
 
   (* Step 3 *)
   let%bind.Or_error clock, clock_period_ns, input_delays_ns, output_delays_ns =
-    validate_timing build
+    validate_timing elaborated_project
   in
 
   (* Steps 4 and 5 *)
-  let%map.Or_error settings = resolve_settings build target clock_period_ns in
-  { build
+  let%map.Or_error settings = resolve_settings elaborated_project target clock_period_ns in
+  { elaborated_project
   ; target
   ; clock
   ; clock_period_ns

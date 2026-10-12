@@ -20,19 +20,31 @@ adapters onto the same implementation. Source-artifact identity and remaining
 independent-installation gates are open under ASIC P6.5/P6.6. Incremental provider
 observation for Hardcaml Workbench is proposed, not implemented.
 
-The owner-created sibling `hardcaml_asic_example` is the new development specimen
-repository. Its controlled-FIFO design is being discussed; it is not implemented
-yet. The historical scaf worktree is absent and not a prerequisite.
+The owner-created sibling [hardcaml_asic_example](../hardcaml_asic_example/README.md)
+now delivers the fixed 16×8 controlled-FIFO contract/core, independent scoreboard,
+TT wrapper/declaration, bundle emitter and PDK-free generated-RTL acceptance.
+It is an unpinned development specimen using the hardened public development
+library. Owner initial ref `8e4577f6c72cc689cbc92daeb5f8ae083cf970e0` exists;
+the ref alone establishes neither a clean tree nor a dependency pin.
+Installed/pinned and physical acceptance remain open. Provider observation
+contract examples are next work. The historical scaf worktree is absent and not
+a prerequisite.
 
 ## Existing workflow
 
-The library declares projects/resources, validates target and timing intent, and
-emits immutable bundles. Runs have separate IDs and records; collection, reporting
+The lifecycle is declaration → `Elaborated_project` (Hardcaml circuit, metadata,
+intent and resources; no synthesis) → `Resolved_flow` (validated concrete
+TT/LibreLane facts plus the elaborated project) → bundle → separate execution.
+Runs have separate IDs and records; collection, reporting
 and integrity-checked archiving work independently of Workbench. See the
 [memory example](docs/guides/memory-example.md),
 [bundle guide](docs/guides/bundle-emission.md),
 [target reference](docs/reference/target-reference.md) and normative
 [RAM contract](docs/reference/program-memory-contract.md).
+
+The public API rename is source-breaking, with no aliases. See the
+[migration and evidence](docs/phase_plan.md#public-api-rename-migration-and-evidence)
+before adopting this development provider; `hardcaml_protemu` needs a separate migration.
 
 `dune build` and `dune runtest` cover ordinary development. External tool/PDK setup
 is explicit through `./bootstrap.sh`; see the [setup guide](docs/guides/bootstrap.md).

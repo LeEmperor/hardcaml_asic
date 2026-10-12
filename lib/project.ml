@@ -89,7 +89,7 @@ let create
 
 let name t = t.name
 
-(* Runs the user's design once, and returns the Build.t object *)
+(* Runs the user's design once, and returns the Elaborated_project.t object *)
 let elaborate t ~mode =
   (* Unpack our first class design module *)
   let (module D) = t.design in
@@ -137,8 +137,8 @@ let elaborate t ~mode =
     in
 
     (* Only runs if the above resources validate runs based on the context;
-    Also adheres on a Private convention as this is a version valid to run a Project.Build.create call; *)
-    Build.Private.create
+       Elaborated_project.Private.create is called only after successful finalization. *)
+    Elaborated_project.Private.create
       ~project_name:t.name
       ~metadata:t.metadata
       ~mode
@@ -150,18 +150,14 @@ let elaborate t ~mode =
       ~resources
       ~circuit
 
-  (* Note about Private:
-      Technically OCaml doesn't really adhere to the public private thing, as these "Private" things can be accessed by others.
-      This is a Jane convention to give some OOP (God be damned) to functional systems.
-
-      For example, a Project.t is the only person that is *supposed* to make a Built.t and own an Context.t
-      "Private" simply tells other people *you really shouldn't be touching this*.
-  *)
+  (* Elaborated_project.Private.create and Elaboration_context.Private are exposed
+     conventional internal APIs intended for Project.elaborate. This naming convention
+     is distinct from the compiler-enforced private records in Resolved_flow. *)
 ;;
 
 let elaborate_for_flow ?inputs t =
-  let%bind.Or_error build = elaborate t ~mode:Elaboration_mode.Implementation in
-  Resolved_build.resolve ?inputs build
+  let%bind.Or_error elaborated_project = elaborate t ~mode:Elaboration_mode.Implementation in
+  Resolved_flow.resolve ?inputs elaborated_project
   |> Or_error.tag_s ~tag:[%message "flow resolution failed" ~project:t.name]
 ;;
 [@@@ocamlformat "enable"]

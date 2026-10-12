@@ -98,7 +98,11 @@ it is not an implicit or silent choice.
 resources for Hardcaml simulation. `~mode:Implementation` selects and builds
 synthesizable implementations. `Project.elaborate_for_flow project` performs
 implementation elaboration plus target, interface, timing, and adapter
-validation before emission. None invokes an EDA tool or reads a PDK.
+validation before emission. `Project.elaborate` returns an abstract
+`Elaborated_project.t`: the circuit plus metadata, intent and resources, not a
+synthesis result. `Project.elaborate_for_flow` returns a private `Resolved_flow.t`
+with concrete TT/LibreLane facts and the original `elaborated_project` field.
+None invokes an EDA tool or reads a PDK.
 
 Run the maintained PDK-free memory path:
 
@@ -130,6 +134,12 @@ A consumer provides an equivalent executable in its own project. It passes the
 consumer repository as `Bundle.render ~source_root` and enumerates every source
 input needed to reproduce generation. Do not use the library checkout as the
 consumer source root.
+
+Pass a separately elaborated `~mode:Simulation` value as
+`Bundle.render ~simulation_project` when behavioral simulation RTL is needed.
+The renderer takes the `Resolved_flow.t` as its final argument; `Bundle.write`
+publishes its files. Tool execution is a separate step. For older consumers,
+see the [source-breaking migration](../phase_plan.md#public-api-rename-migration-and-evidence).
 
 Inspect `manifest.json` before execution. The bundle contains synthesis RTL in
 `src/`, independently elaborated behavioral RTL in `simulation/`, generated SDC

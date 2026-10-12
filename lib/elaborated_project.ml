@@ -1,17 +1,18 @@
 (* University of Florida *)
 (* Author: Bohdan Purtell *)
-(* Module: "build.ml" *)
-(* Source implementation of the finalized build. A build is the answer to "what did this
+(* Module: "elaborated_project.ml" *)
+(* Source implementation of the elaborated project. It answers "what did this
    elaboration produce?";
 
    Project.elaborate is the only caller of [Private.create]; it runs once the design
    constructor returned a circuit AND Elaboration_context.Private.finalize accepted the
-   collected resources. Everything else only reads a build through the accessors, or
+   collected resources. Everything else only reads the project through the accessors, or
    prints it through [sexp_of_t] (the lifecycle expect tests do this).
 
    It does NOT validate anything; every field arrives already checked, by Project.create
    (metadata, clocks, flow) or by the elaboration context (resources). The separate
-   Resolved_build boundary validates this build for TT/LibreLane before P3 emission.
+   Resolved_flow boundary validates this project for TT/LibreLane before P3 emission.
+   This is an elaborated Hardcaml circuit with intent and resources, NOT synthesis output.
 *)
 
 open! Core
@@ -19,11 +20,11 @@ open! Hardcaml
 
 [@@@ocamlformat "disable"]
 
-(* The build itself; a straight copy of the declaration plus what elaboration produced;
+(* The elaborated project; the declaration plus what elaboration produced;
 
    project_name : the Project.t name, already a valid identifier;
    metadata     : declared metadata, unchanged;
-   mode         : which elaboration produced this build;
+   mode         : which elaboration produced this project;
    target       : the declared harness and technology selection, NOT a resolved target;
    flow         : adapter identity, operation and adapter settings;
    clocks       : declared clocks, not yet resolved against the circuit's ports;
@@ -67,13 +68,13 @@ let sexp_of_t { project_name; metadata; mode; target; flow; clocks; pinout; timi
     }]
 ;;
 
-(* grab the project name out of a build *)
+(* grab the project name out of an elaborated project *)
 let project_name t = t.project_name
 
-(* grab the declared metadata out of a build *)
+(* grab the declared metadata out of an elaborated project *)
 let metadata t = t.metadata
 
-(* grab the elaboration mode that produced this build *)
+(* grab the elaboration mode that produced this project *)
 let mode t = t.mode
 
 (* grab the declared target selection; not resolved, see Target *)
@@ -93,11 +94,11 @@ let resources t = t.resources
 (* grab the elaborated circuit; tests hand this to Cyclesim *)
 let circuit t = t.circuit
 
-(* The only way to make a build; Private by Jane convention, meaning only
+(* The only way to make an elaborated project; Private by Jane convention, meaning only
    Project.elaborate is supposed to call it;
 *)
 module Private = struct
-  (* Assemble a build out of already validated parts;
+  (* Assemble an elaborated project out of already validated parts;
 
      The one thing it does is sort [resources] by Resource_id.compare, so the inventory
      order is independent of registration order and is a guarantee this module owns;

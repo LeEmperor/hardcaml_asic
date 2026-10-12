@@ -2,7 +2,7 @@
 (* Author: Bohdan Purtell *)
 (* Module: "elaboration_context.ml" *)
 (* Source implementation of the elaboration context system. These are essentially
-   databases that are spawned for an individual Build run;
+   databases that are spawned for an individual project elaboration;
 *)
 
 open! Core
@@ -218,7 +218,7 @@ let register_open_exn
 
    A design is free to catch the exception (try ... with _ -> ...), and Project.elaborate would
    then never see it; closing here means the swallowed failure still stops the elaboration; any
-   later registration raises, and Private.finalize returns an error instead of a build that is
+   later registration raises, and Private.finalize returns an error instead of a project that is
    missing the resource. I think there was a possible race condition here but I dunno.
 
    check_open stays outside the handler: a closed context is already closed, and a Finalized

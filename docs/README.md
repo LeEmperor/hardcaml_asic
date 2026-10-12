@@ -10,9 +10,17 @@
 
 Current checkpoint (2026-10-12): ASIC P0–P5/M3 and P6.1–P6.3/P6.4a/b have
 evidence. P6.5/P6.6 remain open. Incremental provider observation is proposed,
-not delivered. `../hardcaml_asic_example` is the owner's new development specimen
-repository; it is still empty. Documentation and core review come before its
-Dune/FIFO implementation. The old scaf checkout is absent and not required.
+not delivered; concrete provider observation contract examples are next work.
+The owner's [development specimen](../../hardcaml_asic_example/README.md) now has
+the fixed FIFO contract/core, independent scoreboard, TT wrapper/declaration,
+bundle emitter and PDK-free generated-RTL acceptance. It remains unpinned and
+does not establish independent installed-provider or physical acceptance; see
+the [recorded evidence](phase_plan.md#controlled-fifo-development-specimen-evidence).
+The old scaf checkout is absent and not required.
+
+The public lifecycle now uses `Elaborated_project` and `Resolved_flow`; see the
+[source-breaking migration and acceptance](phase_plan.md#public-api-rename-migration-and-evidence).
+Historical records retain their original API names and commands.
 
 ## Where things live
 

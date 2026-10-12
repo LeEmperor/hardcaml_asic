@@ -4,8 +4,8 @@
 (* Source implementation of declared project metadata. Metadata is the project's answer to
    "what is this design called, and who made it?";
 
-   Project.create takes it as [~metadata] and checks it through [validate]; Build carries
-   it unchanged so harness specific outputs (for example the TT info.yaml) are rendered
+   Project.create takes it as [~metadata] and checks it through [validate].
+   Elaborated_project carries it unchanged so harness specific outputs are rendered
    from this one declaration rather than maintained separately next to it;
 
    It does NOT render any harness output, that is the harness integration's job. TT

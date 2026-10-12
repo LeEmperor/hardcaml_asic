@@ -105,7 +105,7 @@ module Cmos5l : sig
       LibreLane's own [CLOCK_UNCERTAINTY_CONSTRAINT], [CLOCK_TRANSITION_CONSTRAINT],
       [TIME_DERATING_CONSTRAINT], [SYNTH_DRIVING_CELL], [OUTPUT_CAP_LOAD] and
       [MAX_FANOUT_CONSTRAINT] would reach timing analysis. {!Bundle.sdc} renders these
-      instead, and {!Resolved_build} emits the matching configuration keys so synthesis
+      instead, and {!Resolved_flow} emits the matching configuration keys so synthesis
       analyses the same environment.
 
       Careful: the values in {!constraints} are the pinned PDK's, not values characterised

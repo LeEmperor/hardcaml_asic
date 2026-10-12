@@ -199,7 +199,7 @@ module Cmos5l = struct
     let output_cap_load_pf t = t.output_cap_load_ff /. 1000.
 
     (* grab the driving cell as LibreLane's "<cell>/<pin>" spelling; what synthesis reads
-       out of SYNTH_DRIVING_CELL, and what Resolved_build derives that setting from *)
+       out of SYNTH_DRIVING_CELL, and what Resolved_flow derives that setting from *)
     let driving_cell_setting t = t.driving_cell ^ "/" ^ t.driving_cell_pin
   end
 

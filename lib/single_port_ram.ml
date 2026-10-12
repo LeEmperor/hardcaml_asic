@@ -93,7 +93,7 @@ end
    mapping written as [((depth 3) (width 8) ...)] never matches this request. Under an
    Exact policy that fails selection loudly; under Exact_or_flop_fallback it builds flops,
    recorded as Flop_fallback in the Selection.Reason but easy to miss. The mli does not
-   expose this function, so take the request from a build's resource record, as
+   expose this function, so take the request from an elaborated project's resource record, as
    test/test_single_port_ram.ml does, instead of writing the contract by hand.
 *)
 let request (config : Config.t) =

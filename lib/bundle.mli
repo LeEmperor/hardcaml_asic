@@ -7,14 +7,14 @@
    each byte came from. It is built in memory by {!render} and put on disk by {!write}:
 
    {v
-   Resolved_build.t (+ optional Simulation Build.t)
+   Resolved_flow.t (+ optional Simulation Elaborated_project.t)
      -> render     RTL, config, SDC and info.yaml generated; source inputs read and
                    hashed; manifest and identity computed; nothing written
      -> write      files created under a new or empty directory
    v}
 
    Guarantees:
-   1. the same resolved build, simulation build, inputs and git state always render to the
+   1. the same resolved flow, simulation project, inputs and git state render to the
       same bytes and the same {!identity};
    2. the identity changes when any emitted file, declared input, input git status or
       source revision changes;
@@ -23,7 +23,7 @@
    4. synthesis and simulation RTL sit in separate directories and are listed separately
       in the manifest; they are never meant to be compiled together.
 
-   It does NOT validate the design or target; {!Resolved_build.resolve} already did. It
+   It does NOT validate the design or target; {!Resolved_flow.resolve} already did. It
    does NOT invoke any EDA tool, access the PDK, or link the TT support-tools checkout
    expected at [OUTPUT/tt]; running the flow is P4 work. Layout and manifest fields are
    described in docs/guides/bundle-emission.md.
@@ -35,21 +35,21 @@ open! Core
     always agree. *)
 type t
 
-(** [render ~simulation_build ~source_root:"." ~input_paths:[ "lib/dune" ] resolved]
+(** [render ~simulation_project ~source_root:"." ~input_paths:[ "lib/dune" ] resolved]
 
     [input_paths] are source files relative to [source_root], which must be inside a git
     checkout with at least one commit. Their order and repeats do not matter. Without
-    [simulation_build], simulation consumers are pointed at the synthesis RTL.
+    [simulation_project], simulation consumers are pointed at the synthesis RTL.
 
-    Returns an error, and writes nothing, if [simulation_build] is not a Simulation build
-    of the same project and top module, if [input_paths] is empty, if any input path is
-    absolute or contains an empty, ["."] or [".."] component, if any input is missing, a
+    Returns an error, and writes nothing, if [simulation_project] is not a Simulation
+    elaboration of the same project and top module, if [input_paths] is empty, if any input
+    path is absolute or contains an empty, ["."] or [".."] component, if any input is missing, a
     directory, or resolves outside [source_root], or if git fails. *)
 val render
-  :  ?simulation_build:Build.t
+  :  ?simulation_project:Elaborated_project.t
   -> source_root:string
   -> input_paths:string list
-  -> Resolved_build.t
+  -> Resolved_flow.t
   -> t Or_error.t
 
 (** Write a bundle under [output_dir], creating it and its parents when missing. Does not

@@ -5,8 +5,8 @@
    flow builds this design, how far does it go, and with which settings set by hand?";
 
    Project.create takes it as [~flow], usually built with [librelane], and checks it
-   through [validate] alongside the other declaration checks; Build carries it unchanged;
-   Resolved_build then picks the technology views the [operation] needs and merges the
+   through [validate] alongside the declaration checks; Elaborated_project retains it;
+   Resolved_flow then picks the technology views the [operation] needs and merges the
    LibreLane overrides over the settings it derives; Bundle records the operation in the
    manifest.
 
@@ -15,7 +15,7 @@
    behavior (see docs/architecture.md section 3, "Flow selection and compatibility").
 
    It does NOT know which LibreLane keys are protected or what their defaults are; that is
-   Resolved_build's job. The overrides are a LibreLane representation, NOT the core
+   Resolved_flow's job. The overrides are a LibreLane representation, NOT the core
    project model (see docs/architecture.md section 6).
 *)
 
@@ -25,7 +25,7 @@ open! Core
 
 (* How far the flow is asked to take the design;
 
-   Synthesis : synthesis to a gate netlist; Resolved_build.required_views asks the
+   Synthesis : synthesis to a gate netlist; Resolved_flow.required_views asks the
                technology for the PDK configuration and the standard cell Liberty and
                Verilog views;
    Hardening : synthesis plus place and route; additionally needs the technology LEF and
@@ -53,7 +53,7 @@ module Librelane = struct
      typo such as "PL_TARGET_DENSTY_PCT" validates fine and ends up in the flow
      configuration as is; nothing in this library catches it. A key that collides with a
      derived setting ("DIE_AREA", or anything containing "SDC") is caught, but later, by
-     Resolved_build before emission.
+     Resolved_flow before emission.
   *)
   module Override = struct
     type t =
@@ -75,7 +75,7 @@ module Librelane = struct
 
   (* The LibreLane adapter's settings;
 
-     overrides : assignments set by hand, applied over Resolved_build's derived settings;
+     overrides : assignments set by hand, applied over Resolved_flow's derived settings;
                  their order does not matter, since [validate] rejects a key set twice
                  and the resolved settings are sorted by key;
   *)
@@ -92,11 +92,11 @@ module Librelane = struct
      Both checks run even when the other fails, so one call reports both problems.
 
      Protected keys are NOT checked here; whether a key may be overridden depends on what
-     Resolved_build derives, so that conflict check lives there.
+     Resolved_flow derives, so that conflict check lives there.
 
      Duplicates compare [key] only; two overrides of the same key with different values
      are still a duplicate, since LibreLane can only take one of them.
-     -> see expect tests (test/test_lifecycle.ml, test/test_resolved_build.ml)
+     -> see expect tests (test/test_lifecycle.ml, test/test_resolved_flow.ml)
   *)
   let validate { overrides } =
 
@@ -201,7 +201,7 @@ end
 
    The record is left transparent (there is no mli) so it can be built by hand, which
    means nothing forces [validate] onto it; Project.create is what runs it, before a flow
-   ever reaches a Build -> see test/fixture.ml.
+   ever reaches an Elaborated_project -> see test/fixture.ml.
 *)
 type t =
   { adapter   : Adapter.t
@@ -219,7 +219,7 @@ let librelane ?(overrides = []) operation =
    returns Or_error since Project.create combines it with its other declaration checks;
 
    [operation] needs no check here; whether the technology has the views it needs is
-   Resolved_build.validate_capabilities's job, once the target is resolved.
+   Resolved_flow.validate_capabilities's job, once the target is resolved.
 
    An exhaustive match with no wildcard on purpose: a new Adapter constructor fails to
    compile here until someone decides how its settings are validated.

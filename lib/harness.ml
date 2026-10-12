@@ -4,10 +4,10 @@
 (* Source implementation of harness selection. A harness is the answer to "what does this
    design get dropped into?"; for now that is only Tiny Tapeout;
 
-   Target pairs it with a technology, and Build carries it through so adapters can render
+   Target pairs it with a technology; Elaborated_project carries it so adapters can render
    harness specific outputs later (for example the TT info.yaml tiles field).
 
-   Top-level port and submission-metadata validation live in Resolved_build. Concrete
+   Top-level port and submission-metadata validation live in Resolved_flow. Concrete
    geometry is resolved with the technology and pinned support-tools inputs by Target.
    The harness does not describe the process; that is Technology's job.
 *)
