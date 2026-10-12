@@ -1,6 +1,9 @@
 # hardcaml_asic phase plan
 
-Current checkpoint: 2026-10-12 project-centered entrypoint delivered and reviewed,
+Current checkpoint: 2026-10-12 interpreter paths, provisioning readiness and thin
+consumer bootstrap delivered with narrow acceptance; ASIC P6.5c remains open.
+Authorized LibreLane probe remains BLOCKED, zero cases executed;
+project-centered entrypoint delivered and reviewed,
 following provisional provider observation fixture/model acceptance, consumer
 refresh/activation, real-checkout emission, API rename, hardening and the FIFO specimen.
 This is the **only active queue**. [Architecture](architecture.md) owns boundaries;
@@ -23,13 +26,94 @@ and exact delivery evidence. Proposed new work below awaits design discussion.
     project `describe|emit`. Current recorded refresh rejects the old API;
     development refresh works pending owner adoption of a committed candidate.
 3. The provisional provider observation fixtures/model are accepted with
-    [evidence below](#provider-observation-fixture-acceptance). Next scope requires
-    separate agreement: project run routing or the LibreLane observation feasibility
-    probe. Neither is authorized here; follow the
-   dependencies below for subsequent P6 identity/installation work.
+    [evidence below](#provider-observation-fixture-acceptance). The authorized
+    [LibreLane probe is blocked](#librelane-feasibility-probe-review); next resolve
+    its Python/Tcl prerequisite through user-authorized environment work or an
+    available compatible runtime, then rerun boundedly. Project run routing needs
+    separate agreement. Follow the dependencies below for P6 identity/installation.
 
 This queue records future ordering, not authorization to proceed beyond the
-current bounded review/documentation slice.
+completed bounded tool-environment slices.
+
+### Tool-environment ownership: first slice
+
+Settled scope: installed OCaml library/stdlib Python CLI independent of source
+checkout; consumer-owned configurable `_flow_tools/` default for LibreLane and
+precheck venvs plus PDK/support collateral; host Python/Tcl and Docker/Nix stores
+separate. Thin consumer bootstrap delegates to the installed provider without
+copied pins, source fallback or automatic refresh. Provider refresh is separate
+from tool provisioning. Readiness, example default-root/bootstrap and
+`provision --python BASE` are now implemented; broader P6.5c gates remain open.
+The example selects explicit `--toolchain` > `TOOLCHAIN` > absolute
+`hardcaml_asic_example/_flow_tools`; provider/development adapters retain their
+legacy fallback. See [ownership and commands](guides/bootstrap.md#tool-directory-ownership).
+
+Delivered on 2026-10-12: lexical absolute interpreter paths preserve explicit
+absolute/relative spelling (including parent symlinks and `..`) and inferred
+`.venv/bin/python` / `.venv-precheck/bin/python` selections. Other directory
+canonicalization and existing records, schemas, final JSON and exit semantics
+are retained. Downstream phase4 preflight/run/check audited; no changes required.
+
+Acceptance commands, all passed:
+
+- `python3 -B -m unittest discover -s test -p test_flow_cli.py`: **29 tests**;
+  preflight/run/postcheck/full-execute dispatch, explicit absolute/relative paths
+  with spaces, toolchain-root and `TOOLCHAIN` inference for both interpreters.
+- `python3 -B -m unittest discover -s test -p test_phase4.py`: **17 tests**;
+  quoted precheck shell command executes a real venv through its lexical path.
+- `python3 -B test/test_installed_prefix.py`: **36 tests**, including local Dune
+  build and isolated temporary-prefix install. Real symlinked no-pip venvs execute
+  synthetic LibreLane/precheck fixtures through the installed full-execute command
+  for all four selection modes; runtime `sys.prefix != sys.base_prefix`, argv,
+  `PATH`, and recorded interpreter selection are verified. No dependencies fetched.
+
+Venvs use stdlib `venv.EnvBuilder(symlinks=True, with_pip=False)` in temporary
+directories. External EDA tools are fixtures, not physical acceptance. Production
+runtime was neither sourced nor changed. The prior audit remains Python 3.12.3 /
+LibreLane 3.1.0.dev3 lacking `tkinter`/`_tkinter`, versus the Python 3.11 pin, with
+stale generated environment references to `jane/asic`. Tcl repair, Python 3.11
+availability, full live provider acceptance and P6.5c closure are not established.
+
+### Tool-environment closeout acceptance
+
+2026-10-12 follow-up, recorded from the stopped review and narrow acceptance;
+these checks were not rerun by the documentation-only closeout:
+
+- Provider `check_project_api.py --provider-checks`: **160 Python tests**, OCaml,
+  eight private-boundary external failures, four high-level/manual whole-bundle
+  equivalences and Icarus passed. Full `test_installed_prefix.py`: **37 passed**;
+  example setup **16** and bootstrap **11** passed.
+- Final actual development refresh: generation `9d0035d4c9fb4fafb7295733cb0807a9`,
+  **10.44 seconds**. ocamlfind and CLI select the same prefix; `helperprobe.py`
+  is present; `active_is_published` and `active_library_path_is_first` are true.
+  CLI remains **0.1.0 unstamped**, without P6 identity. Consumer record remains
+  `1714764859274f80a9f5ad207421a04601824e99`.
+- Activated plain example `build @all`, `runtest --force`, strict acceptance and
+  `describe` passed: core and wrapper each **7,330 directed + 20,017 seeded**;
+  both generated RTL variants **11,429 each**, plus corrupt-oracle rejection.
+- Actual activated `./bootstrap.sh --check --no-container`: default exit **2**,
+  six gaps (absent root / Python 3.12 versus requested 3.11); `_flow_tools` was
+  not created. Explicit `--toolchain /home/wayne/devel/jane/hardcaml_asic/.toolchain`
+  also exited **2** (existing 3.12 venvs / stale `jane/asic` environment).
+  Each before/after inventory covered **16,195 entries**, with zero differences
+  in modes, sizes, mtimes, symlinks and key env/index hashes (atime excluded).
+- Preserved **local, ignored** evidence: [results](../../hardcaml_asic_example/.dev/bootstrap-checks/20261012T215315-370846/results.json),
+  [default log](../../hardcaml_asic_example/.dev/bootstrap-checks/20261012T215315-370846/bootstrap-default.log),
+  [existing-root log](../../hardcaml_asic_example/.dev/bootstrap-checks/20261012T215315-370846/bootstrap-existing.log),
+  and `*comparison.json` alongside them. These are environment-specific paths,
+  not permanent published evidence.
+
+Provisioning now requires the requested Python minor (3.11), probes host
+venv/ensurepip/headless Tcl before writes, checks existing flow/precheck metadata,
+and safely quotes/data-checks generated env files. `--check` is bounded with no
+writes, bytecode, index changes or env rewrite; `--no-container` makes no engine
+queries. Current readiness rejects the Python mismatch first; it does **not**
+establish a new Tcl test beyond the prior missing-Tk probe. No host repair or
+tool provisioning occurred; source/destination tool stores are unchanged.
+Runtime preflight Tcl policy, native EDA readiness and Podman runner generalization
+remain unimplemented. P6.5c and live observation remain open, with zero probe cases.
+The user's own shell must [activate then check](guides/bootstrap.md#consumer-check);
+nonzero is expected until host Python 3.11 and Tcl prerequisites are available.
 
 The earlier blanket "finish P6, then migrate scaf" queue is superseded. Do not
 execute archived handoff prompts. No feature, source stamp, specimen, observation
@@ -47,12 +131,13 @@ recorded below; live observation remains unimplemented.
 | ASIC P6.4a/P6.4b | Complete: packaging, shared routing and installed-operation coverage | [P6.4a](development/p6-implementation-plan.md#12-p64a-completion-evidence), [P6.4b](development/p6-implementation-plan.md#13-p64b-completion-evidence) |
 | ASIC P6.4 parent | Open only for source-access-denied installation evidence | ASIC P6.6a supplies it; do not redo packaging |
 | ASIC P6.5a/b/c, P6.6a/b | Open | Scope and dependencies below |
+| Tool-environment first slices | Delivered: lexical interpreter paths, bounded readiness, base-Python selection and thin example bootstrap; broader P6.5c open | [Current acceptance](#tool-environment-closeout-acceptance), [bootstrap guide](guides/bootstrap.md) |
 | ASIC P7.1–P7.6 / M4 | Open historical migration; deferred from current queue | [Original tasks](archive/phase-plan-through-p6.4b.md#12-p7--consumer-migration-and-legacy-retirement), [backlog](backlog/README.md) |
 | ASIC S.1/S.3 | Complete, with qualified S.3 interpretation | [SRAM index](sram/README.md) |
 | ASIC S.2 | Open; S.2a complete, S.2b research partially resolved | [SRAM checkpoint](sram/sram-status.md) |
 | ASIC S.4 | Gated, unimplemented | Requires S.2 capability gates |
 | ASIC T.1 | Open, independent toolchain follow-up | Scope below |
-| Provider observation | Provisional synthetic fixtures/model accepted; live observation unimplemented; LibreLane feasibility probe needs separate agreement | [Fixture acceptance](#provider-observation-fixture-acceptance), [architecture](architecture.md#8-provider-observation-direction) |
+| Provider observation | Provisional synthetic fixtures/model accepted; live observation unimplemented; authorized LibreLane probe BLOCKED, zero cases executed | [Probe review](#librelane-feasibility-probe-review), [fixture acceptance](#provider-observation-fixture-acceptance), [architecture](architecture.md#8-provider-observation-direction) |
 | Resolved-build boundary hardening | Implemented; full runtest passes | [Evidence below](#resolved-build-boundary-hardening-evidence) |
 | Public API rename | Implemented; provider and FIFO acceptance passed, active documentation migrated | [Migration and evidence below](#public-api-rename-migration-and-evidence) |
 | Project-centered entrypoint | Delivered: declaration inventory/description, shared emission, FIFO facade and `describe|emit`; no runtime project run/inspect | [Acceptance below](#project-centered-entrypoint-acceptance) |
@@ -512,7 +597,7 @@ another planning document. Every provider slice must work without Workbench.
 
 | Slice | ASIC deliverable and acceptance | Other repository ownership |
 | --- | --- | --- |
-| Contract and feasibility | Provisional two-run fixtures/model accepted; next demonstrate the LibreLane observation seam without copying the flow engine | Workbench decoder/reducer fixtures; example design/constraint selection |
+| Contract and feasibility | Provisional two-run fixtures/model accepted; authorized probe BLOCKED on Python/Tcl prerequisite, no demonstrated LibreLane observation seam | Workbench decoder/reducer fixtures; example design/constraint selection |
 | Durable catalog and outer observation | Explicit stores, list/inspect, early request correlation, stored operation outcomes, consistent snapshot/cursor and replay; late independent readers observe two runs | Workbench P1 adapter/P2 derived catalog and early run display |
 | Internal step lifecycle | Actual starts/completions/failures/skips/interruption and repeated occurrences, including deferred errors; earlier steps visible while a later one runs | Workbench execution feature/views |
 | Incremental results | Synthesis resources, then one intermediate timing result, then checks; origin/constraints/corner/units preserved and data complete before publication | Workbench timing/resources/check projections |
@@ -598,6 +683,54 @@ store or execution resumption is implemented. The next bounded task is the
 LibreLane observation feasibility probe. This acceptance stops before that probe
 and ASIC P6 work and preserves the successful dependency/emitter closeout above.
 
+### LibreLane feasibility probe review
+
+2026-10-12, authorized local official-API experiment, followed by a sequential
+read-only runtime/source review. [Experiment and eleven authored cases](../experiments/librelane_observation/README.md);
+[retained evidence](../evidence/librelane-observation/blocked-local.json).
+
+- Actual bounded command used literal
+  `/home/wayne/devel/jane/hardcaml_asic/.toolchain/.venv/bin/python -B` with
+  `timeout --signal=TERM --kill-after=3s 60s`; exit **2**. Python **3.12.3**,
+  LibreLane **3.1.0.dev3**, requested Python **3.11**.
+- Official flow construction reached `Config.load` → `TclUtils._eval_env` →
+  missing `tkinter`. **BLOCKED: zero sequencing cases executed.** Synthetic PDK
+  configuration has not passed validation. Only class-method identity and
+  missing-module/no-callback guards passed; authored case assertions did not run.
+- Targeted `/usr/lib/python3.12`, `/usr/local/lib/python3.12`, venv site-packages
+  and venv configuration checks found no compatible Tcl/Tk module; the literal
+  venv resolves neither `tkinter` nor `_tkinter`. No runtime retry was warranted.
+- Current upstream, experiment and scratch fixture hashes match the raw report
+  `/tmp/opencode/librelane-observation-72pve6uu/evidence.json` and retained record.
+  Probe/fixture syntax compiles in memory without `.pyc` writes.
+- Source review supports only a candidate substitution/`Step.run` body/raw-update
+  hook. Body return precedes full-Step validation/writes/completion; gates/skips
+  are outside it. No live observation interface, durable publication, container
+  visibility or real descendant cancellation has been demonstrated.
+
+**Next bounded action:** resolve the selected Python's Tcl prerequisite through
+user-authorized environment work (working `tkinter`, ABI-compatible `_tkinter`
+and Tcl libraries), or identify an already usable compatible runtime, then rerun
+the same official constructor/probe under its bounds. Python 3.12 success alone
+would not accept the declared 3.11 runtime. Do not bypass configuration validation.
+
+**Separate installed-launch fix delivered:** CLI interpreter paths formerly used
+`Path.resolve`, losing venv selection to `/usr/bin/python3.12`. The
+[bounded lexical-path fix and real-venv evidence](#tool-environment-ownership-first-slice)
+cover this defect, separately from SRAM and other runtime defects.
+[Tool-directory ownership and dated local inventory](guides/bootstrap.md#tool-directory-ownership)
+describe configurable managed children and the stale generated environment;
+neither inventory nor this blocked probe closes **P6.5c**.
+
+Final non-Git verification:
+`.toolchain/.venv/bin/python -B /tmp/opencode/check-librelane-final-review.py`
+passed retained/raw evidence consistency, all **12** recorded current
+upstream/experiment/fixture hashes, two in-memory Python compilations, and
+whitespace/final-LF plus **101** local links/anchors across the four updated docs
+and experiment README (none unavailable). Raw report SHA-256:
+`4fb16517b0dced266a18161d51e614415fc38291e653c8f43633d97b8842d535`.
+These checks do not execute any of the eleven probe cases.
+
 ## Dependency triage
 
 | Milestone | Genuine blockers |
@@ -640,9 +773,9 @@ Keep completed IDs and evidence links stable. Add acceptance to the owning task
 when work lands; do not create another session handoff/status queue. Ordinary
 tests stay PDK-free; physical acceptance is explicit and separately recorded.
 Provider observation fixture/model acceptance, the FIFO example and project-centered
-entrypoint are delivered. Project run routing or LibreLane observation feasibility
-requires separate agreement; this slice stops before either, live provider features
-or ASIC P6.
+entrypoint are delivered. The authorized LibreLane probe remains blocked as
+recorded above; runtime prerequisite work requires user authorization. Project
+run routing, live provider features and ASIC P6 implementation remain future scope.
 
 ### Consolidation verification
 

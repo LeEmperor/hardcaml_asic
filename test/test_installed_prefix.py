@@ -30,6 +30,7 @@ import tempfile
 import time
 from types import SimpleNamespace
 import unittest
+import venv
 
 
 sys.dont_write_bytecode = True
@@ -504,6 +505,73 @@ class InstalledPrefixTest(unittest.TestCase):
 
     # -- preflight -------------------------------------------------------
 
+    def test_installed_real_venvs_keep_selection_through_full_execute(self):
+        fixture = self.stubbed(python=f"{sys.version_info.major}.{sys.version_info.minor}")
+        root = fixture.root / "tools with spaces"
+        probe = ("import json, os, sys\nfrom pathlib import Path\n"
+                 "Path('python-selection.json').write_text(json.dumps({"
+                 "'prefix': sys.prefix, 'base': sys.base_prefix, "
+                 "'executable': sys.executable, 'path': os.environ['PATH']}))\n")
+        for child, package, version in ((".venv", "librelane", STUB_LIBRELANE),
+                                        (".venv-precheck", "klayout", STUB_KLAYOUT)):
+            environment = root / child
+            venv.EnvBuilder(symlinks=True, with_pip=False).create(environment)
+            python = environment / "bin/python"
+            self.assertTrue(python.is_symlink())
+            site = Path(subprocess.check_output([str(python), "-c",
+                "import sysconfig; print(sysconfig.get_path('purelib'))"], text=True).strip())
+            # Synthetic metadata/module in the scratch venv only; no installer.
+            metadata = site / f"{package}-{version}.dist-info"
+            metadata.mkdir()
+            (metadata / "METADATA").write_text(f"Name: {package}\nVersion: {version}\n")
+            if package == "librelane":
+                (site / "librelane.py").write_text(probe +
+                    "import subprocess\n"
+                    f"sys.exit(subprocess.call([{str(fixture.tools.flow_python)!r}, "
+                    "'-m', 'librelane', *sys.argv[1:]]))\n")
+        (root / "tt").symlink_to(fixture.tools.support, target_is_directory=True)
+        (root / "pdk").symlink_to(fixture.tools.pdk, target_is_directory=True)
+        (fixture.tools.support / "precheck/precheck.py").write_text(probe +
+            "Path('reports').mkdir(exist_ok=True)\n"
+            "Path('reports/results.md').write_text('fixture check | pass\\n')\n")
+        executable(fixture.tools.bin / "nix-shell", NIX_SHELL_STUB.replace(
+            'mkdir -p reports', 'exec /bin/sh -c "$command"'))
+        bench = fixture.root / "tb.v"
+        bench.write_text("module tb; endmodule\n")
+        for selection in ("absolute", "relative", "root", "environment"):
+            with self.subTest(selection=selection):
+                env = {"STUB_PYTHON_VERSION": ".".join(map(str, sys.version_info[:3]))}
+                locations = self.locations(fixture, flow_python=False)
+                if selection in ("absolute", "relative"):
+                    for option, child in (("--python", ".venv"),
+                                          ("--precheck-python", ".venv-precheck")):
+                        python = root / child / "bin/python"
+                        locations += [option, str(python if selection == "absolute"
+                                                  else python.relative_to(fixture.root))]
+                elif selection == "root":
+                    locations += ["--toolchain", str(root)]
+                else:
+                    env["TOOLCHAIN"] = str(root)
+                completed = self.flow(fixture, "execute", str(fixture.bundle),
+                    "--runs", str(fixture.runs), "--stage", "full",
+                    "--testbench", str(bench), "--testbench-top", "tb", *locations,
+                    env=env, cwd=fixture.root)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                result = json.loads(completed.stdout)
+                record = json.loads(Path(result["run_record"]).read_text())
+                python = root / ".venv/bin/python"
+                self.assertEqual(record["environment"]["python"], str(python))
+                self.assertEqual(record["commands"][0][0], str(python))
+                run = Path(result["run_dir"])
+                for child, evidence in ((".venv", run / "project/python-selection.json"),
+                    (".venv-precheck", next(run.glob("checks/*/tt/precheck/python-selection.json")))):
+                    actual = json.loads(evidence.read_text())
+                    self.assertEqual(actual["prefix"], str(root / child))
+                    self.assertNotEqual(actual["prefix"], actual["base"])
+                    self.assertEqual(actual["executable"], str(root / child / "bin/python"))
+                    if child == ".venv":
+                        self.assertEqual(actual["path"].split(os.pathsep)[0], str(python.parent))
+
     def test_installed_preflight_validates_real_inputs_and_names_its_gaps(self):
         fixture = self.stubbed()
         output = fixture.root / "preflight.json"
@@ -954,9 +1022,8 @@ class InstalledPrefixTest(unittest.TestCase):
         """Plumbing only: which script, which lock, which root, which status.
 
         The provisioner itself is replaced by a stub `bash`, so no collateral is
-        fetched, no venv is built and no host is probed. This says nothing about
-        P6.5c's read-only, offline and exact-version provisioning semantics,
-        which are not implemented yet.
+        fetched, no venv is built and no host is probed. Provider readiness is
+        tested separately with synthetic fixtures in test_toolchain.py.
         """
         root = Path(tempfile.mkdtemp(dir=self.temporary.name, prefix="provision."))
         log = root / "invocation.log"
@@ -965,8 +1032,11 @@ class InstalledPrefixTest(unittest.TestCase):
                    'printf "TOOLCHAIN=%s\\n" "$TOOLCHAIN" >> "$STUB_PROVISION_LOG"\n'
                    'exit "${STUB_PROVISION_STATUS:-0}"\n')
         toolchain = root / "managed"
+        base = root / "base link"
+        base.symlink_to(sys.executable)
 
         dispatched = self.invoke("provision", "--toolchain", str(toolchain),
+                                 "--python", str(base),
                                  "--check", "--offline", "--no-container",
                                  path=f"{root / 'bin'}:/usr/bin:/bin",
                                  env={"STUB_PROVISION_LOG": str(log)})
@@ -975,6 +1045,8 @@ class InstalledPrefixTest(unittest.TestCase):
         self.assertTrue(argv.startswith(
             str(self.package / "data/toolchain.sh") + " "))
         self.assertIn(f"--lock-file {self.package / 'data/toolchain.lock'}", argv)
+        self.assertIn(f"--python {base}", argv)
+        self.assertTrue((self.package / "probe.py").is_file())
         for option in ("--check", "--offline", "--no-container"):
             self.assertIn(f" {option}", argv)
         self.assertEqual(environment, f"TOOLCHAIN={toolchain}")
@@ -997,6 +1069,25 @@ class InstalledPrefixTest(unittest.TestCase):
         refused = self.invoke("provision", "--lock-file", str(elsewhere / "other.lock"))
         self.assertEqual(refused.returncode, 2)
         self.assertIn("--lock-file", refused.stderr)
+
+    def test_installed_provider_check_absent_root_is_read_only(self):
+        root = Path(tempfile.mkdtemp(dir=self.temporary.name, prefix="readonly-provider."))
+        toolchain = root / "absent"
+        log = root / "mutations"
+        for name in ("git", "docker", "podman", "pip", "curl", "wget", "nix-shell", "nix-store"):
+            executable(root / "bin" / name, '#!/bin/sh\nprintf "%s\\n" "$0 $*" >> "$MUTATIONS"\nexit 99\n')
+        # Only the non-mutating Nix version query is allowed.
+        executable(root / "bin/nix-store", '#!/bin/sh\n[ "$*" = --version ] && exit 0\nexit 99\n')
+        before = {str(p): p.stat().st_mtime_ns for p in self.package.rglob("*")}
+        completed = self.invoke("provision", "--check", "--no-container", "--python", str(root / "missing-python"),
+                                "--toolchain", str(toolchain), path=f"{root / 'bin'}:/usr/bin:/bin",
+                                env={"MUTATIONS": str(log)})
+        self.assertEqual(completed.returncode, 2, completed.stdout + completed.stderr)
+        self.assertIn("missing-python", completed.stderr)
+        self.assertFalse(toolchain.exists())
+        self.assertFalse(log.exists())
+        self.assertEqual(before, {str(p): p.stat().st_mtime_ns for p in self.package.rglob("*")})
+        self.assertFalse(list(self.package.rglob("*.pyc")))
 
 
 if __name__ == "__main__":

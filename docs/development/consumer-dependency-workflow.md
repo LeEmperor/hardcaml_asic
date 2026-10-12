@@ -4,6 +4,8 @@ Implementation contract and command reference, 2026-10-12, for
 `hardcaml_asic_example`. The [central phase plan](../phase_plan.md)
 owns current status, [original closeout evidence](../phase_plan.md#consumer-refresh-and-real-checkout-emitter-closeout)
 and [project-entrypoint acceptance](../phase_plan.md#project-centered-entrypoint-acceptance).
+The [tool-environment closeout](../phase_plan.md#tool-environment-closeout-acceptance)
+records the final development refresh and subsequent activated acceptance.
 The original brief below defines the implemented bounded workflow.
 
 ## Goal and ownership
@@ -165,3 +167,23 @@ give the real-checkout command with `--require-rtl --real-checkout --work-dir`;
 always choose a fresh work directory. The central plan records the completed
 passes and preserved outputs, including the initial Dune path fixes. The local
 receipt and copied dependency record do not deliver ASIC P6.5 source stamping.
+
+## Separate tool readiness
+
+Library refresh captures and installs provider source; ordinary installed use and
+the example's thin bootstrap require no provider checkout. Bootstrap delegates to
+the installed CLI without copied pins, source fallback or automatic refresh.
+Its root precedence is `--toolchain` > `TOOLCHAIN` > absolute example `_flow_tools/`.
+In the user's own example shell:
+
+```sh
+source .dev/asic/current/activate.sh
+./bootstrap.sh --check --no-container
+```
+
+This bounded read-only check is expected to return nonzero on the observed host
+until Python 3.11 and matching Tcl prerequisites are available. It provisions
+nothing. `provision --python BASE` selects a base for new venvs; execution
+`--python` selects the flow venv interpreter. See the
+[bootstrap guide](../guides/bootstrap.md#consumer-check) for details and local
+evidence qualifications; broader ASIC P6.5c gates remain open.

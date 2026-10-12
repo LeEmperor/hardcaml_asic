@@ -28,6 +28,16 @@ or live provider capability.
 
 ## 2. Responsibilities and dependency direction
 
+**Settled tool-environment ownership:** the installed provider (OCaml library and
+stdlib Python CLI) operates independently of its source checkout. The consumer
+owns a configurable tool root, with `_flow_tools/` as the adopted default, holding
+LibreLane/precheck venvs and PDK/support collateral. Host Python/Tcl prerequisites
+and Docker/Nix stores remain separate. A thin consumer bootstrap delegates to the
+installed provider without copying its pins; provider refresh and tool provisioning
+are separate operations. The example's thin bootstrap and bounded provisioning
+readiness checks are implemented; no copied pins, source fallback or automatic
+provider refresh is used. See the [current acceptance](phase_plan.md#tool-environment-closeout-acceptance).
+
 | Layer | Responsibility |
 | --- | --- |
 | OCaml library (`lib/`) | Resource semantics, project declarations, validated design intent and input emission |
@@ -47,6 +57,20 @@ archives. Workbench owns a rebuildable index, bounded caches, saved selections
 and layouts; its daemon owns its process handles. Multiple readers of one run
 are independent. Selection, tile lifetime and client detach never control a flow.
 PD means **physical design**.
+
+Current tool storage has separate owners: the provider library/CLI installation prefix,
+the configurable collateral root (the example defaults to absolute `_flow_tools/`;
+provider/development adapters retain their legacy `.toolchain/` fallback), host
+prerequisites and Docker/Podman/Nix stores, and the
+consumer's bundle/run/archive stores. Shared `provision --toolchain PATH` or
+`TOOLCHAIN` selects managed `tt`, `pdk`, `.venv` and `.venv-precheck` children;
+it does not relocate host runtimes. `provision --python BASE` chooses the base for
+new venvs; execution `--python` chooses the flow venv interpreter, whose lexical
+path is preserved. `--check` is bounded and read-only; normal provisioning may
+write managed collateral. Runtime preflight Tcl policy, native EDA capability
+checks and Podman runner generalization are not implemented by this slice.
+See [tool-directory ownership and local observations](guides/bootstrap.md#tool-directory-ownership).
+ASIC P6.5c remains open.
 
 The active [Workbench architecture](../../hardcaml_workbench/docs/hardcaml_workbench_architecture.md)
 and [Workbench construction plan](../../hardcaml_workbench/docs/construction_phase_plan.md)
@@ -199,8 +223,8 @@ resumable checkpoint. Runtime locking, fsync/data durability, authentic persiste
 history and producer liveness are unproven; deeper hierarchy is unmodeled. Silence
 or reader disconnect never supplies interruption/completion facts.
 
-Next scope requires separate agreement: project run routing or the LibreLane
-observation feasibility probe below. Neither is authorized by this closeout. Live
+The subsequently authorized LibreLane observation probe is **BLOCKED** at the
+runtime prerequisite described below. Project run routing still requires separate agreement. Live
 catalog, early correlation, step updates and incremental result publication remain
 undelivered.
 
@@ -244,9 +268,20 @@ export needs an explicit separate contract.
 
 ### LibreLane feasibility gate
 
-Local source metadata is `3.1.0.dev3`, matching the declared pin, under a Python
-3.12 environment; bundles request 3.11. This is source inspection, not runtime
-validation. `SequentialFlow.run` calls `step.start` directly; `Step.start` is
+On 2026-10-12, the literal `.toolchain/.venv/bin/python` reported Python 3.12.3
+and LibreLane `3.1.0.dev3`; bundles request Python 3.11. The authorized
+[experiment](../experiments/librelane_observation/README.md) reached official
+`Config.load` and failed at `TclUtils._eval_env` importing missing `tkinter`
+([evidence](../evidence/librelane-observation/blocked-local.json), exit 2).
+**Zero of eleven authored cases executed; synthetic PDK configuration is not
+validated and no observation seam is demonstrated.** Targeted standard-location
+checks found no compatible Python 3.12 Tcl/Tk module. Next: user-authorized
+runtime prerequisite resolution (working `tkinter`, `_tkinter` and Tcl libraries
+for the selected Python), then repeat the bounded official-API probe. Matching
+source versions alone is not environment acceptance; supported-runtime acceptance
+also requires the declared Python 3.11 environment.
+
+Source inspection shows `SequentialFlow.run` calls `step.start` directly; `Step.start` is
 final. Overriding `Flow.start_step` is not a demonstrated lifecycle hook.
 
 Step substitutions and `Step.run` are extension points; the latter returns metric
@@ -256,6 +291,14 @@ do not expose every lifecycle fact. Prove supported hooks/structured observation
 with stated limits, or propose narrow upstream instrumentation. Do not copy the
 engine's orchestration. Full-flow acceptance must test the Dockerized path and
 actual descendant cancellation, not only a local Python probe.
+
+The bounded interpreter-path fix is delivered: CLI `resolve_paths` now anchors
+interpreter paths lexically, retaining venv symlinks for explicit and inferred
+flow/precheck selections. Real no-pip symlinked venv tests, including isolated
+installed full-execute fixtures, pass; [evidence](phase_plan.md#tool-environment-ownership-first-slice)
+does not establish live provider acceptance. The generated local tool environment
+also retains stale `/home/wayne/devel/jane/asic` paths; the probe used the literal
+current interpreter path without sourcing it.
 
 ## 9. Core review and development specimen
 
@@ -312,5 +355,5 @@ actual revision/dirty-input provenance and RTL replay; see the
 Synthetic committed fixtures remain separate provenance tests. This does not
 establish full environment locking, embedded source identity, source-access-denied
 P6.6 acceptance or physical acceptance. The separate provisional observation fixture
-slice is accepted; run routing/LibreLane observation feasibility need separate agreement. FIFO delivery does
+slice is accepted; run routing needs separate agreement and LibreLane feasibility is blocked as above. FIFO delivery does
 not implement live provider observation or close ASIC P6 gates.

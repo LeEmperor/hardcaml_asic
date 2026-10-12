@@ -6,11 +6,14 @@ import json
 import os
 from pathlib import Path
 import signal
+import shlex
+import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest import mock
+import venv
 
 
 sys.dont_write_bytecode = True
@@ -205,6 +208,29 @@ class PostcheckTest(unittest.TestCase):
         record_path = next((self.run_dir / "checks").glob("*/postcheck.json"))
         self.assertEqual(phase4.read_json(record_path)["inputs"]["testbench_top"],
                          "memory_tb")
+
+    def test_real_precheck_venv_survives_quoted_shell_command(self):
+        environment = self.root / "precheck with spaces"
+        venv.EnvBuilder(symlinks=True, with_pip=False).create(environment)
+        alias = self.root / "precheck alias"
+        alias.symlink_to(environment, target_is_directory=True)
+        python = alias / "bin/../bin/python"
+        self.assertTrue(python.is_symlink())
+        self.args.precheck_python = python
+        (self.support / "precheck/precheck.py").write_text(
+            "import json,sys; print(json.dumps([sys.prefix, sys.base_prefix]))\n")
+        with mock.patch.object(phase4, "command_output", side_effect=self.probes) as probes, \
+             mock.patch.object(phase4, "run_logged", return_value=0) as logged:
+            outcome = phase4.check(self.args)
+        self.assertEqual(outcome.exit_code, 0)
+        self.assertEqual(probes.call_args_list[1].args[0][0], str(python))
+        argv, cwd, env = logged.call_args_list[0].args[:3]
+        command = argv[-1]
+        self.assertIn(shlex.quote(str(python)), command)
+        prefix, base = json.loads(subprocess.check_output(
+            ["/bin/sh", "-c", command], cwd=cwd, env=env, text=True))
+        self.assertEqual(Path(prefix).resolve(), environment)
+        self.assertNotEqual(prefix, base)
 
     def test_nixpkgs_pin_comes_from_the_pinned_collateral_or_is_absent(self):
         pinned = self.support / "precheck/default.nix"

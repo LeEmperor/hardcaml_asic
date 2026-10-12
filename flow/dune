@@ -31,6 +31,7 @@
   (hardcaml_asic_flow/identity.py as flow/hardcaml_asic_flow/identity.py)
   (hardcaml_asic_flow/paths.py as flow/hardcaml_asic_flow/paths.py)
   (hardcaml_asic_flow/phase4.py as flow/hardcaml_asic_flow/phase4.py)
+  (hardcaml_asic_flow/probe.py as flow/hardcaml_asic_flow/probe.py)
   (hardcaml_asic_flow/report.py as flow/hardcaml_asic_flow/report.py)
   ; Same file as the repository root toolchain.lock, which stays the one place a
   ; pin is edited and the one test/check_bundle.py asserts against the emitted

@@ -9,12 +9,21 @@
 3. **[User workflow](guides/usage.md)** — how to use the existing library and CLI.
 
 Current checkpoint (2026-10-12): ASIC P0–P5/M3 and P6.1–P6.3/P6.4a/b have
-evidence. P6.5/P6.6 remain open. The provisional synthetic
+evidence. Lexical venv interpreter paths, bounded provisioning readiness,
+`provision --python BASE` and thin example bootstrap are delivered
+([current acceptance](phase_plan.md#tool-environment-closeout-acceptance)); broader
+P6.5c and P6.5/P6.6 gates remain open. The provisional synthetic
 [provider observation fixtures/model](../test/fixtures/provider_observation/v1/README.md)
 are implemented: 50 focused tests and the full provider regression suite pass
-([evidence](phase_plan.md#provider-observation-fixture-acceptance)). Next scope needs
-separate agreement: project run routing or a LibreLane observation feasibility probe.
-Neither is authorized by this closeout. Live catalog, early correlation,
+([evidence](phase_plan.md#provider-observation-fixture-acceptance)). The subsequently
+authorized [LibreLane feasibility probe](../experiments/librelane_observation/README.md)
+is **BLOCKED**: the prior probe found missing Tcl/Tk support in local Python
+3.12.3, and current readiness rejects the Python 3.11 mismatch first. Zero of eleven
+authored cases executed; the synthetic configuration remains unvalidated
+([evidence](../evidence/librelane-observation/blocked-local.json)). Next is
+user-authorized Python/Tcl prerequisite resolution and a bounded rerun; matching
+LibreLane source metadata does not validate the requested Python 3.11 environment.
+Project run routing needs separate agreement. Live catalog, early correlation,
 step updates and incremental result publication remain undelivered.
 The owner's [development specimen](../../hardcaml_asic_example/README.md) now has
 the fixed FIFO contract/core, independent scoreboard, TT wrapper/declaration,
@@ -55,7 +64,9 @@ Historical records retain their original API names and commands.
 - [Installation](guides/consumer-installation.md): one pinned library/CLI artifact.
 - [Memory example](guides/memory-example.md): PDK-free behavioral/flop checks.
 - [Bundle emission](guides/bundle-emission.md): RTL, constraints and immutable inputs.
-- [Toolchain setup](guides/bootstrap.md): explicit external provisioning.
+- [Toolchain setup](guides/bootstrap.md#tool-directory-ownership): configurable
+  collateral root, separate provider/host/container/Nix/run storage, and dated
+   local findings, plus [activate-then-check commands](guides/bootstrap.md#consumer-check).
 - [Execution and results](guides/flow.md): run, postcheck, collect, report, archive.
 
 ## Documentation rules

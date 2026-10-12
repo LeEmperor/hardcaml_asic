@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Flow layer of the bootstrap: the external collateral the runner needs before a
-# preflight can pass. Everything it installs lives under one directory and is pinned by
-# the toolchain.lock installed beside this script.
+# preflight can pass. Project-local collateral lives under the selected root and is
+# pinned by the toolchain.lock installed beside this script.
 #
 # This is the generic provisioner, installed as package data and normally reached as
 # "hardcaml-asic-flow provision". scripts/toolchain.sh is the repository adapter onto
@@ -12,6 +12,7 @@
 #   hardcaml-asic-flow provision --check         # report every gap, change nothing
 #   hardcaml-asic-flow provision --offline       # reuse what is installed, fetch nothing
 #   hardcaml-asic-flow provision --no-container  # skip the Docker/Podman prerequisite and image
+#   hardcaml-asic-flow provision --python PATH   # base Python for new venvs, not runtime --python
 #
 # What it creates, all under $TOOLCHAIN (default .toolchain/ under the caller's cwd):
 #   tt/                 tt-support-tools, detached at support_tools_revision
@@ -24,9 +25,10 @@
 # so this is the command after a pull that changes toolchain.lock as well as the command
 # on a new machine.
 #
-# It installs nothing outside $TOOLCHAIN. The opam switch is the other script's business
-# (scripts/ocaml-deps.sh in a checkout), the container daemon and image are the host's,
-# and the PDK is fetched but never written to by the flow.
+# Host Python/Tcl, container storage and Nix stores remain external to $TOOLCHAIN;
+# an image pull uses the container engine's storage. The opam switch is the other
+# script's business (scripts/ocaml-deps.sh in a checkout). The PDK is fetched but
+# never written to by the flow.
 #
 # Careful: bootstrapping prepares an environment. It does NOT prove the design hardens,
 # meets timing, or passes precheck. Those are the run/postcheck operations and their
@@ -65,8 +67,8 @@ readonly data_dir
 # above: the public "provision" command exposes no way to swap target pins.
 lock_file="$data_dir/toolchain.lock"
 
-# One directory holds everything, so removing it undoes the whole flow layer and nothing
-# else. The caller chooses it: scripts/toolchain.sh keeps the repository default and the
+# One directory holds the checkouts, venvs and generated environment paths, not host
+# prerequisites or container/Nix storage. scripts/toolchain.sh keeps the repository default and the
 # CLI resolves --toolchain / $TOOLCHAIN / ./.toolchain before calling here.
 TOOLCHAIN=${TOOLCHAIN:-$PWD/.toolchain}
 readonly TOOLCHAIN
@@ -79,6 +81,7 @@ readonly env_file="$TOOLCHAIN/toolchain-env.sh"
 check=0
 offline=0
 no_container=0
+base_python=""
 
 usage() {
     sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -89,6 +92,7 @@ while [[ $# -gt 0 ]]; do
         --check) check=1 ;;
         --offline) offline=1 ;;
         --no-container) no_container=1 ;;
+        --python) shift; [[ $# -gt 0 && -n $1 && $1 != --* ]] || { echo "toolchain: --python needs a path" >&2; exit 1; }; base_python=$1 ;;
         --lock-file) shift; [[ $# -gt 0 ]] || { echo "toolchain: --lock-file needs a path" >&2; exit 1; }; lock_file=$1 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "toolchain: unknown option: $1 (try --help)" >&2; exit 1 ;;
@@ -116,6 +120,15 @@ die() {
 }
 
 mutating() { [[ $check -eq 0 ]]; }
+
+# Bound read-only subprocesses, including Git's optional index refreshes.
+export GIT_OPTIONAL_LOCKS=0
+export PYTHONDONTWRITEBYTECODE=1
+read_probe() { timeout --kill-after=2s 20s "$@"; }
+python_probe() { local python=$1; shift; read_probe "$python" -I -B "$data_dir/../probe.py" "$@"; }
+prereq_gap() {
+    if [[ $check -eq 1 ]]; then gap "$*"; else die "$EX_PREREQ" "$*"; fi
+}
 
 # In --check mode a gap is recorded and the run continues, so one invocation reports
 # every one of them rather than the first. Outside --check nothing calls this: the step
@@ -152,6 +165,7 @@ read_lockfile() {
     pdk_revision=$(lock pdk_revision)
     librelane_version=$(lock librelane_version)
     python_version=$(lock python)
+    [[ $python_version =~ ^[0-9]+\.[0-9]+$ ]] || die "$EX_LOCKFILE" "invalid Python minor: $python_version"
 
     # The image name is derived exactly as scripts/phase4.py derives it, rather than
     # pinned separately, so the two cannot disagree about which image a run uses.
@@ -220,31 +234,38 @@ check_prerequisites() {
     step "Checking host prerequisites"
 
     command -v git >/dev/null 2>&1 || die "$EX_PREREQ" "git is not installed"
-    info "git $(git --version | awk '{print $3}')"
-
-    command -v python3 >/dev/null 2>&1 || die "$EX_PREREQ" "python3 is not installed"
-    local have
-    have=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
-
-    # The bundle asks for one Python minor version and the host often has another. That
-    # is a real difference, not a formality: preflight rejects it, and nothing waives it
-    # by default. Reported here so the reason is visible at provisioning time rather than
-    # four steps into a flow run.
-    venv_python=python3
-    if command -v "python$python_version" >/dev/null 2>&1; then
-        venv_python="python$python_version"
-        info "python $python_version (matches the lockfile)"
-    else
-        warn "python$python_version not found; using python3 $have for $venv_dir"
-        warn "preflight requires the requested minor version; install python$python_version"
+    command -v timeout >/dev/null 2>&1 || die "$EX_PREREQ" "timeout is required for bounded readiness probes"
+    local python detail
+    # Existing environments must never be silently recreated on a minor mismatch.
+    for python in "$venv_dir/bin/python" "$precheck_venv_dir/bin/python"; do
+        if [[ -x $python ]]; then
+            if ! detail=$(python_probe "$python" version "$python_version" 2>&1); then
+                prereq_gap "$python: ${detail:-probe failed or timed out}; explicitly repair the environment"
+            fi
+        elif [[ -e ${python%/bin/python} ]]; then
+            prereq_gap "broken environment at ${python%/bin/python}; explicitly repair it before provisioning"
+        fi
+    done
+    if [[ -x $venv_dir/bin/python ]]; then
+        if ! detail=$(python_probe "$venv_dir/bin/python" tcl "$python_version" 2>&1); then
+            prereq_gap "$venv_dir: ${detail:-Tcl probe failed or timed out}"
+        fi
     fi
-
-    python3 -c 'import venv' >/dev/null 2>&1 || die "$EX_PREREQ" \
-        "the python3 venv module is missing" \
-        "Install it with your package manager (apt install python3-venv)"
+    venv_python=$base_python
+    if [[ -n $base_python || ! -x $venv_dir/bin/python || ! -x $precheck_venv_dir/bin/python ]]; then
+        if [[ -z $venv_python ]]; then
+            venv_python=$(command -v "python$python_version" || command -v python3 || true)
+        fi
+        if [[ -z $venv_python ]]; then
+            prereq_gap "no base Python $python_version; select --python PATH"
+        elif ! detail=$(python_probe "$venv_python" base "$python_version" 2>&1); then
+            prereq_gap "base $venv_python: ${detail:-probe failed or timed out}; select --python PATH with Python $python_version and host Tcl/venv/ensurepip"
+        fi
+    fi
+    check_precheck_nix
 
     if [[ $no_container -eq 1 ]]; then
-        warn "container check skipped; a run will need --native and local EDA tools"
+        warn "container checks skipped; this is not a native EDA readiness certificate"
         return
     fi
 
@@ -265,7 +286,7 @@ check_prerequisites() {
     # group states applies is worth separating for the same reason it is in
     # check_precheck_nix, and the socket answers a question the group names cannot: a
     # socket that does not exist means the daemon is down, not that a group is missing.
-    if ! "$container" info >/dev/null 2>&1; then
+    if ! read_probe "$container" info >/dev/null 2>&1; then
         local socket_group="" advice=()
         if [[ $container == docker ]]; then
             socket_group=$(stat -c '%G' /var/run/docker.sock 2>/dev/null) || socket_group=""
@@ -290,7 +311,7 @@ check_prerequisites() {
         # change up only when the snap restarts, so the advice above is incomplete for it
         # in exactly the group cases. Naming it only when that Docker is the one installed
         # keeps it out of the way of everyone else.
-        if [[ $container == docker ]] && snap list docker >/dev/null 2>&1; then
+        if [[ $container == docker ]] && read_probe snap list docker >/dev/null 2>&1; then
             advice+=("Docker here is a snap, which also needs:"
                 "  sudo snap disable docker && sudo snap enable docker")
         fi
@@ -298,7 +319,7 @@ check_prerequisites() {
         die "$EX_PREREQ" "$container is installed but its daemon is not reachable" \
             "${advice[@]}"
     fi
-    info "$container $("$container" info --format '{{.ServerVersion}}' 2>/dev/null)"
+    info "$container daemon reachable"
 }
 
 # ---------------------------------------------------------------------------
@@ -312,7 +333,7 @@ check_prerequisites() {
 is_own_repo() {
     local dir=$1
     [[ -d $dir/.git ]] || return 1
-    GIT_DIR="$dir/.git" GIT_WORK_TREE="$dir" git rev-parse --git-dir >/dev/null 2>&1
+    GIT_DIR="$dir/.git" GIT_WORK_TREE="$dir" read_probe git rev-parse --git-dir >/dev/null 2>&1
 }
 
 # Every git command aimed at a pinned checkout goes through here. Setting GIT_DIR and
@@ -321,7 +342,10 @@ is_own_repo() {
 repo_git() {
     local dir=$1
     shift
-    GIT_DIR="$dir/.git" GIT_WORK_TREE="$dir" git "$@"
+    case $1 in
+        rev-parse|status) GIT_DIR="$dir/.git" GIT_WORK_TREE="$dir" read_probe git "$@" ;;
+        *) GIT_DIR="$dir/.git" GIT_WORK_TREE="$dir" git "$@" ;;
+    esac
 }
 
 # Pinned checkouts
@@ -445,7 +469,7 @@ fetch_pdk() {
 # The installed version of a package inside a venv, empty when it is not installed.
 installed_version() {
     local python=$1 package=$2
-    "$python" -m pip show "$package" 2>/dev/null | sed -n 's/^Version: //p'
+    read_probe "$python" -I -B -c 'import importlib.metadata, sys; print(importlib.metadata.version(sys.argv[1]))' "$package" 2>/dev/null
 }
 
 install_flow_environment() {
@@ -453,9 +477,14 @@ install_flow_environment() {
 
     local python="$venv_dir/bin/python"
     local have=""
-    [[ -x $python ]] && have=$(installed_version "$python" librelane)
+    [[ -x $python ]] && have=$(installed_version "$python" librelane || true)
 
     if [[ $have == "$librelane_version" ]]; then
+        local detail
+        if ! detail=$(python_probe "$python" flow "$python_version" "$librelane_version" 2>&1); then
+            prereq_gap "$venv_dir: ${detail:-flow probe failed or timed out}; explicitly repair the environment"
+            return 0
+        fi
         info "librelane $have (present)"
         return 0
     fi
@@ -509,18 +538,24 @@ install_precheck_environment() {
         die "$EX_MISMATCH" "precheck requirements not found: $requirements"
     fi
 
-    if [[ -x $python ]] && "$python" -c 'import klayout' >/dev/null 2>&1; then
+    local detail="no Python environment"
+    if [[ -x $python ]] && detail=$(python_probe "$python" precheck "$python_version" "$requirements" 2>&1); then
         info "precheck environment present ($precheck_venv_dir)"
         return 0
     fi
 
     if [[ $check -eq 1 ]]; then
-        gap "no precheck environment at $precheck_venv_dir"
+        gap "$precheck_venv_dir: ${detail:-precheck probe failed or timed out}"
         return 0
     fi
 
     [[ $offline -eq 0 ]] || die "$EX_NETWORK" \
         "no precheck environment and --offline was given"
+
+    local requirements_python=$python
+    [[ -x $requirements_python ]] || requirements_python=$venv_python
+    python_probe "$requirements_python" requirements "$python_version" "$requirements" || die "$EX_PREREQ" \
+        "precheck requirements cannot be checked as exact pins; no pip resolution attempted"
 
     if [[ ! -x $python ]]; then
         "$venv_python" -m venv "$precheck_venv_dir" || { rm -rf "$precheck_venv_dir"; \
@@ -534,7 +569,7 @@ install_precheck_environment() {
     "$python" -m pip install --quiet -r "$requirements" || die "$EX_NETWORK" \
         "failed to install $requirements"
 
-    "$python" -c 'import klayout' >/dev/null 2>&1 || die "$EX_TOOL" \
+    python_probe "$python" precheck "$python_version" "$requirements" || die "$EX_TOOL" \
         "klayout did not install into $precheck_venv_dir"
     info "precheck environment ready"
 }
@@ -543,11 +578,8 @@ install_precheck_environment() {
 # which pip cannot supply. Precheck is a later step than bootstrap, so this is reported
 # and never fatal; the postcheck operation re-checks it.
 #
-# Probe the daemon rather than the binary. An installed nix-shell whose daemon socket the
-# user cannot open fails every evaluation, and a distro Nix restricts that socket to a
-# group it does not add anyone to, so "nix-shell is on PATH" says nothing about whether
-# precheck can run. Finding that out here costs a subprocess; finding it out in postcheck
-# costs the whole hardening run that precedes it.
+# Availability only: a version query proves neither daemon access nor evaluation.
+# In particular --check must not evaluate Nix or initialise a store/cache.
 check_precheck_nix() {
     step "Checking Nix for the TT precheck"
 
@@ -557,8 +589,8 @@ check_precheck_nix() {
     fi
 
     local probe
-    if probe=$(nix-store --version 2>&1); then
-        info "${probe%$'\n'*}"
+    if probe=$(read_probe nix-store --version 2>&1); then
+        info "${probe%$'\n'*} (availability only; no evaluation or daemon readiness claimed)"
         return 0
     fi
 
@@ -586,7 +618,7 @@ pull_container_image() {
     [[ $no_container -eq 0 ]] || return 0
     step "Resolving the LibreLane image"
 
-    if "$container" image inspect "$librelane_image" >/dev/null 2>&1; then
+    if read_probe "$container" image inspect "$librelane_image" >/dev/null 2>&1; then
         info "$librelane_image (present)"
         return 0
     fi
@@ -608,34 +640,51 @@ pull_container_image() {
 # ---------------------------------------------------------------------------
 # Generated environment file
 # ---------------------------------------------------------------------------
-# Written for two readers: a driver that sources it to learn where the toolchain went,
-# and a person who wants to run librelane or python by hand. Assignments use
-# ":${VAR:=...}" so anything already set in the caller's environment wins; a caller's
-# explicit locations must keep winning over a generated file.
-write_env_file() {
-    step "Writing $env_file"
+# Written for shells that run the tools by hand. Literal defaults yield to
+# nonempty caller values. Readiness inspects the content as data, never sources it.
+env_assignments() {
+    local name value quoted
+    for name in ASIC_TOOLCHAIN TT PDK PDK_ROOT FLOW_PY PRECHECK_PY; do
+        case $name in
+            ASIC_TOOLCHAIN) value=$TOOLCHAIN ;;
+            TT) value=$tt_dir ;;
+            PDK|PDK_ROOT) value=$pdk_dir ;;
+            FLOW_PY) value=$venv_dir/bin/python ;;
+            PRECHECK_PY) value=$precheck_venv_dir/bin/python ;;
+        esac
+        if [[ ${1:-} == legacy ]]; then
+            printf ': "${%s:=%s}"\n' "$name" "$value"
+        else
+            quoted=${value//\'/\'\\\'\'}
+            printf 'if [ -z "${%s:-}" ]; then %s=\x27%s\x27; fi\n' "$name" "$name" "$quoted"
+        fi
+    done
+    printf 'export ASIC_TOOLCHAIN TT PDK PDK_ROOT FLOW_PY PRECHECK_PY\n'
+}
 
+env_file_matches() {
+    [[ -f $env_file ]] || return 1
+    local content
+    content=$(sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' "$env_file")
+    [[ $content == "$(env_assignments)" ]] && return 0
+    # Accept the previous generator's safe literal paths without forcing a rewrite.
+    [[ $TOOLCHAIN != *[\$\`\"\\\}]* && $content == "$(env_assignments legacy)" ]]
+}
+
+write_env_file() {
+    step "Checking environment paths at $env_file"
+
+    if env_file_matches; then
+        info "environment paths match (present)"
+        return 0
+    fi
     if [[ $check -eq 1 ]]; then
-        [[ -f $env_file ]] || gap "no environment file at $env_file"
+        gap "missing or stale environment file at $env_file (inspected as data)"
         return 0
     fi
 
     mkdir -p "$TOOLCHAIN"
-    cat >"$env_file" <<ENVIRONMENT
-# Generated by the hardcaml_asic flow provisioner from toolchain.lock. Do not edit.
-#
-# Source it to run the flow's tools by hand, or to fill in the flow's tool locations.
-# Every assignment yields to a value already set in the environment.
-
-: "\${ASIC_TOOLCHAIN:=$TOOLCHAIN}"
-: "\${TT:=$tt_dir}"
-: "\${PDK:=$pdk_dir}"
-: "\${PDK_ROOT:=$pdk_dir}"
-: "\${FLOW_PY:=$venv_dir/bin/python}"
-: "\${PRECHECK_PY:=$precheck_venv_dir/bin/python}"
-
-export ASIC_TOOLCHAIN TT PDK PDK_ROOT FLOW_PY PRECHECK_PY
-ENVIRONMENT
+    { printf '# Generated by the hardcaml_asic flow provisioner. Existing nonempty values win.\n'; env_assignments; } >"$env_file"
     info "wrote $env_file"
 }
 
@@ -646,7 +695,6 @@ fetch_support_tools
 fetch_pdk
 install_flow_environment
 install_precheck_environment
-check_precheck_nix
 pull_container_image
 write_env_file
 
@@ -655,7 +703,7 @@ if [[ ${#problems[@]} -gt 0 ]]; then
     printf '    %d gap(s):\n' "${#problems[@]}"
     for problem in "${problems[@]}"; do printf '      - %s\n' "$problem"; done
     die "$EX_PREREQ" "the toolchain does not match toolchain.lock" \
-        "Rerun without --check to converge it."
+        "Resolve host/repair diagnostics first; explicitly provision missing collateral when ready."
 fi
 
 step "Summary"

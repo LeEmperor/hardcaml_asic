@@ -11,6 +11,7 @@
 #   ./bootstrap.sh --install-deps   # also install missing packages into the opam switch
 #   ./bootstrap.sh --offline        # reuse what is installed; fetch nothing
 #   ./bootstrap.sh --no-container   # skip the Docker/Podman prerequisite and image
+#   ./bootstrap.sh --python PATH    # base interpreter for new flow venvs
 #
 # Then:
 #   scripts/flow.sh                 # the flow driver's help; then build, emit, execute
@@ -49,6 +50,10 @@ while [[ $# -gt 0 ]]; do
         --check) toolchain_args+=(--check) ;;
         --offline) toolchain_args+=(--offline) ;;
         --no-container) toolchain_args+=(--no-container) ;;
+        --python)
+            shift
+            [[ $# -gt 0 && -n $1 && $1 != --* ]] || { echo "bootstrap: --python needs a path" >&2; exit 1; }
+            toolchain_args+=(--python "$1") ;;
         -h|--help) usage; exit 0 ;;
         *) echo "bootstrap: unknown option: $1 (try --help)" >&2; exit 1 ;;
     esac

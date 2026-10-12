@@ -1,4 +1,4 @@
-"""Table-driven P6.3 command-boundary tests; no external tools are executed."""
+"""P6.3 command-boundary tests with real scratch venvs; no EDA tools executed."""
 
 import contextlib
 import io
@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import sys
 import tempfile
 import unittest
+import venv
 
 
 sys.dont_write_bytecode = True
@@ -139,7 +140,19 @@ class FlowCliTest(unittest.TestCase):
         code, _, _ = self.invoke(["provision"])
         self.assertEqual(code, 0)
         self.assertEqual(self.operations.called("provision")[0].toolchain,
-                         (self.cwd / ".toolchain").resolve())
+                          (self.cwd / ".toolchain").resolve())
+
+    def test_provision_base_python_preserves_symlink_and_rejects_bad_options(self):
+        base = self.cwd / "base python"
+        base.symlink_to(sys.executable)
+        code, _, stderr = self.invoke(["provision", "--python", base.name, "--check"])
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(self.operations.called("provision")[-1].python, base)
+        self.operations.calls.clear()
+        for options in (["--python"], ["--python", "--check"], ["--python", ""], ["--unknown"]):
+            code, _, _ = self.invoke(["provision", *options])
+            self.assertEqual(code, 2)
+        self.assertEqual(self.operations.calls, [])
 
     def test_tool_location_precedence_and_no_consumer_defaults(self):
         argv = ["preflight", "bundle", "--toolchain", "managed",
@@ -158,6 +171,52 @@ class FlowCliTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("--support-tools", stderr)
         self.assertEqual(other.calls, [])
+
+    def test_real_venv_interpreters_survive_every_dispatch_path(self):
+        root = self.cwd / "tools with spaces"
+        for name in (".venv", ".venv-precheck"):
+            venv.EnvBuilder(symlinks=True, with_pip=False).create(root / name)
+            self.assertTrue((root / name / "bin/python").is_symlink())
+        alias = self.cwd / "tools alias"
+        alias.symlink_to(root, target_is_directory=True)
+        commands = [
+            ["preflight", "bundle"],
+            ["run", "bundle", "--runs", "runs", "--stage", "synthesis"],
+            ["postcheck", "run", "--testbench", "tb.v", "--testbench-top", "tb"],
+            ["execute", "bundle", "--runs", "runs", "--stage", "full",
+             "--testbench", "tb.v", "--testbench-top", "tb"],
+        ]
+        for command in commands:
+            names = (["precheck_python"] if command[0] == "postcheck" else
+                     ["python", "precheck_python"] if command[0] == "execute" else ["python"])
+            for selection in ("absolute", "relative", "root", "environment"):
+                with self.subTest(command=command[0], selection=selection):
+                    self.operations = FakeOperations()
+                    argv = command + ["--support-tools", "support", "--pdk-root", "pdk"]
+                    expected = {}
+                    for name in names:
+                        child = ".venv" if name == "python" else ".venv-precheck"
+                        # A parent alias and .. must survive explicit selection.
+                        leaf = Path("tools alias") / child / "bin/../bin/python"
+                        expected[name] = (root / child / "bin/python" if selection in
+                                          ("root", "environment") else self.cwd / leaf)
+                        if selection in ("absolute", "relative"):
+                            argv += ["--" + name.replace("_", "-"), str(
+                                self.cwd / leaf if selection == "absolute" else leaf)]
+                    if selection == "root":
+                        argv += ["--toolchain", str(alias)]
+                    code, _, stderr = self.invoke(argv, environ={"TOOLCHAIN": str(alias)}
+                                                 if selection == "environment" else {})
+                    self.assertEqual(code, 0, stderr)
+                    args = self.operations.calls[0][1]
+                    for name, path in expected.items():
+                        self.assertEqual(getattr(args, name), path)
+                        prefix, base = json.loads(subprocess.check_output([
+                            str(path), "-c", "import json,sys; print(json.dumps([sys.prefix, sys.base_prefix]))"
+                        ], text=True))
+                        self.assertEqual(Path(prefix).resolve(), (root / (
+                            ".venv" if name == "python" else ".venv-precheck")).resolve())
+                        self.assertNotEqual(prefix, base)
 
     def test_run_identity_is_json_for_recorded_failure_and_interruption(self):
         for status, exit_code in (("failed", 1), ("interrupted", 143)):

@@ -26,14 +26,14 @@ sys.dont_write_bytecode = True
 REPO = Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = REPO / "flow"
 sys.path.insert(0, str(PACKAGE_ROOT))
-from hardcaml_asic_flow import archive, cli, identity, paths, phase4, report  # noqa: E402
+from hardcaml_asic_flow import archive, cli, identity, paths, phase4, probe, report  # noqa: E402
 
 
 class LayoutTest(unittest.TestCase):
     def test_every_installed_module_resolves_inside_the_package(self):
         # A module that still loaded itself from `scripts/` would pass its own
         # unit tests in a checkout and then be missing from a prefix.
-        for module in (archive, cli, identity, paths, phase4, report):
+        for module in (archive, cli, identity, paths, phase4, probe, report):
             with self.subTest(module=module.__name__):
                 self.assertEqual(
                     Path(module.__file__).resolve().parent, paths.PACKAGE_DIR)
@@ -101,7 +101,7 @@ class RuntimeDataTest(unittest.TestCase):
             captured["env"] = env
             return mock.Mock(returncode=0)
 
-        args = mock.Mock(toolchain=Path("/scratch/toolchain"), check=True,
+        args = mock.Mock(toolchain=Path("/scratch/toolchain"), check=True, python=None,
                          offline=False, no_container=True)
         with mock.patch.object(cli.subprocess, "run", fake_run):
             self.assertEqual(cli.Operations().provision(args), 0)

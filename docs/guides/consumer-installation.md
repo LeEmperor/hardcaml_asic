@@ -107,6 +107,46 @@ TOOLCHAIN="$TOOLCHAIN" hardcaml-asic-flow provision
 source "$TOOLCHAIN/toolchain-env.sh"
 ```
 
+`provision --python /path/to/python` selects the **base interpreter for new
+venvs**; both provider and example bootstraps forward this option. Its actual major/minor must
+match the shipped lock. Without it, provisioning discovers `python<major.minor>`,
+then accepts `python3` only if its actual version matches. Creation requires
+`venv`, `ensurepip`, `tkinter`, `_tkinter` and a working headless `tkinter.Tcl()`;
+missing system extensions need a suitable host Python, not pip. Existing venvs
+are checked in place and need no separately named base when creation is unnecessary.
+A wrong existing Python version requires explicit repair, never automatic recreation.
+
+`provision --check --no-container --toolchain "$TOOLCHAIN"` performs bounded
+read-only checks: no downloads, installation, root creation, env rewrite,
+container execution or Nix evaluation. It checks LibreLane metadata/import and
+Tcl, and precheck Python, exact-pinned requirement metadata and the `klayout`
+import when support-tools requirements are available. Unsupported requirement
+syntax is diagnosed without pip resolution. Python probes use `-I -B`; Git
+probes disable optional locks. Imports execute installed package code, so these
+checks assume trusted installed tools. The host also needs Bash and `timeout`.
+Nix availability remains a nonfatal bootstrap diagnostic, not proof of evaluation
+or daemon access. `--no-container` skips both engine and image queries and does
+not certify native EDA readiness. Native capabilities beyond these probes and
+runtime preflight Tcl policy remain unmodeled by this slice.
+
+The generated shell file exports `ASIC_TOOLCHAIN`, `TT`, `PDK`, `PDK_ROOT`,
+`FLOW_PY`, and `PRECHECK_PY`. Single-quoted literal defaults safely preserve
+spaces and apostrophes, and existing nonempty values win. Checks inspect this
+file as data for expected paths; matching previous-format files are retained.
+In contrast to provisioning, **preflight/run `--python` selects the flow venv
+interpreter**, normally `$TOOLCHAIN/.venv/bin/python`.
+Interpreter paths retain their lexical spelling, including venv and parent
+symlinks, so execution does not accidentally select the base Python.
+
+The example's thin bootstrap uses the installed provider, with no required source
+checkout, copied pins, source fallback or automatic refresh. Root precedence is
+explicit `--toolchain` > `TOOLCHAIN` > absolute example `_flow_tools/`.
+Provider library refresh is separate. In the user's shell, first
+`source .dev/asic/current/activate.sh`, then `./bootstrap.sh --check --no-container`;
+the observed local host is expected to return nonzero until Python 3.11 and Tcl
+prerequisites are available. See [consumer check](bootstrap.md#consumer-check) and
+[dated acceptance](../phase_plan.md#tool-environment-closeout-acceptance).
+
 To validate an emitted consumer bundle against the actual installed collateral:
 
 ```sh

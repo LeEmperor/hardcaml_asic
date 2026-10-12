@@ -1,17 +1,97 @@
 # Bootstrapping the toolchain
 
-`./bootstrap.sh` prepares everything the implementation flow needs on a machine
-that has none of it, and is safe to rerun on a machine that has all of it. It is
-the command after a fresh clone, after a pull that changes a pin, and after a
-reboot that leaves you wondering what is still installed.
+The installed `hardcaml-asic-flow provision` checks host prerequisites and
+provisions managed flow collateral. A consumer needs no provider source checkout.
+The example's thin `./bootstrap.sh` delegates to this installed command;
+this provider repository's bootstrap also checks its OCaml development layer.
+It requires host tools to be available; provisioning is an explicit environment
+operation, not proof that the resulting runtime can execute the flow.
 
-Everything it fetches is pinned by [`toolchain.lock`](../../toolchain.lock) and
-lands under one directory, `.toolchain/`, which is gitignored. Deleting that
-directory undoes the whole flow layer and nothing else.
+Requested revisions/versions come from [`toolchain.lock`](../../toolchain.lock).
+The example defaults to its absolute gitignored `_flow_tools/`; provider
+development adapters retain `.toolchain/` as their fallback.
+Docker images, host prerequisites, Nix storage and the provider installation have
+separate ownership; deleting `.toolchain/` does not remove those.
 
 This repository provisions its own toolchain and does not read another
 checkout's. See [Pins and drift](#pins-and-drift) for where the revisions come
 from.
+
+## Tool-directory ownership
+
+The shared command supports an arbitrary normal tool root:
+`hardcaml-asic-flow provision --toolchain /chosen/path`, or `TOOLCHAIN=/chosen/path`.
+The source wrapper accepts `TOOLCHAIN=/chosen/path ./bootstrap.sh` too.
+The example selects explicit `--toolchain PATH` > `TOOLCHAIN` > absolute
+`hardcaml_asic_example/_flow_tools`. Its bootstrap uses installed provider pins,
+with no copied pins, source fallback or automatic refresh. `.toolchain/` and
+`_flow_tools/` are directory choices, not required locations. Normal provisioning
+may create/update managed children. `--check` is bounded and read-only, including
+existing external roots; broader ASIC P6.5c gates remain open. See
+[interpreter and readiness semantics](consumer-installation.md#resolve-ttlibrelane-collateral).
+
+### Consumer check
+
+In the user's own shell, from `hardcaml_asic_example`:
+
+```sh
+source .dev/asic/current/activate.sh
+./bootstrap.sh --check --no-container
+```
+
+Activation selects the installed library/CLI generation; it does not refresh or
+provision tools. On the observed local host this check exits **2**, as expected
+until host Python 3.11 and its matching Tcl prerequisites are available (managed
+collateral gaps must also be resolved explicitly). It creates no `_flow_tools/`.
+`--no-container` skips all engine/image queries and does not certify native EDA.
+See [local closeout evidence](../phase_plan.md#tool-environment-closeout-acceptance).
+
+| Storage | Owner / configuration |
+| --- | --- |
+| Provider library and `hardcaml-asic-flow` CLI | Installation prefix/opam or consumer isolated generation; separate from tool collateral |
+| `tt`, `pdk`, `.venv`, `.venv-precheck`, generated environment | Shared provisioner under `--toolchain PATH` / `TOOLCHAIN` |
+| Host Python/Tcl, OCaml/opam, Git, container runtime | Host/user installation; a venv still depends on its base interpreter and libraries |
+| Container images | Docker/Podman-managed image store, not a child selected by `--toolchain` |
+| Nix packages used by precheck | Nix-managed store, normally `/nix/store`, not relocated by `--toolchain` |
+| Bundles, runs and archives | Consumer-selected output/evidence stores; separate from provisioned tools |
+
+Thus one directory can group the managed collateral, but this API cannot put
+literally every tool, system library, daemon/image and Nix object beneath it.
+
+### Local observation — 2026-10-12
+
+The audited ASIC root is `/home/wayne/devel/jane/hardcaml_asic/.toolchain/`, with
+`tt/`, `pdk/`, `.venv/` and `.venv-precheck/`. The audit found no installed tool
+directories at the usual parent-workspace or `hardcaml_protemu` paths; protemu
+retains legacy vendored bootstrap/adopted scripts, which are not an installation.
+This is a bounded local inventory, not a machine-wide absence claim.
+
+The literal `.venv/bin/python` imports LibreLane **3.1.0.dev3** under Python
+**3.12.3**, whereas bundles request **3.11**. Both venv configuration files name
+Python 3.12.3 with `/usr/bin` as home. The generated `toolchain-env.sh` still names
+`/home/wayne/devel/jane/asic/.toolchain`; do not treat it as current-path evidence.
+Matching package/source versions do not establish environment acceptance.
+
+The prior [official-API observation probe](../../experiments/librelane_observation/README.md)
+was **BLOCKED**, exit 2 at `Config.load`'s Tcl evaluation: missing `tkinter`
+([record](../../evidence/librelane-observation/blocked-local.json)). Zero of eleven
+authored sequencing cases ran, and synthetic PDK configuration is unvalidated.
+Targeted standard Python 3.12 directories and venv site-packages yielded no
+compatible module; the literal venv resolves neither `tkinter` nor `_tkinter`.
+The minimum prerequisite is working `tkinter`, its matching `_tkinter` extension
+and Tcl libraries for the selected interpreter. User-authorized environment work
+or an already usable compatible runtime must supply that before a bounded rerun.
+No Python 3.11 extension can substitute for a 3.12 extension; real supported
+runtime acceptance also needs the declared 3.11 environment.
+
+The earlier CLI interpreter canonicalization defect is now fixed: lexical venv
+paths are preserved and real-venv installed-prefix acceptance passed. Current
+provisioning readiness rejects the 3.12-versus-3.11 mismatch before Tcl; it does
+not claim a new Tcl test ran. The default and explicit existing-root checks both
+exited 2 with zero before/after inventory differences; see the
+[closeout record](../phase_plan.md#tool-environment-closeout-acceptance) for local,
+ignored evidence paths. No host repair or provisioning occurred. P6.5c remains
+open; runtime preflight Tcl/native EDA/Podman runner generalization is unimplemented.
 
 ## Quick start
 
@@ -35,11 +115,12 @@ them; each layer is checked exactly once per invocation.
 | Layer | Script | Owns | Default behaviour |
 | --- | --- | --- | --- |
 | 1. OCaml | `scripts/ocaml-deps.sh` | the `5.2.0+ox` opam switch and the packages the dune files name | reports; installs only with `--install` |
-| 2. Flow | `scripts/toolchain.sh` | everything under `.toolchain/` | fetches and installs what is missing |
+| 2. Flow | `scripts/toolchain.sh` | managed collateral under the selected tool root | fetches and installs what is missing |
 
 Layer 1 defaults to reporting because that switch is shared with every other
 Hardcaml checkout on the machine, and installing into it affects them. Layer 2
-has no such restraint: everything it touches is this repository's.
+manages the selected collateral root and may pull into the container image store.
+An externally selected root may be shared by several consumers.
 
 ## What layer 2 creates
 
@@ -77,6 +158,7 @@ refuses an unadvertised object.
 ./bootstrap.sh --install-deps   # also install missing packages into the opam switch
 ./bootstrap.sh --offline        # reuse what is installed; fetch nothing
 ./bootstrap.sh --no-container   # skip the Docker/Podman prerequisite and the image
+./bootstrap.sh --python /path/to/python3.11 # base Python for new flow/precheck venvs
 ./bootstrap.sh --help
 ```
 
@@ -84,15 +166,27 @@ refuses an unadvertised object.
 `--offline` turns any gap into an error instead of a fetch, which is what you
 want when validating a machine that is supposed to be ready. `--no-container`
 is for a run that will use `--native` with locally installed EDA executables.
+It does not test those executables. `provision --python BASE` selects the base
+interpreter for **new venvs**, not execution Python. Its actual major/minor must
+match the lock (currently 3.11); no silent 3.12 fallback is accepted. Before writes,
+creation probes `venv`, `ensurepip` and headless Tcl support. Existing venvs are
+checked in place, including LibreLane/precheck metadata, and require explicit
+repair if mismatched. Preflight/run `--python` instead selects the **flow venv
+interpreter**, normally `$TOOLCHAIN/.venv/bin/python`.
 
 Each script takes its own options too, documented in its `--help`:
 `scripts/ocaml-deps.sh [--install]` and
-`scripts/toolchain.sh [--check] [--offline] [--no-container]`.
+`scripts/toolchain.sh [--check] [--offline] [--no-container] [--python BASE]`.
 
 ## Checking a machine
 
-`./bootstrap.sh --check` reports every gap in one pass rather than stopping at
-the first. On a machine with the opam layer ready and nothing else:
+`./bootstrap.sh --check` reports gaps without downloads, installations, root
+creation, bytecode, index updates or environment rewrites. Python probes are
+bounded and use `-I -B`; imports assume trusted installed tools. Generated
+environment files are checked as data, not sourced for validation.
+
+The following **historical output** predates strict Python readiness; its warning
+and fallback are no longer current behavior. It is retained as an earlier record:
 
 ```
 ==> Checking the OCaml layer (opam switch 5.2.0+ox)
@@ -160,15 +254,17 @@ the change: log out and back in. `newgrp docker` fixes one shell only, so a
 program started earlier (an editor, and anything it spawns) still will not have
 it until it restarts.
 
-### `warning: python3.11 not found`
+### Python 3.11 missing or an existing venv has the wrong minor
 
-Expected on a host with a different Python. The bundle requests the minor version
-in `toolchain.lock`, and preflight rejects a mismatch. Nothing waives it for you:
+The bundle requests the minor version in `toolchain.lock`; provisioning and
+preflight reject a mismatch. Select a compatible base with `--python BASE`, or
+make `python3.11` available. Discovery accepts `python3` only when its actual
+version matches. Nothing waives it for you:
 the shared command has no `--allow-python-mismatch`, and a recorded
 `--waiver python-version=REASON` is P6.5's. `scripts/phase4.py` keeps the flag as
-an explicit development opt-in. Installing `python3.11` and re-running bootstrap
-removes the warning, since the venv is created with `python<version>` when that
-interpreter exists.
+an explicit development opt-in. New venvs require a matching host interpreter;
+installing that interpreter alone does not change an existing venv's Python.
+Existing mismatched environments need explicitly authorized repair and validation.
 
 ### `<checkout> is at <hash>, not <hash>, and is dirty`
 
@@ -185,12 +281,9 @@ than bootstrap; `RUN=<run> scripts/flow.sh postcheck` re-checks it.
 
 ### `nix-shell is installed but Nix is not usable`
 
-Also reported and never fatal, for the same reason, but it is the more expensive
-one to ignore: postcheck is the last step of the flow, so a Nix that cannot
-evaluate is discovered after the hardening run it follows. Bootstrap probes the
-daemon with `nix-store --version` rather than looking for the binary on `PATH`,
-because an installed `nix-shell` whose daemon socket the user cannot open fails
-every evaluation.
+Bootstrap reports Nix executable/version availability as a nonfatal diagnostic;
+it does not evaluate Nix or prove daemon access. Postcheck needs a usable Nix
+environment, so resolve evaluation or permission failures before a physical run.
 
 A distro Nix restricts that socket to a group and does not necessarily add anyone
 to it, so a fresh install reports a permission error on a socket its own daemon
@@ -200,8 +293,8 @@ is serving:
 error: getting status of /nix/var/nix/daemon-socket/socket: Permission denied
 ```
 
-Bootstrap reads the socket's group and prints the `usermod` line for it. Log out
-and back in afterwards rather than using `newgrp`: postcheck shells out to both
+After an explicitly authorized group change, log out and back in rather than
+using `newgrp`: postcheck shells out to both
 `nix-shell` and `docker`, and `newgrp` sets one primary group, so a shell that
 gains `nix-users` that way can lose `docker`.
 
@@ -220,8 +313,9 @@ a shell can source by hand to run `librelane` or `python` directly:
 source .toolchain/toolchain-env.sh
 ```
 
-Every assignment in it yields to a value already set in the environment, so an
-override on the command line still wins:
+Generated defaults use safely quoted literals, including spaces/apostrophes;
+existing **nonempty** values win. Matching previous-format files are retained.
+An override on the command line still wins:
 
 ```sh
 TT=/some/other/tt-support-tools scripts/flow.sh preflight
@@ -276,6 +370,7 @@ It prepares an environment. It does **not** prove that the design hardens, meets
 timing, passes physical verification, or passes precheck; those are the flow
 operations and their own exit codes.
 
-It also installs nothing outside `.toolchain/` and the opam switch: not `opam`,
-`python3`, `git` or a container runtime, not a container daemon, and nothing on
-your `PATH`. Each of those is reported with the command that fixes it.
+It does not install host `opam`, `python3`, `git`, a container runtime or daemon.
+Those are prerequisites. Managed collateral goes under the chosen tool root;
+container image pulls use the runtime's separate storage. Opam dependency changes
+require the explicit opt-in described above.

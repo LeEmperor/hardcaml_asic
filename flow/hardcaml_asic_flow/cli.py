@@ -75,6 +75,8 @@ class Operations:
         environment = os.environ.copy()
         environment["TOOLCHAIN"] = str(args.toolchain)
         command = ["bash", str(script), "--lock-file", str(lock)]
+        if args.python is not None:
+            command.extend(["--python", str(args.python)])
         for option in ("check", "offline", "no_container"):
             if getattr(args, option):
                 command.append("--" + option.replace("_", "-"))
@@ -159,6 +161,12 @@ def add_identity_seam(parser):
     parser.add_argument("--waiver", action="append", default=[], metavar="CODE=REASON")
 
 
+def nonempty_path(value):
+    if not value.strip():
+        raise argparse.ArgumentTypeError("expected a nonempty path")
+    return Path(value)
+
+
 def build_parser():
     # The program name is fixed rather than taken from argv[0]: the launcher
     # invokes this module through `python3 -I -c`, where argv[0] is "-c", and a
@@ -175,6 +183,8 @@ def build_parser():
 
     provision = sub.add_parser("provision")
     provision.add_argument("--toolchain", type=Path)
+    provision.add_argument("--python", type=nonempty_path,
+                           help="base interpreter for new venvs (must match the locked minor and provide venv, ensurepip and Tcl)")
     provision.add_argument("--check", action="store_true")
     provision.add_argument("--offline", action="store_true")
     provision.add_argument("--no-container", action="store_true")
@@ -238,6 +248,17 @@ def absolute(path, cwd):
     return (path if path.is_absolute() else cwd / path).resolve()
 
 
+def interpreter_absolute(path, cwd):
+    """Anchor an interpreter without dereferencing its venv leaf or parents.
+
+    Keep lexical ``..`` components too: collapsing them across a symlink can
+    select a different environment. Directory arguments still use ``absolute``.
+    """
+    if path is None:
+        return None
+    return (path if path.is_absolute() else cwd / path).absolute()
+
+
 def validate_waivers(parser, args):
     for waiver in getattr(args, "waiver", []):
         code, separator, reason = waiver.partition("=")
@@ -248,9 +269,12 @@ def validate_waivers(parser, args):
 def resolve_paths(parser, args, environ, cwd):
     for name in ("bundle", "run_dir", "runs", "output", "archive",
                  "testbench", "dependency_lock", "toolchain",
-                 "support_tools", "pdk_root", "python", "precheck_python"):
+                  "support_tools", "pdk_root"):
         if hasattr(args, name):
             setattr(args, name, absolute(getattr(args, name), cwd))
+    for name in ("python", "precheck_python"):
+        if hasattr(args, name):
+            setattr(args, name, interpreter_absolute(getattr(args, name), cwd))
 
     if args.command == "provision":
         root = args.toolchain or absolute(Path(environ.get("TOOLCHAIN", ".toolchain")), cwd)
@@ -274,12 +298,13 @@ def resolve_paths(parser, args, environ, cwd):
     }
     for name in required:
         if getattr(args, name) is None and root is not None:
-            setattr(args, name, (root / defaults[name]).resolve())
+            normalize = interpreter_absolute if name in ("python", "precheck_python") else absolute
+            setattr(args, name, normalize(root / defaults[name], cwd))
         if getattr(args, name) is None:
             parser.error(f"--{name.replace('_', '-')} or --toolchain/TOOLCHAIN is required")
     if args.command == "execute" and args.stage == "full":
         if args.precheck_python is None and root is not None:
-            args.precheck_python = (root / defaults["precheck_python"]).resolve()
+            args.precheck_python = interpreter_absolute(root / defaults["precheck_python"], cwd)
         if args.precheck_python is None:
             parser.error("--precheck-python or --toolchain/TOOLCHAIN is required for full execution")
 
