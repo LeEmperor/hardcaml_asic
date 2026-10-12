@@ -77,10 +77,20 @@ Resource identities use explicit names and scope paths. Inventories are sorted.
 Simulation and implementation elaboration remain separate; bundle source sets
 must not mix behavioral models and implementation definitions accidentally.
 
-**Boundary weakness confirmed in code:** `Resolved_build` has no `.mli`. Its
-transparent record can be constructed without `resolve`, although `Bundle`
-assumes its facts were validated. Proposed hardening: expose read-only inspection
-and validated construction only, without changing emitted bytes or design APIs.
+**Boundary hardening implemented (2026-10-12):** `Resolved_build.mli` exposes a
+private result record, constructed only by `resolve` (also used by
+`Project.elaborate_for_flow`). Existing field reads and pattern matching remain
+available; construction and record updates are compiler errors. Settings and
+converted delays are private records too. Their JSON/list/scalar contents are
+immutable; copying an exposed target or clock cannot replace the stored value.
+There is no unchecked constructor or deserializer for a resolved build.
+
+This enforces the resolution boundary, not deep immutability of Hardcaml circuit
+internals or a redesign of the existing `Build.Private.create` convention.
+Resolution still relies on declaration/elaboration invariants. External target
+files are still references, not verified physical evidence. Independent-consumer
+compiler checks and pre-/post-hardening bundle byte comparisons are recorded in
+the [phase plan](phase_plan.md#resolved-build-boundary-hardening-evidence).
 
 ## 5. Resources and policies
 
@@ -194,7 +204,7 @@ they do not claim that future observation requirements have already been met.
 | Area | Recommendation | Timing |
 | --- | --- | --- |
 | Project/context/Build, resource semantics | Reuse with current tests | No rewrite prerequisite |
-| `Resolved_build` construction | Add an interface that enforces validated construction | Small candidate preparatory task before more API expansion |
+| `Resolved_build` construction | Private interface enforces resolution-only construction; readers preserved | Implemented; evidence in phase plan |
 | Bundle/manifest | Preserve format and determinism; additive provenance and declared-fact export | Coordinate with P6.5a and result contract |
 | Runner/dispatcher | Extract operation/publication logic behind existing entry points | As durable observation is added |
 | Collection/reporting | Step-aware extractors plus final aggregation; retain existing acceptance policy | Before incremental result publication |
@@ -224,4 +234,6 @@ The example owns Dune files, design, scoreboard, seeded regression, emitter and
 ordinary commands. ASIC owns flow/report semantics; Workbench owns adaptation
 and window/tile behavior. Pin a deliberate library revision and use its tool pins;
 keep deterministic fixtures distinct from one later real physical acceptance run.
-Scaffolding is deferred until after this docs/core discussion.
+Next agreed work is to settle the FIFO contract and concrete provider identity/state
+examples. Neither that contract work nor specimen scaffolding is implemented by
+the `Resolved_build` hardening slice.

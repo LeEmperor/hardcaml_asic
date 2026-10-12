@@ -95,9 +95,10 @@ end
    settings         : derived settings merged with the overrides, sorted by key, one per
                       key;
 
-   Careful: there is no mli, so this record is NOT private. Only [resolve] guarantees the
-   fields agree ([clock_hz] matching [clock_period_ns], [settings] sorted and free of
-   protected overrides); Bundle trusts all of that and checks none of it again.
+   Private in the mli: only [resolve] can construct or update this record. Field reads
+   remain public, but a caller cannot replace validated facts before Bundle consumes
+   them. Setting and Delay_ns are private too; their JSON, lists and scalar fields are
+   immutable, so inspection does not provide a mutation path.
 *)
 type t =
   { build            : Build.t

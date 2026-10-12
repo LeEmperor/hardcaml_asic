@@ -1,22 +1,29 @@
 # hardcaml_asic phase plan
 
-Current checkpoint: 2026-10-12 documentation consolidation and core review.
+Current checkpoint: 2026-10-12 Resolved_build interface hardening after documentation
+consolidation and core review.
 This is the **only active queue**. [Architecture](architecture.md) owns boundaries;
 [P6 details](development/p6-implementation-plan.md) retain the detailed specification
 and exact delivery evidence. Proposed new work below awaits design discussion.
 
 ## Start here
 
-1. Review the [core assessment](architecture.md#9-core-review-and-development-specimen)
-   and settle whether the proposed small boundary-hardening task precedes P6.5a.
-2. Agree the controlled-FIFO behavior in `hardcaml_asic_example`, then scaffold
-   that independent Dune consumer. It is currently empty; no provider pin is chosen.
-3. Settle concrete run/operation/step/result examples and prove the LibreLane seam.
-   Continue useful P6 identity/installation work with the dependencies below.
+1. Resolved-build boundary hardening is implemented with the recorded
+   [acceptance evidence below](#resolved-build-boundary-hardening-evidence).
+2. Next agreed work: settle the controlled-FIFO contract in `hardcaml_asic_example`
+   and concrete provider observation examples for runs/operations/steps/results.
+   These precede broader P6 identity/installation work.
+3. After that agreement, scaffold the independent Dune consumer and prove the
+   LibreLane seam; follow the dependencies below for subsequent P6 work. The
+   example is currently empty; no provider pin is chosen.
+
+This queue records future ordering, not authorization to proceed beyond the
+current boundary-hardening task.
 
 The earlier blanket "finish P6, then migrate scaf" queue is superseded. Do not
 execute archived handoff prompts. No feature, source stamp, specimen, observation
-contract or new test pass is claimed by this documentation-only checkpoint.
+contract or new test pass was claimed by the earlier documentation-only checkpoint.
+FIFO contracts/scaffolding and provider examples remain unimplemented here.
 
 ## Status and preserved history
 
@@ -34,6 +41,7 @@ contract or new test pass is claimed by this documentation-only checkpoint.
 | ASIC S.4 | Gated, unimplemented | Requires S.2 capability gates |
 | ASIC T.1 | Open, independent toolchain follow-up | Scope below |
 | Provider observation | Proposed, not implemented | [Architecture](architecture.md#8-provider-observation-direction) |
+| Resolved-build boundary hardening | Implemented; full runtest passes | [Evidence below](#resolved-build-boundary-hardening-evidence) |
 
 The source-review baseline is clean ASIC `f6e8fd7` before these documentation
 edits. Workbench has owner changes in its active architecture and construction
@@ -50,10 +58,10 @@ Recommendation for discussion: **bounded hardening, not a P0–P5 rewrite**.
 
 - Keep immutable project/build/bundle separation, explicit resource policy,
   deterministic identities, behavioral/flop conformance and ordinary CLI operation.
-- Consider first adding `Resolved_build.mli` so only validation constructs a
-  resolved build. Acceptance: an external consumer can inspect/use validated
-  results but cannot forge them; existing bundle fixtures remain byte-identical
-  for identical inputs, and invalid target/timing/override cases still fail.
+- Implemented `Resolved_build.mli`: only resolution constructs a resolved build.
+  An external consumer can inspect/use results but cannot construct or update
+  them; both existing example bundles remain byte-identical to the pre-change
+  emitter for identical inputs. Invalid target/timing/override tests still pass.
 - Define the optional generator identity and artifact inventory for ASIC P6.5a
   before coding it. Later internal file moves change an inventory digest normally;
   they do not make source stamping throwaway work.
@@ -61,8 +69,83 @@ Recommendation for discussion: **bounded hardening, not a P0–P5 rewrite**.
   preserving the current CLI and report/archive acceptance tests. Do not first
   rewrite the whole runner or generalize every target/resource API.
 
-The first item is a candidate small implementation task, not delivered work or
-a new mandatory gate on historical M3. Agree this ordering before implementation.
+This bounded interface slice is delivered, without changing historical M3 or P6
+completion criteria. FIFO contract/provider examples are the next agreed work;
+no FIFO, provider observation or P6 implementation is included.
+
+### Resolved-build boundary-hardening evidence
+
+2026-10-12, starting from clean `main` at `12a428b`:
+
+- `Resolved_build.t`, `Setting.t` and `Delay_ns.t` are private records. Public
+  readers, owner constructors, S-expression printers, `resolve`, expected ports,
+  protected-key inspection and capability diagnostics remain available. Internal
+  assembly/validation helpers are hidden; no unchecked constructor is exported.
+- `dune build` and `dune build @install`: pass using the existing `5.2.0+ox`
+  environment, with no dependency or pin changes and no installation.
+- `python3 test/check_resolved_build_api.py --baseline-emitter
+  /tmp/opencode/resolved-build-baseline.exe`: pass. The independently compiled
+  temporary Dune consumer uses this checkout's public install tree, exercises
+  resolution, record reads/patterns, JSON inspection and bundle render/write.
+  Eight negative compilations reject construction and updates of the result,
+  target/settings replacement, and setting/delay construction or updates. Each
+  checks the compiler's private-type diagnostic, not just a failed exit code.
+- Before editing, `dune build` produced the baseline emitter, copied from
+  `_build/default/examples/tt_bundle_example.exe` to the temporary path above.
+  The test runs that saved executable and the newly compiled consumer against
+  the **same current declared source bytes and Git state**. Both observable and
+  memory bundles have all **43 files byte-identical**, including copied inputs,
+  synthesis/simulation RTL, SDC, configuration, info.yaml and manifest/identity.
+  This compares old and new implementations, not merely same-build determinism.
+  Manifest SHA-256: observable
+  `62dbfe222e6e8a833058f6d6daf5de3ddb3cd27d3c4f3fa3fcff8e1c597e8d32`;
+  memory `04391e190bcfb061a0fa137244591e823ec824dd1ee748cfc0970b4025789870`.
+  These hashes describe this source-input snapshot, not a published release.
+- `dune build @test/runtest-hardcaml_asic_test --force`: pass, including unchanged
+  invalid target, timing and protected-override rejection tests.
+- Initial attempt, `PATH="/tmp/opencode:$PATH" dune runtest --force`: OCaml tests
+  and all 96 Python flow/report/archive/CLI/packaging tests passed. The full command
+  was blocked by the session's read-only Git guard rejecting `check_bundle.py`'s
+  `git init`; that suite also requires temporary `add`/`commit`. No Git mutation
+  was allowed under the initial interpretation. The before/after comparison above
+  supplied separate bundle evidence at that point.
+- Follow-up on 2026-10-12: the owner clarified that normal test scripts may perform
+  their own Git operations, including synthetic temporary fixture commits; agents
+  must not invoke Git directly. The full `dune runtest --force` then **passed
+  (exit 0)** with the subprocess-only environment below. The fixture lives in
+  `TemporaryDirectory(prefix='asic-bundle-test-')`; its synthetic author and
+  committer are both `Bundle test <bundle@test.invalid>`, with commit message
+  `baseline`. No project-code commit or push was performed.
+  Python suites reported **17 + 16 + 20 + 28 + 15 = 96 tests, all OK**; OCaml
+  tests also passed. Bundle integration reported:
+  `bundle determinism, provenance, staging, hashes, RTL and toolchain.lock passed`.
+  `/usr/bin/iverilog` and `/usr/bin/vvp` were available, so all four generated-RTL
+  simulations ran (observable and memory, each synthesis and simulation source
+  sets); none were skipped. This resolves the earlier full-suite qualification.
+
+Exact successful invocation from the repository root (only the old guard directory
+is removed from the child PATH; the installed OCaml toolchain remains available):
+
+```sh
+python3 - <<'PY'
+import os
+import shutil
+import subprocess
+
+env = os.environ.copy()
+env['PATH'] = os.pathsep.join(p for p in env['PATH'].split(os.pathsep) if p != '/tmp/opencode')
+env.update(GIT_AUTHOR_NAME='Bundle test', GIT_AUTHOR_EMAIL='bundle@test.invalid',
+           GIT_COMMITTER_NAME='Bundle test', GIT_COMMITTER_EMAIL='bundle@test.invalid')
+for tool in ('dune', 'git', 'iverilog', 'vvp'):
+    print(f'{tool}: {shutil.which(tool, path=env["PATH"])}', flush=True)
+raise SystemExit(subprocess.run(['dune', 'runtest', '--force'], env=env).returncode)
+PY
+```
+
+The boundary still trusts Build's declaration/elaboration invariants and does
+not freeze exposed Hardcaml circuit internals. Target references are not checked
+against physical files. No EDA flow, fresh physical run, shared installation or
+installed-release completion is claimed. Historical IDs and gates below remain.
 
 ## ASIC P6 — Shared tooling distribution
 
