@@ -13,9 +13,13 @@ evidence. P6.5/P6.6 remain open. Incremental provider observation is proposed,
 not delivered; concrete provider observation contract examples are next work.
 The owner's [development specimen](../../hardcaml_asic_example/README.md) now has
 the fixed FIFO contract/core, independent scoreboard, TT wrapper/declaration,
-bundle emitter and PDK-free generated-RTL acceptance. It remains unpinned and
-does not establish independent installed-provider or physical acceptance; see
-the [recorded evidence](phase_plan.md#controlled-fifo-development-specimen-evidence).
+bundle emitter and PDK-free generated-RTL acceptance. A recorded ASIC baseline
+and explicit development override now support isolated library/CLI refresh,
+activation, plain builds and real-checkout emitter acceptance; see the
+[commands](development/consumer-dependency-workflow.md#implemented-commands) and
+[closeout evidence](phase_plan.md#consumer-refresh-and-real-checkout-emitter-closeout).
+The record awaits owner commit. Full environment locking, P6 source stamping,
+source-access-denied installation and physical acceptance remain open.
 The old scaf checkout is absent and not required.
 
 The public lifecycle now uses `Elaborated_project` and `Resolved_flow`; see the
@@ -29,7 +33,7 @@ Historical records retain their original API names and commands.
 | Root | Governing architecture and current queue | The two documents above |
 | `guides/` | Operating instructions for implemented behavior | [Usage](guides/usage.md) |
 | `reference/` | Normative resource/target contracts | [Memory](reference/program-memory-contract.md), [TT/CMOS5L](reference/target-reference.md) |
-| `development/` | Coding conventions and detailed active work specifications | [Conventions](development/comment_guidelines.md), [P6 details](development/p6-implementation-plan.md) |
+| `development/` | Coding conventions and detailed active work specifications | [Conventions](development/comment_guidelines.md), [Consumer dependency workflow](development/consumer-dependency-workflow.md), [P6 details](development/p6-implementation-plan.md) |
 | `sram/` | Separate SRAM capability investigation and its evidence interpretations | [SRAM index](sram/README.md) |
 | `backlog/` | Explicitly deferred scope and reactivation conditions | [Backlog](backlog/README.md) |
 | `archive/` | Superseded plans, handoffs, original proposals and completion history | [Archive index](archive/README.md) |

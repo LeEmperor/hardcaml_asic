@@ -141,6 +141,16 @@ artifact inventory naturally; they do not invalidate the stamping architecture.
 Define the inventory and optional field before implementation; P6.5b adds actual
 generator/executor/expectation comparisons and waiver records afterward.
 
+The example's consumer-owned `asic-dependency.json` selects a recorded ASIC
+revision; explicit development refresh captures local edits without changing that
+record. `scripts/asic_dependency.py` installs library and CLI into an isolated
+generation, validates resolution/linking, then atomically publishes its selection.
+Shell activation names that generation directly; re-source after refresh to adopt
+the new selection. The receipt describes refresh-time inputs, not today's provider
+checkout. Its checksum is local bookkeeping, not an embedded source stamp.
+The emitter copies the dependency record as a source expectation, not proof of
+linked-library identity. See the [workflow](development/consumer-dependency-workflow.md).
+
 Bundle writing currently requires an empty destination and is not atomic. Preserve
 the input-publication boundary: an incomplete bundle must not be advertised as
 ready. Atomic bundle-directory publication is a possible later hardening slice,
@@ -232,7 +242,8 @@ storage, a pure list-based scoreboard, directed/seeded regressions, a consumer-o
 TT wrapper/declaration and a standalone bundle emitter. Its source root is explicit,
 not a required hardcoded sibling path. Owner initial ref
 `8e4577f6c72cc689cbc92daeb5f8ae083cf970e0` now exists; it alone does not establish
-a clean tree or a dependency pin. The specimen remains unpinned.
+a clean tree or a dependency pin. The specimen now has a recorded ASIC baseline
+plus an explicit development override; the consumer record awaits owner commit.
 
 The delivered contract provides synchronous clear with priority over disable,
 registered pop responses, occupancy/full/empty and pre-edge acceptance decisions.
@@ -244,9 +255,12 @@ pin mapping and combinational output/OE masking separately from synchronous rese
 The example owns Dune files, design, scoreboard, seeded regression, emitter and
 ordinary commands. ASIC owns flow/report semantics; Workbench owns adaptation
 and window/tile behavior. PDK-free bundle and separately compiled emitted
-synthesis/simulation RTL checks pass against the hardened public development tree;
-see the [evidence](phase_plan.md#controlled-fifo-development-specimen-evidence).
-Synthetic committed fixtures enable provenance tests, not genuine root emission
-or installed/pinned/physical acceptance. Concrete provider observation identity/state
+synthesis/simulation RTL checks pass after isolated dependency activation. Genuine
+example-root emission also passes complete bundle equality, copied-input hashes,
+actual revision/dirty-input provenance and RTL replay; see the
+[closeout evidence](phase_plan.md#consumer-refresh-and-real-checkout-emitter-closeout).
+Synthetic committed fixtures remain separate provenance tests. This does not
+establish full environment locking, embedded source identity, source-access-denied
+P6.6 acceptance or physical acceptance. Concrete provider observation identity/state
 examples remain next work; FIFO delivery does not implement that provider contract
 or close ASIC P6 gates.

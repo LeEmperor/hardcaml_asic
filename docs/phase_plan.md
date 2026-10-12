@@ -1,7 +1,7 @@
 # hardcaml_asic phase plan
 
-Current checkpoint: 2026-10-12 public API rename implemented and active documentation
-migrated, following Resolved_build interface hardening and the controlled-FIFO specimen.
+Current checkpoint: 2026-10-12 consumer refresh/activation and real-checkout emitter
+acceptance completed, following public API rename, interface hardening and the FIFO specimen.
 This is the **only active queue**. [Architecture](architecture.md) owns boundaries;
 [P6 details](development/p6-implementation-plan.md) retain the detailed specification
 and exact delivery evidence. Proposed new work below awaits design discussion.
@@ -13,7 +13,9 @@ and exact delivery evidence. Proposed new work below awaits design discussion.
 2. The [independent Dune specimen](../../hardcaml_asic_example/README.md) delivers
    the fixed FIFO contract/core, scoreboard, TT wrapper/declaration and emitter,
    with [PDK-free acceptance evidence below](#controlled-fifo-development-specimen-evidence).
-   It remains an unpinned development consumer, migrated to the renamed API.
+   It now uses a recorded ASIC baseline plus an explicit development override,
+   with isolated library/CLI installations and plain activated builds; see the
+   [refresh/emitter closeout](#consumer-refresh-and-real-checkout-emitter-closeout).
    Read the [source-breaking migration and rename evidence](#public-api-rename-migration-and-evidence)
    before adopting this provider.
 3. Next agreed work: concrete provider observation contract examples for
@@ -47,7 +49,8 @@ unimplemented.
 | Provider observation | Proposed, not implemented | [Architecture](architecture.md#8-provider-observation-direction) |
 | Resolved-build boundary hardening | Implemented; full runtest passes | [Evidence below](#resolved-build-boundary-hardening-evidence) |
 | Public API rename | Implemented; provider and FIFO acceptance passed, active documentation migrated | [Migration and evidence below](#public-api-rename-migration-and-evidence) |
-| Controlled-FIFO development specimen | Contract/core, scoreboard, TT wrapper/declaration and emitter delivered; unpinned, PDK-free acceptance | [Evidence below](#controlled-fifo-development-specimen-evidence), [consumer README](../../hardcaml_asic_example/README.md) |
+| Controlled-FIFO development specimen | Contract/core, scoreboard, TT wrapper/declaration and emitter delivered; PDK-free acceptance | [Original evidence](#controlled-fifo-development-specimen-evidence), [consumer README](../../hardcaml_asic_example/README.md) |
+| Consumer dependency refresh / emitter | Delivered: recorded ASIC baseline, explicit development override, isolated library/CLI, activation and real-checkout acceptance; record awaits owner commit | [Closeout below](#consumer-refresh-and-real-checkout-emitter-closeout), [commands](development/consumer-dependency-workflow.md#implemented-commands) |
 
 The earlier source-review baseline was clean ASIC `f6e8fd7` before documentation
 consolidation. Workbench has owner changes in its active architecture and construction
@@ -159,6 +162,11 @@ against physical files. No EDA flow, fresh physical run, shared installation or
 installed-release completion is claimed. Historical IDs and gates below remain.
 
 ### Controlled-FIFO development-specimen evidence
+
+Historical pre-refresh evidence follows. The later
+[closeout](#consumer-refresh-and-real-checkout-emitter-closeout) supersedes its
+unpinned/manual-override and missing-real-checkout qualifications, preserving the
+original commands and results.
 
 2026-10-12, preceding sequential implementation/acceptance passes, using explicit
 `OCAMLPATH=/home/wayne/devel/jane/hardcaml_asic/_build/install/default/lib` to
@@ -276,10 +284,105 @@ files retain their bytes. All 2,535 baseline-tracked flow, script, evidence,
 experiment, toolchain and package/dependency files checked retain their SHA-256.
 This final slice changes documentation only and reruns no build or test suite.
 
+The absence of a consumer record and genuine-root emission in this rename pass
+is superseded by the later [closeout](#consumer-refresh-and-real-checkout-emitter-closeout).
+
 **External migration blocker:** `hardcaml_protemu` still uses `Build` and
 `simulation_build`. It requires a separate source migration before adopting this
 provider. Its source and dependency pin have not been changed. No published
-release/pin, genuine example-root emission or physical acceptance is claimed.
+release/pin, genuine example-root emission or physical acceptance was claimed by
+that rename pass.
+
+### Consumer refresh and real-checkout emitter closeout
+
+2026-10-12, completed bounded workflow from the
+[implementation contract](development/consumer-dependency-workflow.md):
+
+- Consumer `asic-dependency.json` records package `hardcaml_asic`, repository
+  `https://github.com/LeEmperor/hardcaml_asic.git`, revision
+  `1714764859274f80a9f5ad207421a04601824e99`. Recorded mode captures committed bytes;
+  development mode explicitly captures relevant current files without moving the
+  baseline. The record is not yet committed by the owner.
+- `scripts/asic_dependency.py` installs both library and CLI into consumer-owned
+  isolated generations using the available toolchain. Locking, capture checks,
+  public API/runtime validation, exact ocamlfind resolution and an external Dune
+  link probe precede atomic selection publication. Failed refresh leaves the
+  previous selection/receipt usable; old and failed generations are retained.
+- Initial real refresh exposed two Dune issues, fixed before successful publication:
+  `-p` already supplies `--root .`, and an absolute `--build-dir` produced invalid
+  installed archive paths. The build now uses capture cwd and relative `_build`;
+  validation rejects temporary-source metadata and links an external executable.
+  All **13 setup tests passed**, covering failure preservation, source modes,
+  contention, unsafe paths, spaces/apostrophes and repeated/stale activation.
+
+Actual successful generations under example `.dev/asic/generations/`, each with
+`receipt.json`, `activate.sh`, installed library and CLI:
+
+| Mode | Generation | Selection |
+| --- | --- | --- |
+| recorded | `2cd5adeb421c4b58b288f1f29e802932` | Preserved baseline installation |
+| development | `481514db03934614a1ca4e25815e2bac` | Published `current` |
+
+Both observed provider base `1714764859274f80a9f5ad207421a04601824e99`.
+`.dev/provider-inputs.json` records that the development capture differed only in
+`docs/README.md` and the newly added development note; no provider code or source
+commit changed. After publication, a stale activated shell still resolved the
+recorded library/CLI. Re-sourcing selected development via ocamlfind, `command -v`
+and status (`active_is_published` / `active_library_path_is_first` true).
+Receipts describe refresh-time bytes; this later provider documentation closeout
+does not require another refresh.
+
+Completed acceptance (not rerun for this final documentation review):
+
+- After recorded activation, plain `dune build @all`, `dune runtest --force` and
+  `dune build @acceptance-strict --force` passed. Core and wrapper each passed
+  **7,330 directed + 20,017 seeded edges**; resolution and synthetic bundle checks
+  passed. Separately compiled synthesis/simulation RTL each passed **11,429 edges**
+  and rejected the corrupted oracle.
+- Development refresh ran fresh API/link probes; activated plain build passed.
+  The docs-only capture difference did not justify another full functional suite.
+- Real-checkout acceptance used the development-built emitter, with this exact
+  invocation from `/home/wayne/devel/jane/hardcaml_asic_example`:
+
+```sh
+python3 acceptance/check_bundle.py \
+  --emitter _build/default/bin/emit_bundle.exe \
+  --exporter _build/default/acceptance/export_trace.exe \
+  --source-root /home/wayne/devel/jane/hardcaml_asic_example \
+  --bench acceptance/replay.v --require-rtl --real-checkout \
+  --work-dir .dev/emitter-checks/slice2
+```
+
+It passed **all 19 files byte-identical**, every copied input/hash, actual revision
+and input status, plus 11,429 RTL edges and negative-oracle rejection for each
+source set. Preserved `.dev/emitter-checks/slice2/` contains `first/`, `second/`,
+`evidence.json`, `trace.txt`, `bad.txt` and compiled replays. Choose a fresh directory
+for future runs. Actual example revision:
+`b68a68a08214adc6d35fbb7d28effc9d475d3b74`; declared dirty inputs were `README.md`
+and `asic/declaration.ml`, with untracked `asic-dependency.json`. Bundle identity:
+`ce78b2ff5b66cf1d4c0a2e0c11c0257cc51230880ecda816254a1dc2247eb2c7`.
+The example README/input bytes were preserved during this final review.
+
+Independent review of implementation, tests, activation, receipts and emitter
+acceptance found no blocking defect in the bounded workflow. Installed metadata
+uses final-generation sections and relative archive names; prior plain builds
+passed after capture cleanup. Status distinguishes published selection from the
+caller's activation marker/path, not proof of arbitrary executable linkage.
+
+Final non-Git read-only checks passed: five changed documents, 89 local link
+destinations/anchors and whitespace; preserved 19-file bundle equality and
+manifest hashes/provenance; every declared input still matches its preserved copy;
+both installed generations retain their archives and final-prefix metadata.
+No build/test suite was repeated for this documentation-only closeout.
+
+Both installed CLI version reports remain `0.1.0`, unstamped, source state
+`unknown`. The receipt is honest local selection metadata; the copied dependency
+record is a source expectation, not proof of linked-library identity. Full
+environment locking, clean release/publication, embedded P6.5 identity,
+source-access-denied P6.6 and physical acceptance are not delivered by this work.
+Provider observation remains proposed. No blocker remains for explicit refresh,
+activation, plain consumer builds and emission; see the
+[user commands](development/consumer-dependency-workflow.md#implemented-commands).
 
 ## ASIC P6 — Shared tooling distribution
 
@@ -347,7 +450,7 @@ Include inherited timing and equal-valued new measurements with different origin
 | Milestone | Genuine blockers |
 | --- | --- |
 | Contract fixtures, Workbench reducers/window behavior | Agreed identity/state examples; not P6 completion or a real EDA environment |
-| Example Dune/design/unit tests | Delivered against explicitly selected hardened development library; no PDK required; dependency pin remains absent |
+| Example Dune/design/unit tests | Delivered with recorded ASIC baseline plus explicit development refresh/activation; no PDK required; consumer record awaits owner commit, full environment lock absent |
 | Early discovery and coarse live progress | Catalog/correlation/durable outer observation |
 | Truthful internal progress | Demonstrated LibreLane seam; file absence alone is insufficient |
 | Intermediate timing/resources | Step-aware extraction, producer provenance and complete snapshot publication |

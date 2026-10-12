@@ -23,12 +23,15 @@ observation for Hardcaml Workbench is proposed, not implemented.
 The owner-created sibling [hardcaml_asic_example](../hardcaml_asic_example/README.md)
 now delivers the fixed 16×8 controlled-FIFO contract/core, independent scoreboard,
 TT wrapper/declaration, bundle emitter and PDK-free generated-RTL acceptance.
-It is an unpinned development specimen using the hardened public development
-library. Owner initial ref `8e4577f6c72cc689cbc92daeb5f8ae083cf970e0` exists;
-the ref alone establishes neither a clean tree nor a dependency pin.
-Installed/pinned and physical acceptance remain open. Provider observation
-contract examples are next work. The historical scaf worktree is absent and not
-a prerequisite.
+It uses a recorded ASIC baseline plus an explicit development override through
+consumer-owned refresh/activation. Both library and CLI install into isolated
+generations; activated plain builds and real-checkout emission have passed.
+See the [commands](docs/development/consumer-dependency-workflow.md#implemented-commands)
+and [closeout evidence](docs/phase_plan.md#consumer-refresh-and-real-checkout-emitter-closeout).
+The consumer record awaits owner commit; full environment locking, P6 source
+stamping/source-denied installation and physical acceptance remain open.
+Provider observation contract examples are next work. The historical scaf worktree
+is absent and not a prerequisite.
 
 ## Existing workflow
 
