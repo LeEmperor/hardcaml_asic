@@ -3,9 +3,9 @@
 ## Tiny Tapeout First, Extensible Toward Commercial ASIC Flows
 
 **Status:** Long-term direction aligned with the architecture plan, 2026-09-16.
-The [accepted architecture and implementation plan](architecture.md) governs
+The [accepted architecture and implementation plan](../architecture.md) governs
 current ownership, APIs to implement, and milestone order. The
-[program-memory contract](program-memory-contract.md) governs the first resource.
+[program-memory contract](../reference/program-memory-contract.md) governs the first resource.
 The examples below follow those decisions; future API/module sketches remain
 exploratory. Harness and technology are separate target axes, and the flow adapter
 is selected independently. The first resource is 1RW `Single_port_ram` without
@@ -175,7 +175,7 @@ The analogy is not exact: Vivado contains most of its own implementation engines
 The first useful version of `hardcaml_asic` should focus on concrete needs encountered when targeting Tiny Tapeout.
 
 The first milestone implements the path in the
-[architecture plan](architecture.md#8-first-implementation-milestone):
+[architecture plan](architecture-2026-09.md#8-first-implementation-milestone):
 
 1. **One portable design resource**
    - context-registered 1RW `Single_port_ram`;
@@ -355,7 +355,7 @@ adapter must reject unsupported intent rather than silently omit it.
 
 Raw SDC can be added as an adapter-specific escape hatch with a defined insertion
 stage, reason, provenance, and documented validation limits. It must respect the
-[configuration ownership rules](architecture.md#6-configuration-ownership-and-escape-hatches),
+[configuration ownership rules](architecture-2026-09.md#6-configuration-ownership-and-escape-hatches),
 including the authoritative typed clock declaration.
 
 ---
@@ -633,7 +633,7 @@ Later, a commercial backend could populate the same high-level UI while preservi
 
 This possibility is another reason to return structured results rather than only shell exit codes and text logs.
 
-The [Workbench integration boundary](architecture.md#reference-application-and-workbench-ownership)
+The [Workbench integration boundary](architecture-2026-09.md#reference-application-and-workbench-ownership)
 keeps configuration in the opened project's ASIC declaration and build. Workbench
 owns job supervision and presentation; adapters own flow semantics and result
 interpretation. Its jobs link to the immutable build and separate execution record.
@@ -643,7 +643,7 @@ Neither the UI nor a commercial adapter is required for the initial ASIC path.
 
 ## 16. Recommended Development Phases
 
-These are long-term stages. The library's [implementation phase plan](phase_plan.md)
+These are long-term stages. The library's [implementation phase plan](../phase_plan.md)
 subdivides the initial Tiny Tapeout workflow into actionable P0–P5 tasks, with
 intermediate milestones and a separate SRAM capability investigation. Its phase
 numbers are local to that plan, not the four stages below.

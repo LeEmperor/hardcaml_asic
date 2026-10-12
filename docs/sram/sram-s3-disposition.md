@@ -345,7 +345,7 @@ S.3, which is a physical-feasibility gate; relevant to S.4.
 
 ## S.3 closure assessment
 
-S.3's acceptance criterion in [`phase_plan.md`](phase_plan.md) is:
+S.3's acceptance criterion in the [historical task definition](../archive/phase-plan-through-p6.4b.md#9-s--separate-sram-capability-investigation) is:
 
 > a reproducible supported-candidate result or a documented decision to defer,
 > including the missing evidence and next investigation step.

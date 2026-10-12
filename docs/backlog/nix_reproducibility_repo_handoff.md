@@ -1,5 +1,8 @@
 # Concept: Gradual Nix Adoption for Reproducible Development Environments
 
+> Deferred proposal, not an ASIC provider prerequisite or an instruction to
+> provision/change this machine. Reactivation requires an explicit scope decision.
+
 ## Context
 
 Several of these repositories currently depend on a mixture of:

@@ -4,9 +4,9 @@
 
 This note preserves the original intent and exploratory API/roadmap sketches.
 The accepted decisions of 2026-09-16 live in the
-[architecture and implementation plan](architecture.md), which takes precedence
+[architecture and implementation plan](../architecture.md), which takes precedence
 for current architecture and sequencing. The
-[program-memory contract](program-memory-contract.md) defines the first resource.
+[program-memory contract](../reference/program-memory-contract.md) defines the first resource.
 
 The current plan retains the intent-first boundary while establishing three
 parts: design resources, technology implementations, and project/flow support.
@@ -100,7 +100,7 @@ constraints and tool inputs. LibreLane orchestrates the initial open flow.
 ### 1. SRAM and Register-File Abstraction
 
 **Superseded scope/API sketch:** the first resource is
-[`Single_port_ram`](program-memory-contract.md), with an enable, shared 1RW port,
+[`Single_port_ram`](../reference/program-memory-contract.md), with an enable, shared 1RW port,
 latency 1, whole-word writes, hold on disable, and unspecified output after writes.
 It has no read-during-write policy. Register files remain consumer-owned flops;
 the initial implementation path does not require a physical macro.
@@ -392,7 +392,7 @@ separately; compact-storage needs do not establish macro availability or permiss
 ## Recommended MVP Roadmap
 
 **Historical roadmap, superseded by the
-[first implementation milestone](architecture.md#8-first-implementation-milestone).**
+[first implementation milestone](architecture-2026-09.md#8-first-implementation-milestone).**
 The v0.x labels below record the original proposal, not current release commitments.
 In particular, v0.1 does not require a physical SRAM mapping, and project/constraint/
 flow integration now accompanies the first behavioral/flop resource implementation.
@@ -476,7 +476,7 @@ Three principles should guide development:
 **Historical questions:** package boundaries, memory semantics, and the build/run
 split are now settled in the architecture and memory contract. Timing endpoint
 identity and richer physical APIs remain design work. See the
-[current remaining questions](architecture.md#9-deferred-work-and-remaining-interface-questions).
+[current remaining questions](architecture-2026-09.md#9-deferred-work-and-remaining-interface-questions).
 
 The following are the main design questions worth discussing before implementation grows significantly:
 

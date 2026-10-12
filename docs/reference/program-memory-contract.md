@@ -4,12 +4,12 @@ Status: behavioral contract with P1 implementation evidence, 2026-09-17.
 Normative for `lib/single_port_ram.mli`. This document decides behaviour; the
 interface and implementation must follow it. The context-taking API is implemented.
 
-The [architecture plan](architecture.md) defines project ownership, resource
+The [architecture plan](../architecture.md) defines project ownership, resource
 selection, registration, and build outputs. This document defines this memory's
 behavior and its obligations within that architecture.
-The [implementation phase plan](phase_plan.md#4-p1--contract-correct-program-memory)
+The [completion record](../archive/phase-plan-through-p6.4b.md#4-p1--contract-correct-program-memory)
 tracks the behavioral/flop implementation and verification work; its separate
-[SRAM track](phase_plan.md#9-s--separate-sram-capability-investigation) tracks
+[SRAM track](../sram/README.md) tracks
 conditional macro support.
 
 This is the first concrete memory in `hardcaml_asic`, written before the API was
@@ -17,8 +17,8 @@ frozen, per the review note that memory semantics must precede the `Sram.create`
 signature. Every decision below cites the requirement that forces it, so that a
 later reader can tell a derived constraint from an arbitrary one.
 
-References to the [emulator construction plan](../../scaf/docs/construction-plan.md)
-use stable section links in the reference application's `scaf` worktree. Quoted
+References to the [emulator construction plan](../../../scaf/docs/construction-plan.md)
+are historical links to the now-absent `scaf` worktree. Quoted
 motivation below records the original requirement; the updated plan incorporates
 the settled memory contract. These workspace links are not build dependencies.
 
@@ -35,7 +35,7 @@ sweep points, not a frozen ISA or guaranteed macro shape:
 | Two byte FIFOs, 16x8 | 256 bits | Flip-flops. Not a macro, not this primitive |
 | Register file, 8x16 | 128 bits | Flip-flops. Multi-port read; wrong shape for 1RW |
 
-[emulator construction plan](../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — *"256x16 program bits plus two 16x8 FIFOs already
+[emulator construction plan](../../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — *"256x16 program bits plus two 16x8 FIFOs already
 total 4,352 storage bits before registers and metadata. That can dominate a small
 design if implemented in flip-flops."*
 
@@ -50,7 +50,7 @@ and no area, and is explicitly out of scope for v0.1.
 **Decision: one address bus, one enable, one write-enable. A cycle is a read or a
 write, never both.**
 
-Forced by [emulator construction plan](../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — *"Permit host program writes only while
+Forced by [emulator construction plan](../../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — *"Permit host program writes only while
 halted with engines idle."*
 
 Host program load and instruction fetch are **temporally exclusive by
@@ -135,7 +135,7 @@ deasserted. A naive behavioural model emits zero, or re-reads, or emits X. The
 three disagree, and the disagreement only shows up after tapeout.
 
 This matters because the emulator *will* stall fetch:
-[emulator construction plan](../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — the Time family includes *"Wait cycles, wait
+[emulator construction plan](../../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — the Time family includes *"Wait cycles, wait
 level/edge with timeout"*, and *"Wait stalls control, not engines."* During a
 stall the fetch stage can deassert `enable` and rely on a stable memory output.
 The consumer must still gate instruction acceptance with fetch validity: held
@@ -147,12 +147,12 @@ primitive.
 
 ### 4.2 Read latency 1 — the pipeline consequence
 
-[emulator construction plan](../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — *"First use a synchronous-read memory abstraction
+[emulator construction plan](../../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — *"First use a synchronous-read memory abstraction
 with an explicit latency."*
 
 Latency 1 requires the consumer to account for the edge between a read request
 and its result, and to track fetch validity separately from held read data. The
-[emulator construction plan](../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study)
+[emulator construction plan](../../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study)
 requires the Flow family to *"publish cycle counts for every path"*: branch and
 jump latency become a function of fetch
 latency, so those published numbers cannot be finalised before this value is.
@@ -184,9 +184,9 @@ initialisation file, and no zero-fill.**
 
 The emulator states this three separate times:
 
-- [emulator construction plan](../../scaf/docs/construction-plan.md#pins-reset-and-ownership) — *"Do not depend on uninitialized program/data memory."*
-- [emulator construction plan](../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — *"Avoid bulk reset on program RAM. Reset its validity instead."*
-- [emulator construction plan](../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — *"Any ROM is a deliberate hardware implementation, not an assumed power-up file load."*
+- [emulator construction plan](../../../scaf/docs/construction-plan.md#pins-reset-and-ownership) — *"Do not depend on uninitialized program/data memory."*
+- [emulator construction plan](../../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — *"Avoid bulk reset on program RAM. Reset its validity instead."*
+- [emulator construction plan](../../../scaf/docs/construction-plan.md#4-minimum-control-isa-and-memory-study) — *"Any ROM is a deliberate hardware implementation, not an assumed power-up file load."*
 
 Validity is the **consumer's** concern: a separate `program_valid` flop, outside
 this primitive, gates execution until a load completes. This primitive has no
@@ -274,12 +274,14 @@ the flow adapter validates and renders the views needed for its operation.
 | --- | --- | --- |
 | Behavioural model | implemented, P1 | Diagnostic poison per section 5.1; reference for defined behavior |
 | Generic flop implementation | implemented, P1 | Synthesizable, no macro; explicitly selected or explicitly allowed as fallback |
-| IHP CMOS5L macro | **candidate inventoried; capability unresolved** | S.1 found an exact candidate; S.2-S.4 still require permission, conformance, flow evidence, and implementation |
+| IHP CMOS5L macro | **capability unresolved; backend unimplemented** | S.1 inventory, S.2a functional checks and qualified S.3 feasibility have evidence; S.2 remains open and gates S.4 |
 
 The macro backend must not be started yet. The
-[S.1 investigation](sram-candidate-investigation.md) found and inventoried the
-exact-shape `RM_IHPSG13_1P_256x16_c2_bm_bist`, but has not established behavioral
-conformance, target permission, or physical-flow capability. The earlier targeted
+[S.1 investigation](../sram/sram-candidate-investigation.md) found and inventoried the
+exact-shape `RM_IHPSG13_1P_256x16_c2_bm_bist`. Later functional checks and qualified
+flow feasibility are recorded in the [SRAM checkpoint](../sram/sram-status.md);
+target permission, accepted supply mapping and timed-model evidence remain open.
+The earlier targeted
 check of pinned `tt-support-tools` revision `da63c99` found:
 
 - `tech/ihp-sg13cmos5l/cells.json` lists standard cells only; no SRAM entries.
@@ -294,9 +296,9 @@ check of pinned `tt-support-tools` revision `da63c99` found:
 
 At the time of that earlier check the PDK itself was not inspected and no local
 checkout was available. S.1 has now established candidate availability and
-collateral from the locked PDK. It does not establish shuttle permission,
-behavioral compatibility, or successful flow integration; those remain S.2-S.3
-gates before implementing the macro backend.
+collateral from the locked PDK. The historical inventory alone does not establish
+the later gates; consult the checkpoint and S.3 disposition for current evidence
+and limitations before proposing a macro backend.
 
 The first project milestone uses an explicitly selected flop implementation and
 does not wait for a macro. A macro-required request must fail if no supported
@@ -386,7 +388,7 @@ readback, fetch, reset, and recovery never depend on unspecified values.
 ## 11. Remaining questions
 
 1. ~~How should the context and `Scope.t` cooperate on stable hierarchical naming?~~
-   Resolved in [ASIC P0.2](phase_plan.md#3-p0--project-and-elaboration-foundations):
+   Resolved in [ASIC P0.2](../archive/phase-plan-through-p6.4b.md#3-p0--project-and-elaboration-foundations):
    the context carries the current scope, so `create` needs no scope argument;
    identity is the scope path plus the instance name. The default name is `ram`;
    callers give distinct explicit names to multiple RAMs in one scope.

@@ -427,7 +427,7 @@ what else has to change with it:
 ```
 
 ```ocaml
-  (* TODO (future fix): the message does not follow docs/comment_guidelines.md section 9,
+  (* TODO (future fix): the message does not follow docs/development/comment_guidelines.md section 9,
      ... Changing it changes expect test output, so update those in the same commit; *)
 ```
 
@@ -593,7 +593,7 @@ Inline comments on record fields are fine when the value's source needs explaini
 | Literal input | Double quotes | `"a/b/name"`, `"a//b"` |
 | Sexp or OCaml syntax as written | Square brackets | `[%sexp { width : int; depth : int }]`, `((width 8) (depth 4))` |
 | Cross-reference in `.mli` | odoc link | `{!Private.finalize}`, `{!Resource_policy}` |
-| Another document | Repo path plus section | `docs/program-memory-contract.md section 8` |
+| Another document | Repo path plus section | `docs/reference/program-memory-contract.md section 8` |
 | Future work | Phase name | `P2`, `P3` |
 | Tests | Arrow plus file | `-> see expect tests (test/test_selection.ml)` |
 

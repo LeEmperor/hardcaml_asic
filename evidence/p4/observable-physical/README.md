@@ -73,7 +73,7 @@ preflight and run records, and neither alters the build.
 This is a library-owned example, emitted from `examples/tt_bundle_example.ml`.
 It closes P4.5, whose acceptance is the physical path itself. It is **not**
 evidence for P5.4: that gate requires the consumer's own adopted design, and
-[the plan](../../../docs/phase_plan.md#8-p5--reference-consumer-adoption-and-initial-usage)
+[the plan](../../../docs/archive/phase-plan-through-p6.4b.md#8-p5--reference-consumer-adoption-and-initial-usage)
 says not to substitute a library-owned fixture for consumer evidence. P4.5's
 allowance to "count jointly with P5 evidence" would have applied only if this
 run had used the emulator's adopted observable design; it did not.

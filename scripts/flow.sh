@@ -7,7 +7,7 @@
 # collect, report, archive and the fixed execute sequence -- is the installed
 # `hardcaml-asic-flow` command's, reached here through scripts/flow_cli.py so a
 # checkout and a prefix run one implementation. There is no sequencing,
-# acceptance, run-selection or archive policy in this file. See docs/flow.md.
+# acceptance, run-selection or archive policy in this file. See docs/guides/flow.md.
 #
 # Usage:
 #   scripts/flow.sh                       # this help; nothing is built or run
@@ -105,7 +105,7 @@ commands="build emit preflight run postcheck collect report archive execute"
 
 # Removed spellings get one explicit line naming what replaced them, rather than
 # a compatibility alias that quietly keeps the old behaviour alive. Remove these
-# after one documented migration window (docs/flow.md).
+# after one documented migration window (docs/guides/flow.md).
 if [ -n "${ALLOW_PYTHON_MISMATCH:-}" ]; then
   echo "flow: ALLOW_PYTHON_MISMATCH is gone; a run no longer waives the bundle's" >&2
   echo "flow: requested Python by default. Provision the requested interpreter" >&2

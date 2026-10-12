@@ -1,6 +1,6 @@
 # Registered memory example
 
-The [example](../examples/memory_example.ml) declares one 4×8 single-port RAM.
+The [example](../../examples/memory_example.ml) declares one 4×8 single-port RAM.
 Its design constructor is identical for simulation and implementation elaboration.
 The project explicitly selects flops. The consumer writes complete words before
 checking readback and tracks which words are written outside the RAM.

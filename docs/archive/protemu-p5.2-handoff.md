@@ -1,11 +1,14 @@
 # Protemu handoff: adopt `hardcaml_asic` (ASIC P5.2 / protemu P0.6)
 
+> Historical consumer handoff. ASIC P5 is complete; scaf is not required for new
+> development. See the current phase plan for the independent example consumer.
+
 ## What is available now
 
 `hardcaml_asic` is an installable OCaml/Dune package (`0.1.0`, library name
 `hardcaml_asic`). An independent project can pin a library commit and use
 `(libraries hardcaml_asic)` without a sibling checkout. See the
-[consumer installation guide](consumer-installation.md) for the pin and the
+[consumer installation guide](../guides/consumer-installation.md) for the pin and the
 matching external toolchain revision.
 
 - `Project.create` declares a design, metadata, TT pin meanings, a primary
@@ -24,9 +27,9 @@ matching external toolchain revision.
   There is no CMOS5L SRAM macro backend yet. External preflight, LibreLane
   execution, result collection, and postchecks can consume an emitted bundle.
 
-The working [TT bundle example](../examples/tt_bundle_example.ml) shows the
-declaration and emission calls. The [bundle guide](bundle-emission.md) describes
-the files; the [target reference](target-reference.md) lists the validated TT
+The working [TT bundle example](../../examples/tt_bundle_example.ml) shows the
+declaration and emission calls. The [bundle guide](../guides/bundle-emission.md) describes
+the files; the [target reference](../reference/target-reference.md) lists the validated TT
 interface and configuration ownership.
 
 ## The first consumer test
@@ -82,8 +85,8 @@ This is the consumer's adopted design on its own emitted bundle and pinned
 dependencies, so it supplied the physical precursor P4.5 said was missing. It
 did not alone close P5.4 because its source inputs were dirty. P5.2 closed on
 2026-09-19; P5.4 closed on 2026-09-20 with the separate clean-staging
-[P0.5c record](../../scaf/tinytapeout/reports/2026-09-20-p0.5c-clean-staging-physical.md)
-and [archive](../../scaf/flow_results/20260920-081325-ccecd9ed/README.md).
+[P0.5c record](../../../scaf/tinytapeout/reports/2026-09-20-p0.5c-clean-staging-physical.md)
+and [archive](../../../scaf/flow_results/20260920-081325-ccecd9ed/README.md).
 
 1. **Emission is not yet reproducible from the recorded revision.** Five of the
    eight recorded source inputs were dirty or untracked at emission, including
@@ -114,7 +117,7 @@ and [archive](../../scaf/flow_results/20260920-081325-ccecd9ed/README.md).
 
    *Closed:* run in full against protemu `e7e3bb47` from a clean tree, exit 0,
    and recorded at
-   [`2026-09-19-p0.6-adopted-bundle-check.md`](../../scaf/tinytapeout/reports/2026-09-19-p0.6-adopted-bundle-check.md)
+   [`2026-09-19-p0.6-adopted-bundle-check.md`](../../../scaf/tinytapeout/reports/2026-09-19-p0.6-adopted-bundle-check.md)
    in the consumer repository. Four passes: the conflict diagnostics
    (`CLOCK_PERIOD`, `VERILOG_FILES`, `DIE_AREA` each rejected naming the key),
    repeatable emission and manifest/metadata checks, the `tb.v` wrapper trace on

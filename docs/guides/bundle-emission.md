@@ -81,7 +81,7 @@ set_input_delay -min 0 -clock clk [get_ports {ena}]
 
 The clock and the per-port delays come from the project declaration; everything
 between them comes from the resolved target's constraint environment and is
-documented in [the target reference](target-reference.md). `set_load` is in the
+documented in [the target reference](../reference/target-reference.md). `set_load` is in the
 Liberty `capacitive_load_unit`, which is picofarads for sg13cmos5l, so the 6 fF
 `OUTPUT_CAP_LOAD` is divided by 1000 exactly as `base.sdc` does. The six
 LibreLane variables behind those lines are also emitted into `src/config.json`
@@ -116,6 +116,6 @@ Actual run versions, logs and reports belong to separate execution records.
 stable output and content hashes, changes a tracked source and adds an untracked
 source to prove manifest identity changes, checks missing-input diagnostics, and
 compiles and simulates each RTL source set with Icarus when it is installed.
-The testbench is [`test/tt_bundle_tb.v`](../test/tt_bundle_tb.v). The
+The testbench is [`test/tt_bundle_tb.v`](../../test/tt_bundle_tb.v). The
 [Flow guide](flow.md) covers preflight, isolated execution,
 result collection, and physical acceptance evidence.

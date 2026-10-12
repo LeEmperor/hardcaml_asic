@@ -13,7 +13,7 @@
    1       1             write [write_data]        unspecified
    v}
 
-   docs/program-memory-contract.md is normative; this interface summarizes it. Do NOT
+   docs/reference/program-memory-contract.md is normative; this interface summarizes it. Do NOT
    infer permitted behavior from the implementation, and do NOT depend on an unspecified
    value: the output after a write, a read of an unwritten word, or anything about an
    address at or above [depth]. There is no reset, no write mask, no simultaneous read and

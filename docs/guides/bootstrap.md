@@ -5,7 +5,7 @@ that has none of it, and is safe to rerun on a machine that has all of it. It is
 the command after a fresh clone, after a pull that changes a pin, and after a
 reboot that leaves you wondering what is still installed.
 
-Everything it fetches is pinned by [`toolchain.lock`](../toolchain.lock) and
+Everything it fetches is pinned by [`toolchain.lock`](../../toolchain.lock) and
 lands under one directory, `.toolchain/`, which is gitignored. Deleting that
 directory undoes the whole flow layer and nothing else.
 

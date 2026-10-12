@@ -1,8 +1,11 @@
 # Handoff: a TT/CMOS5L template module
 
+> Historical implementation brief; see the adjacent return record for delivery.
+> Consumer checkout paths and imperative instructions below are historical.
+
 Short brief for a session that will build the thing, not decide whether to.
 The decision and its reasoning are in the consumer's
-[`tooling theory 1`](../../scaf/docs/tooling_theory1.md); read that first if
+[`tooling theory 1`](../../../scaf/docs/tooling_theory1.md); read that first if
 the boundary itself is in question.
 
 ## The problem, in one measurement

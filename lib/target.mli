@@ -115,7 +115,7 @@ module Inputs : sig
 
   (** The adopted reference inputs, from the consumer's toolchain lock (2026-09-17); the
       default for {!resolve}. Revisions and sources are listed in
-      docs/target-reference.md. *)
+      docs/reference/target-reference.md. *)
   val reference_cmos5l_6x4 : t
 end
 

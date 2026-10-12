@@ -1,7 +1,10 @@
 # Immediate future
 
+> Superseded priority note. Use the current [phase plan](../phase_plan.md).
+> Retained for historical rationale and evidence, not as a separate next-work list.
+
 Working priorities agreed in discussion on 2026-09-20. This note records the
-near-term sequence; [phase_plan.md](phase_plan.md) remains the authority for task
+near-term sequence; [phase_plan.md](../phase_plan.md) remains the authority for task
 IDs, acceptance criteria, and completion evidence.
 
 ## Current position
@@ -49,7 +52,7 @@ Completed 2026-09-20 using protemu's 256x16 P3.1a consumer: behavioral and
 explicit-flop integration checks pass and pinned CMOS5L synthesis mapped 16,294
 cells at 349,314.9408 um^2 with no unresolved instances or synthesis errors.
 The consumer record is
-[`2026-09-20-p0.7-memory-synthesis.md`](../../scaf/tinytapeout/reports/2026-09-20-p0.7-memory-synthesis.md).
+[`2026-09-20-p0.7-memory-synthesis.md`](../../../scaf/tinytapeout/reports/2026-09-20-p0.7-memory-synthesis.md).
 Implementation and evidence cleanup landed at protemu `8d3ada1`; P5.3 is closed.
 The complete historical input bundle is preserved. Its ABC delay estimate is
 qualified as unusable timing evidence; the mapped cell/area result remains the
@@ -58,8 +61,8 @@ P5.3 cost evidence.
 ## 2. Make shared flow tooling consumable without copying it
 
 This work now has stable IDs in the phase plan:
-[ASIC P6 — shared tooling distribution](phase_plan.md#11-p6--shared-tooling-distribution)
-and [ASIC P7 — consumer migration](phase_plan.md#12-p7--consumer-migration-and-legacy-retirement).
+[ASIC P6 — shared tooling distribution](phase-plan-through-p6.4b.md#11-p6--shared-tooling-distribution)
+and [ASIC P7 — consumer migration](phase-plan-through-p6.4b.md#12-p7--consumer-migration-and-legacy-retirement).
 Their exit is M4; P0–P5/M3 stay complete. The
 [legacy flow consolidation brief](flow_legacy_migration.md) supplies the detailed
 interface and removal inventory, while the phase plan owns sequencing/status.
@@ -94,7 +97,7 @@ P7 then migrates consumer setup and commands, moves coverage before deleting
 legacy paths, and validates one observable full run plus memory synthesis and
 archive restoration. Existing vendored copies do not acquire these changes
 automatically. Each item is a separate bounded implementation/validation unit.
-The [P6/P7 dependency note](phase_plan.md#why-p7-depends-on-p6-and-what-may-overlap)
+The [P6/P7 dependency note](phase-plan-through-p6.4b.md#why-p7-depends-on-p6-and-what-may-overlap)
 defines safe overlap: P7 inventory/coverage planning may start now; runtime
 migration needs P6's agreed interface and installable candidate, and final
 consumer acceptance needs the independent installation gate to pass.
@@ -107,15 +110,15 @@ Observable bundle `85729c18...` / run `ccecd9ed...` completed full hardening,
 three-corner timing, physical checks, all nine TT prechecks, and gate-level
 simulation. The complete bundle was archived, restored independently, and
 revalidated without a sibling path or generated-input edits. Evidence is the
-consumer's [P0.5c record](../../scaf/tinytapeout/reports/2026-09-20-p0.5c-clean-staging-physical.md)
-and [archive](../../scaf/flow_results/20260920-081325-ccecd9ed/README.md).
+consumer's [P0.5c record](../../../scaf/tinytapeout/reports/2026-09-20-p0.5c-clean-staging-physical.md)
+and [archive](../../../scaf/flow_results/20260920-081325-ccecd9ed/README.md).
 The earlier dirty-input physical run remains historical evidence; its identity
 is not treated as the clean build's identity. Memory physical feasibility and
 SRAM support remain separate.
 
 ## 4. Completed: P5.5 and the initial M3 workflow
 
-[`usage.md`](usage.md) is now the primary path: install/pin, declare, simulate
+[`usage.md`](../guides/usage.md) is now the primary path: install/pin, declare, simulate
 resources, emit, provision explicitly, execute, collect, interpret, archive, and
 restore. It records memory policy, common diagnostics, supported capabilities,
 and the consumer P5.3/P5.4 evidence without replacing specialist references.
@@ -147,7 +150,7 @@ field-order-sensitive S-expression matching of resource contracts. This is a
 follow-up API concern, not a prerequisite for explicit-flop P5.3.
 
 The upstream ABC constraint-rendering correction is now **ASIC T.1** in the
-[toolchain follow-up section](phase_plan.md#13-t--toolchain-follow-ups-and-consumer-measurement-boundaries).
+[toolchain follow-up section](phase-plan-through-p6.4b.md#13-t--toolchain-follow-ups-and-consumer-measurement-boundaries).
 It requires a regression, explicit corrected tool pin, and fresh synthesis
 comparison; the documented historical area and physical STA evidence remains
 valid within its stated scope.

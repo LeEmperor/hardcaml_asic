@@ -8,7 +8,9 @@ input records before any flow input is emitted. It reads no installed PDK and
 performs no setup.
 
 The default `Target.Inputs.reference_cmos5l_6x4` adopts the revisions and
-floorplan hash in the [consumer's toolchain lock](../../scaf/tinytapeout/toolchain.lock):
+floorplan hash originally adopted from the consumer's toolchain lock. The current
+local sources are [`lib/target.ml`](../../lib/target.ml) and
+[`toolchain.lock`](../../toolchain.lock); the absent scaf checkout is not required:
 
 | Input | Adopted value |
 | --- | --- |
@@ -70,7 +72,7 @@ standard-cell views do not establish an SRAM macro.
 clock and I/O delays in nanoseconds, clock frequency in hertz, and LibreLane
 settings with an owner for each value. `Project.elaborate` still supports
 resource-only examples and behavioral simulation without requiring a supported
-physical target. [P3 emission](bundle-emission.md) consumes the validated result.
+physical target. [P3 emission](../guides/bundle-emission.md) consumes the validated result.
 
 The TT top has exactly these ports:
 

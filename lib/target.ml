@@ -15,7 +15,7 @@
 
    Resolution is a lookup, not a computation. Every fact in a Resolved.t was read off the
    pinned support-tools and PDK revisions by hand and written down here or in
-   Technology.Cmos5l (see docs/target-reference.md), so resolving the same pair twice
+   Technology.Cmos5l (see docs/reference/target-reference.md), so resolving the same pair twice
    gives the same record -> see test/test_target.ml;
 
    It does NOT open, fetch or hash any file; paths and hashes are recorded as given, and
@@ -156,7 +156,7 @@ module Inputs = struct
   (* The adopted reference inputs, and the default for [resolve]; taken from the
      consumer's tinytapeout/toolchain.lock and inspected against the support-tools
      tile_sizes.yaml and the CMOS5L PDK config at these revisions (sources listed in
-     docs/target-reference.md);
+     docs/reference/target-reference.md);
 
      No checkout path or installed PDK is embedded here, only revisions and paths relative
      to them, so the same declaration means the same thing on any machine.
@@ -373,7 +373,7 @@ let validate_inputs (inputs : Inputs.t) =
   (* Checking with the above in a list format, fold any errors into the result;
 
      TODO (future fix): the first four messages are plain strings that do not say which
-     value was wrong (which revision, what path), against docs/comment_guidelines.md
+     value was wrong (which revision, what path), against docs/development/comment_guidelines.md
      section 9; attach the offending fields as labelled [%message] fields instead.
      Changing them changes expect test output (test/test_target.ml), so update those in
      the same commit;

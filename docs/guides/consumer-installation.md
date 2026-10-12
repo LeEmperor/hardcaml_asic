@@ -3,7 +3,7 @@
 The Dune project version is `0.1.0`. It installs one wrapped library named
 `hardcaml_asic`; a consumer writes `(libraries hardcaml_asic)` in its Dune stanza
 and uses modules such as `Hardcaml_asic.Project` and
-`Hardcaml_asic.Single_port_ram`. The generated [`hardcaml_asic.opam`](../hardcaml_asic.opam)
+`Hardcaml_asic.Single_port_ram`. The generated [`hardcaml_asic.opam`](../../hardcaml_asic.opam)
 lists the library's OCaml dependencies. Registry publication is unnecessary.
 
 ## Pin the library source
@@ -37,7 +37,7 @@ OCAMLPATH="$PREFIX/lib${OCAMLPATH:+:$OCAMLPATH}" dune build
 
 That route installs no package into the shared opam switch. The source snapshot
 used for the prefix must be recorded separately; a dirty worktree cannot be
-represented by a Git commit hash. [`test/package_consumer_smoke.sh`](../test/package_consumer_smoke.sh)
+represented by a Git commit hash. [`test/package_consumer_smoke.sh`](../../test/package_consumer_smoke.sh)
 checks this path with a fresh prefix and an unrelated Dune project under `/tmp`.
 
 ## The installed `hardcaml-asic-flow` command
@@ -78,7 +78,7 @@ in both its human and `--json` output rather than implying otherwise.
 `toolchain.lock` supplies exact support-tools and PDK commits, LibreLane and
 Python versions, and ships as the installed command's runtime data. Its values
 mirror the library's emitted `manifest.json`;
-[`check_bundle.py`](../test/check_bundle.py) checks that copy for drift. Once a
+[`check_bundle.py`](../../test/check_bundle.py) checks that copy for drift. Once a
 bundle exists, the bundle is authoritative and preflight rejects collateral that
 disagrees with it.
 
@@ -105,9 +105,10 @@ A consumer passes its own repository as `Bundle.render`'s `source_root` and
 explicitly lists its own source inputs; it does not pass the library source
 checkout as the consumer's source root.
 
-Migrating the reference consumer off its vendored copies onto this command is
-P7, and the remaining installed-operation integration is P6.4b: until those
-land, a consumer that is working today should keep its current path.
+Installed-operation integration (ASIC P6.4b) is delivered. Source-artifact
+identity and the remaining independent-installation gates are ASIC P6.5/P6.6.
+Historical consumer migration is ASIC P7; it is not a prerequisite for a new
+consumer such as `hardcaml_asic_example`.
 
 ## P5.1 check in this worktree
 
@@ -118,6 +119,6 @@ revision at this check was `53b8d8b5506a9215de7ad15b44eaa0286d0e3893`;
 the package additions are uncommitted, so that hash alone does not identify the
 checked snapshot. Protemu subsequently pinned
 `a257424c3ae31fd6ee10cea052cc7577f15d2677`; the P5.4 clean-staging record in
-the [phase plan](phase_plan.md#8-p5--reference-consumer-adoption-and-initial-usage)
+the [phase plan](../archive/phase-plan-through-p6.4b.md#8-p5--reference-consumer-adoption-and-initial-usage)
 builds that exact revision into an isolated prefix and resolves it without a
 sibling path dependency.

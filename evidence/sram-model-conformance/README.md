@@ -17,7 +17,7 @@ The functional run passed 23 vectors and 86 checks. The intentional failure
 returned status 1. Both exact timed-model compilations succeeded, while their
 runs exposed Icarus's documented undriven delayed-signal limitation. The
 controlled timing probe shows that `-gspecify` enables path delay but not timing
-checks. See [`docs/sram-model-conformance.md`](../../docs/sram-model-conformance.md)
+checks. See [`docs/sram/sram-model-conformance.md`](../../docs/sram/sram-model-conformance.md)
 for interpretation and scope.
 
 Generated `.vvp` files were deleted after the run. No ignored or external

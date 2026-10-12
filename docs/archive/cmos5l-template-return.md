@@ -1,5 +1,7 @@
 # Return: the TT/CMOS5L template module
 
+> Historical completion evidence; revisions and commands describe that validation.
+
 Answers `docs/cmos5l-template-handoff.md` section "What to hand back". Every
 number here came from a command run against this tree on 2026-09-19, not from
 reading the diff.

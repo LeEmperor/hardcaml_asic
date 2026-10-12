@@ -11,7 +11,7 @@
    selected implementation then decide which hardware is built: [behavioral] in
    Simulation, [flops] in Implementation;
 
-   docs/program-memory-contract.md is normative, and both implementations here are written
+   docs/reference/program-memory-contract.md is normative, and both implementations here are written
    against it rather than against each other. Anything the contract leaves unspecified
    (output after a write, unwritten reads, out-of-range access) is NOT something the two
    are meant to agree on; see contract section 9 for how that is verified.
@@ -314,7 +314,7 @@ let create
   let instance = Resource_id.create_exn ~path ~name in
 
   (* Raise if [signal] is not [expected] bits wide *)
-  (* TODO (future fix): the message does not follow docs/comment_guidelines.md section 9,
+  (* TODO (future fix): the message does not follow docs/development/comment_guidelines.md section 9,
      which wants "what went wrong; how to fix it". Something like "single-port RAM port
      width mismatch; size the port to match the config". Changing it changes expect test
      output, so update those in the same commit; *)

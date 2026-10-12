@@ -2,7 +2,7 @@
 
 This directory preserves the bounded ASIC S.3 probe of
 `RM_IHPSG13_1P_256x16_c2_bm_bist`. The decision and interpretation are in
-[`../../docs/sram-flow-feasibility.md`](../../docs/sram-flow-feasibility.md).
+[`../../docs/sram/sram-flow-feasibility.md`](../../docs/sram/sram-flow-feasibility.md).
 
 ## Attempts
 

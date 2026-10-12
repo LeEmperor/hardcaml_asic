@@ -1,5 +1,10 @@
 # SRAM capability checkpoint
 
+> Track-local checkpoint and historical environment observations. Recheck any
+> installed inputs before further experiments; scaf paths below are not current
+> prerequisites. This separate capability investigation does not block the
+> flop-backed example or Workbench provider work.
+
 Status: ASIC S.1, S.2a, and S.3 complete; bounded S.2b public-source research is
 complete and partially resolved, 2026-09-20. S.3's residual findings were reviewed
 finding-by-finding on 2026-09-20 and its qualified closure was upheld; see

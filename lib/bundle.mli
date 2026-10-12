@@ -26,7 +26,7 @@
    It does NOT validate the design or target; {!Resolved_build.resolve} already did. It
    does NOT invoke any EDA tool, access the PDK, or link the TT support-tools checkout
    expected at [OUTPUT/tt]; running the flow is P4 work. Layout and manifest fields are
-   described in docs/bundle-emission.md.
+   described in docs/guides/bundle-emission.md.
 *)
 
 open! Core

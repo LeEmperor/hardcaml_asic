@@ -1,70 +1,49 @@
 # Documentation
 
-- [Initial user workflow](usage.md): start here to install/pin the library,
-  declare and simulate a project, emit an immutable bundle, prepare the external
-  environment, run the flow, and preserve evidence. It links to the authoritative
-  specialist references below instead of duplicating them.
-- [Consumer installation](consumer-installation.md): one-package Dune/opam setup,
-  revision pinning, checkout-distributed flow tooling, external collateral
-  resolution, and separate-project checks.
-- [Registered memory example](memory-example.md): PDK-free simulation,
-  implementation elaboration, selection outcomes, and optional generated RTL test.
-- [Bundle emission](bundle-emission.md): commands, TT staging layout,
-  manifest/source sets, provenance identity, and verification boundary.
-- [Bootstrapping the toolchain](bootstrap.md): explicit PDK/tool provisioning,
-  pins, options, and troubleshooting.
-- [Flow execution and results](flow.md): preflight, synthesis/full execution,
-  result collection and interpretation, postchecks, archiving, and restoration.
-- [Legacy flow consolidation](flow_legacy_migration.md): execution brief for
-  installing one authoritative flow implementation, migrating the `scaf`
-  consumer, and deleting vendored and staged legacy paths.
-- [TT/CMOS5L target reference](target-reference.md): supported `6x4` geometry,
-  wrapper boundary, timing/configuration ownership, and protected settings.
+## Returning to the project
 
-## Architecture and evidence
+1. **[Phase plan](phase_plan.md)** — current status, what is next, dependencies and
+   links to completion evidence. This is the only active implementation queue.
+2. **[Architecture](architecture.md)** — ownership, implemented boundaries and the
+   proposed provider/refactoring direction. Read this before changing an interface.
+3. **[User workflow](guides/usage.md)** — how to use the existing library and CLI.
 
-- [Implementation phase plan](phase_plan.md): completed P0–P5/M3 evidence,
-  post-M3 P6–P7 shared-tooling distribution and consumer migration tasks toward
-  M4, plus separate S-series SRAM and T-series toolchain follow-ups. Each task
-  has dependencies and evidence-based exit criteria.
-  Start here to choose implementation work.
-- [Architecture and implementation plan](architecture.md): accepted system
-  boundaries, project lifecycle, target and resource policies, build outputs,
-  implementation sequencing, and boundaries for future third-party flow adapters.
-  Use this for architecture and scope decisions.
-- [Program-memory contract](program-memory-contract.md): authoritative behavior,
-  verification obligations, and project integration for `Single_port_ram`.
-- [Comment and formatting guidelines](comment_guidelines.md): header, doc comment,
-  alignment and error message conventions, with a table of reference files in `lib/`
-  for each kind of example.
-- [Architecture direction](hardcaml_asic_architecture_direction.md): Tiny Tapeout
-  first, with optional future open/commercial-flow adapters. Examples align with
-  the accepted plan; broader API/module sketches remain exploratory.
-- [Original architecture-direction PDF](hardcaml_asic_architecture_direction.pdf):
-  historical snapshot, not updated with the reconciled Markdown decisions.
-- [Original concept note](hardcaml_asic_concept_note.md): project motivation and
-  exploratory scope. Its status section points out decisions superseded by the
-  architecture plan.
-- [Original concept-note PDF](hardcaml_asic_concept_note.pdf): historical snapshot;
-  it is not updated with the current architecture decisions.
+Current checkpoint (2026-10-12): ASIC P0–P5/M3 and P6.1–P6.3/P6.4a/b have
+evidence. P6.5/P6.6 remain open. Incremental provider observation is proposed,
+not delivered. `../hardcaml_asic_example` is the owner's new development specimen
+repository; it is still empty. Documentation and core review come before its
+Dune/FIFO implementation. The old scaf checkout is absent and not required.
 
-Architecture decisions were accepted on 2026-09-16. API examples in the plan are
-sketches, not a claim that the corresponding modules are implemented. Resource
-behavior is governed by its contract; current architecture and milestone order
-are governed by the architecture plan. The library phase plan breaks that first
-milestone into implementation tasks and tracks completion evidence, followed by
-the selected tooling-distribution and consumer-consolidation work.
+## Where things live
 
-The shared direction is one initial package, separate harness/technology/flow
-selection, context-registered resources with explicit implementation policy, and
-an immutable build followed by separate execution/results. The first path uses
-behavioral and explicitly selected flop memory with TT/LibreLane. Physical SRAM
-and commercial adapters have separate later gates. Adapter-specific extensions
-and report context preserve future flexibility without requiring industrial EDA
-features in the first milestone.
+| Area | Purpose | Start here |
+| --- | --- | --- |
+| Root | Governing architecture and current queue | The two documents above |
+| `guides/` | Operating instructions for implemented behavior | [Usage](guides/usage.md) |
+| `reference/` | Normative resource/target contracts | [Memory](reference/program-memory-contract.md), [TT/CMOS5L](reference/target-reference.md) |
+| `development/` | Coding conventions and detailed active work specifications | [Conventions](development/comment_guidelines.md), [P6 details](development/p6-implementation-plan.md) |
+| `sram/` | Separate SRAM capability investigation and its evidence interpretations | [SRAM index](sram/README.md) |
+| `backlog/` | Explicitly deferred scope and reactivation conditions | [Backlog](backlog/README.md) |
+| `archive/` | Superseded plans, handoffs, original proposals and completion history | [Archive index](archive/README.md) |
 
-Related consumer plans in this workspace:
+### Operating guides
 
-- [Protocol emulator](../../scaf/docs/construction-plan.md) and
-  [phase plan](../../scaf/docs/phase_plan.md): P0.6/P0.7 adopt the library;
-  P3 owns memory consumer logic; P5.1a tracks the SRAM capability investigation.
+- [Installation](guides/consumer-installation.md): one pinned library/CLI artifact.
+- [Memory example](guides/memory-example.md): PDK-free behavioral/flop checks.
+- [Bundle emission](guides/bundle-emission.md): RTL, constraints and immutable inputs.
+- [Toolchain setup](guides/bootstrap.md): explicit external provisioning.
+- [Execution and results](guides/flow.md): run, postcheck, collect, report, archive.
+
+## Documentation rules
+
+- Update status and next work in `phase_plan.md`; do not add another status/handoff
+  document or an `immediate_future` queue. Detailed work specs link back to it.
+- Architecture distinguishes implemented behavior, settled ownership and proposals.
+- Preserve completed task IDs and evidence. Archive superseded instructions with
+  a status banner; historical commands/revisions are records, not current setup.
+- Put source-level rules in references and commands in guides. Link rather than
+  duplicate their content across plans.
+- Existing `scaf` links in historical evidence and contract rationale may be
+  unavailable locally. They preserve attribution, not a development prerequisite.
+- Workbench has its own independent phase numbering. Always say **ASIC P6** or
+  **Workbench P6** when referring across repositories.

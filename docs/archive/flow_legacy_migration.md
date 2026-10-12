@@ -1,6 +1,10 @@
 # Legacy flow consolidation
 
-Status: migration specification, 2026-09-20.
+Status: historical migration specification, 2026-09-20; archived 2026-10-12.
+The installed CLI portion has since been delivered through ASIC P6.4b.
+The central phase plan retains open P6 gates and deferred P7 task IDs. Its
+consumer inventory is a historical reference to re-audit if that migration is
+reactivated, not a requirement to recover the absent scaf worktree.
 
 This document is an implementation brief for replacing the remaining legacy and
 consumer-vendored ASIC flow paths with one authoritative flow maintained by

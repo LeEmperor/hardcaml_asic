@@ -69,7 +69,7 @@ type t = private
 val create_exn : name:string -> resource_mappings:Resource_mapping.t list -> t
 
 (** IHP SG13 CMOS5L standard cells. No resource mappings: no SRAM macro has been
-    established for this technology (see docs/program-memory-contract.md section 8). *)
+    established for this technology (see docs/reference/program-memory-contract.md section 8). *)
 val ihp_sg13cmos5l : t
 
 (** Standard-cell views and routing limits for the pinned CMOS5L reference. Paths

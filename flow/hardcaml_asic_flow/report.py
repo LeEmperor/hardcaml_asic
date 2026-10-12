@@ -106,7 +106,7 @@ def hold_repair(run_dir, record):
     """What the post-CTS resizer said about hold; its log is the only account.
 
     "No hold violations found" means nothing was repaired, which is the right
-    outcome only when the SDC actually constrained hold. See docs/target-reference.md.
+    outcome only when the SDC actually constrained hold. See docs/reference/target-reference.md.
     """
     lines = []
     for log in sorted(flow_dir(run_dir, record).glob("*resizer*/*.log")):

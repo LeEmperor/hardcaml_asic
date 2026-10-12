@@ -4,7 +4,7 @@
 (* P1: contract checks for Single_port_ram, run against both the behavioral model and the
    flop implementation.
 
-   The scoreboard follows docs/program-memory-contract.md section 9: it compares defined
+   The scoreboard follows docs/reference/program-memory-contract.md section 9: it compares defined
    read data across implementations, checks hold within each one, and checks poison for
    the behavioral model only. The technology in the macro test is a test input, not
    evidence of a real macro backend. *)

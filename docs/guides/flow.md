@@ -2,7 +2,7 @@
 
 Status: operating guide, 2026-09-20. P4.1–P4.5 and the consumer reproduction are
 closed with evidence; see
-[phase plan section 7](phase_plan.md#7-p4--execution-results-and-physical-integration)
+[phase plan section 7](../archive/phase-plan-through-p6.4b.md#7-p4--execution-results-and-physical-integration)
 for what each gate rests on. Nothing below is outstanding work. This is the
 standing account of how the flow is run and how a run becomes an evidence
 directory, and the only documentation of `flow.sh`, `report.py` and
@@ -83,7 +83,7 @@ repository**, and should stay outside it. A completed `full` run directory is
 around 235 MB of OpenROAD, Magic, and KLayout output: ODB and DEF snapshots per
 step, fill insertion, GDS streamout, SPICE extraction. That is tool output, not
 a result, and it does not belong in a git working tree. What belongs in the
-repository is the curated record under [`evidence/`](../evidence): the complete
+repository is the curated record under [`evidence/`](../../evidence): the complete
 immutable input bundle, manifest, preflight, run, postcheck, and results JSON,
 plus the logs and signoff reports the acceptance criteria are actually read
 from. The run store is scratch and can be deleted once `archive.py` has produced
@@ -222,7 +222,7 @@ pass.
 
 ## Evidence and remaining acceptance
 
-The [phase plan](phase_plan.md#7-p4--execution-results-and-physical-integration)
+The [phase plan](../archive/phase-plan-through-p6.4b.md#7-p4--execution-results-and-physical-integration)
 tracks which P4 gates have actual run evidence. Mapped synthesis requires zero
 unmapped instances and synthesis errors, a standard-cell mapping inventory, and
 the memory bundle's explicit flop selection. A completed full LibreLane run alone
@@ -230,9 +230,9 @@ does not close P4.5: retain the TT precheck and gate-level wrapper check alongsi
 the physical reports before marking that gate complete.
 
 Both gates now have records:
-[`evidence/p4/memory-synthesis`](../evidence/p4/memory-synthesis/README.md) for
+[`evidence/p4/memory-synthesis`](../../evidence/p4/memory-synthesis/README.md) for
 P4.4 and
-[`evidence/p4/observable-physical`](../evidence/p4/observable-physical/README.md)
+[`evidence/p4/observable-physical`](../../evidence/p4/observable-physical/README.md)
 for P4.5, which closes P4's exit gate. Each historical directory contains the
 immutable records — manifest, preflight, run, postcheck, results — plus an
 archive of the logs and reports its claims are read from, and a note stating the
@@ -316,13 +316,13 @@ PY
 This verification needs no checkout, original bundle, run directory, PDK, or
 opam switch. Re-executing or preflighting the restored design still requires the
 separately recorded toolchain and external collateral. The consumer's historical
-[clean-staging archive](../../scaf/flow_results/20260920-081325-ccecd9ed/README.md#preservation-and-restoration)
+[clean-staging archive](../../../scaf/flow_results/20260920-081325-ccecd9ed/README.md#preservation-and-restoration)
 demonstrates the earlier manual preservation procedure; its record is not
 rewritten by this capability. Do not edit emitted inputs to make restoration or
 preflight pass.
 
 The pinned LibreLane flow has a known ABC timing-print limitation: its renderer
 passes `cell/pin` where ABC expects a cell name. The consumer's
-[analysis](../../scaf/tinytapeout/reports/2026-09-20-p0.7-memory-synthesis.md#abc-diagnostics)
+[analysis](../../../scaf/tinytapeout/reports/2026-09-20-p0.7-memory-synthesis.md#abc-diagnostics)
 shows why that print is not timing evidence. It does not invalidate mapped
 cell/area evidence or the independently reported post-route OpenSTA timing.

@@ -29,18 +29,18 @@ a simulator limitation, not evidence of a candidate defect.
 ## Contract and adapter
 
 The normative contract is
-[`program-memory-contract.md`](program-memory-contract.md): positive-edge input
+[`program-memory-contract.md`](../reference/program-memory-contract.md): positive-edge input
 sampling, one-cycle registered read output, whole-word writes, output hold while
 disabled, no initialization promise, and unspecified output after writes and
 unwritten reads. The existing
-[`test_single_port_ram.ml`](../test/test_single_port_ram.ml) scoreboard supplies
+[`test_single_port_ram.ml`](../../test/test_single_port_ram.ml) scoreboard supplies
 the comparison rule reused here: track expected storage independently, compare
 only defined reads, and preserve each DUT's actual output across disabled cycles.
 The external four-state Verilog model cannot run in Hardcaml's two-state
 `Cyclesim`, so the experiment adapts that scoreboard rather than changing the
 ordinary test harness.
 
-[`RM_IHPSG13_1P_256x16_portable_wrapper.v`](../experiments/sram_model_conformance/RM_IHPSG13_1P_256x16_portable_wrapper.v)
+[`RM_IHPSG13_1P_256x16_portable_wrapper.v`](../../experiments/sram_model_conformance/RM_IHPSG13_1P_256x16_portable_wrapper.v)
 contains exactly one candidate instance and maps:
 
 ```text
@@ -69,7 +69,7 @@ conditional setup/hold groups, and a clock-related `A_DOUT` timing arc.
 ## Functional coverage
 
 The deterministic vectors are embedded in
-[`sram_model_conformance_tb.sv`](../experiments/sram_model_conformance/sram_model_conformance_tb.sv);
+[`sram_model_conformance_tb.sv`](../../experiments/sram_model_conformance/sram_model_conformance_tb.sv);
 there is no random seed. Coverage includes:
 
 - initial unknown output followed by disabled hold, without requiring zero or X;
@@ -130,7 +130,7 @@ The runner accepts an explicit PDK root, defaults only to this repository's
 hashes, and never downloads inputs. It records full commands, working directory,
 tool paths/versions, checkout state, compile output, run output, outcomes, and
 input hashes. The durable text artifacts are in
-[`evidence/sram-model-conformance/`](../evidence/sram-model-conformance/).
+[`evidence/sram-model-conformance/`](../../evidence/sram-model-conformance/).
 Generated `.vvp` files are deleted at the end of the run; no artifact is stored
 externally or only in an ignored path.
 

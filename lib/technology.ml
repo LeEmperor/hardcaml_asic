@@ -168,7 +168,7 @@ module Cmos5l = struct
 
      Every value is read off the pinned PDK's own LibreLane standard-cell configuration,
      libs.tech/librelane/sg13cmos5l_stdcell/config.tcl, at the PDK revision a Target pins
-     (see docs/target-reference.md). They are recorded here rather than left to LibreLane
+     (see docs/reference/target-reference.md). They are recorded here rather than left to LibreLane
      because this project supplies its own SDC: setting PNR_SDC_FILE stops LibreLane's
      FALLBACK_SDC from running, and that script is the only place these variables reach
      timing analysis.

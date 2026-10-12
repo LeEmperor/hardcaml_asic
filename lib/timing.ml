@@ -18,7 +18,7 @@
    It does NOT own the clock; the one primary clock the delays are measured against is a
    Clock.t, declared separately. Only minimum and maximum I/O delays exist; false paths,
    clock uncertainty and any other SDC intent are not accepted by this declaration API
-   (see docs/target-reference.md).
+   (see docs/reference/target-reference.md).
 *)
 
 open! Core

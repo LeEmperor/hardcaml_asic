@@ -1,15 +1,21 @@
 # ASIC P6.3–P6.6: bounded implementation plan
 
-Status: P6.3 and P6.4a complete; P6.4b–P6.6 open, 2026-09-20.
+Status reconciled 2026-10-12: P6.3, P6.4a and P6.4b complete;
+P6.5a/b/c and P6.6 remain open. Parent P6.4 awaits source-access-denied
+installation evidence. Sections 12–13 preserve completion records. Earlier
+audit sections describe their original baseline, not the current checkout.
+The [central phase plan](../phase_plan.md) owns priority; this is the detailed
+P6 specification and evidence, not a second active queue. Historical scaf
+inventories do not require that checkout to exist.
 The package installs a `hardcaml-asic-flow` command that runs its own modules and
 data from a prefix. Identity stamping, provisioning authority and independent
 acceptance are not implemented.
 
-The [phase plan](phase_plan.md#11-p6--shared-tooling-distribution) owns task IDs,
-dependencies and evidence gates. The [migration brief](flow_legacy_migration.md)
+The [phase plan](../phase_plan.md#asic-p6--shared-tooling-distribution) owns task IDs,
+dependencies and evidence gates. The [historical migration brief](../archive/flow_legacy_migration.md)
 owns consolidation requirements. This document refines those requirements into
 small implementation units, not a competing architecture. Current worktree
-caveats and the next-agent prompt are in [P6 status](p6-status.md).
+caveats and the superseded next-agent prompt are in [historical P6 status](../archive/p6-status-2026-09-20.md).
 
 ## 1. Recommendation and boundaries
 
@@ -51,12 +57,12 @@ Paths in the consumer column are relative to `scaf/` in this workspace.
 | Restore | `archive.py` verification helpers, `test/test_archive.py`, documented checksum/extract/hash procedure in `docs/flow.md` | Historical manual complete-bundle preservation; do not rewrite it. No restore CLI is needed for P6 |
 | Orchestrate | Example-only `scripts/flow.sh` owns sequencing, summaries and implicit latest-run lookup | Root `flow.sh` forwards to `adopted-flow.sh`, which owns sequence, explicit resume, summaries, failures/signals, output/archive naming. Move generic sequencing once; keep build/emit and explicit path selection in thin consumer wrapper |
 
-Relevant source links: [runner](../scripts/phase4.py),
-[reporter](../scripts/report.py), [archiver](../scripts/archive.py),
-[provisioner](../scripts/toolchain.sh), [example driver](../scripts/flow.sh),
-[consumer driver](../../scaf/tinytapeout/scripts/adopted-flow.sh),
-[consumer emitter](../../scaf/bin/asic_bundle.ml),
-[consumer provisioner](../../scaf/tinytapeout/scripts/bootstrap-toolchain.sh).
+Relevant source links: [runner](../../scripts/phase4.py),
+[reporter](../../scripts/report.py), [archiver](../../scripts/archive.py),
+[provisioner](../../scripts/toolchain.sh), [example driver](../../scripts/flow.sh),
+[consumer driver](../../../scaf/tinytapeout/scripts/adopted-flow.sh),
+[consumer emitter](../../../scaf/bin/asic_bundle.ml),
+[consumer provisioner](../../../scaf/tinytapeout/scripts/bootstrap-toolchain.sh).
 
 ### Confirmed dependencies and assumptions
 
@@ -457,8 +463,8 @@ logic. No pin values change in P6.
 | New stamp/export helper and generated identity data/module, `lib/dune`, `lib/bundle.ml` | Shared source-artifact identity and additive generator field, coordinated before edits |
 | `test/dune`, new `test/test_flow_cli.py`, small reusable fixture helper | Canonical fast CLI/identity/provision/read-only tests; reuse existing policy fixtures |
 | `test/package_consumer_smoke.sh`, small standalone consumer fixture | Fresh-prefix bundle emission, isolated CLI and restore tests; separate explicit install-smoke alias to avoid recursive `@install` during ordinary runtest |
-| `docs/consumer-installation.md`, `docs/flow.md`, `docs/usage.md`, bootstrap guide | Update actual installed commands after they work; do not prematurely replace current operating instructions |
-| `docs/p6-implementation-plan.md`, `docs/p6-status.md`, phase plan navigation/status | Exact evidence and next bounded prompt; phase plan edits narrow and reread first |
+| `docs/guides/consumer-installation.md`, `docs/guides/flow.md`, `docs/guides/usage.md`, bootstrap guide | Update actual installed commands after they work; do not prematurely replace current operating instructions |
+| `docs/development/p6-implementation-plan.md`, `docs/phase_plan.md` | Detailed acceptance/evidence here; current status and next work in the central plan. Do not create another handoff/status queue |
 | `scaf` runtime files | No edits during P6. Consumer owner performs P7 changes after handoff |
 
 ## 7. Ordered bounded implementation units
@@ -487,13 +493,13 @@ this dependency graph.
 
 ## 8. P6.6 PDK-free fresh-prefix acceptance
 
-Extend [package smoke](../test/package_consumer_smoke.sh), not another install
+Extend [package smoke](../../test/package_consumer_smoke.sh), not another install
 harness. Extract reusable synthetic fixture builders from
-[collector tests](../test/test_phase4.py), [report tests](../test/test_report.py)
-and [archive tests](../test/test_archive.py); do not fork the acceptance policy in
-tests. Keep [bundle tests](../test/check_bundle.py) for determinism, provenance
+[collector tests](../../test/test_phase4.py), [report tests](../../test/test_report.py)
+and [archive tests](../../test/test_archive.py); do not fork the acceptance policy in
+tests. Keep [bundle tests](../../test/check_bundle.py) for determinism, provenance
 and lock equality. Generic consumer orchestration assertions originate in
-[check-flow.sh](../../scaf/tinytapeout/scripts/check-flow.sh); P7 retains tests of
+[check-flow.sh](../../../scaf/tinytapeout/scripts/check-flow.sh); P7 retains tests of
 its thin argument forwarding and its design-specific emitted-source checks.
 
 Acceptance procedure:
@@ -889,7 +895,7 @@ discarded; no pin or installed environment changed.
 
 ### Initial gap inventory
 
-P6.4a's package was re-inspected against the [P6.4 gate](phase_plan.md#11-p6--shared-tooling-distribution)
+P6.4a's package was re-inspected against the [P6.4 gate](../archive/phase-plan-through-p6.4b.md#11-p6--shared-tooling-distribution)
 before anything was changed. Five of its eight requirements were already met and
 were left alone; the gaps were these, and each row says how it was closed.
 

@@ -8,11 +8,11 @@ there is no implemented SRAM macro backend.
 
 The lifecycle has three separate layers:
 
-1. Install the `hardcaml_asic` OCaml library to declare, elaborate, simulate,
-   and emit a bundle.
-2. Obtain flow scripts from a checkout of the same exact revision and explicitly
-   provision the external PDK and toolchain. The package does not install a CLI
-   or those scripts.
+1. Install one pinned `hardcaml_asic` package containing the OCaml library and
+   `hardcaml-asic-flow` CLI. Declare, elaborate, simulate and emit a bundle.
+2. Explicitly provision the external PDK and toolchain. The installed CLI ships
+   its runtime modules and provisioning data; repository scripts are development
+   adapters, not a separately maintained implementation.
 3. Run the immutable bundle, collect results, and preserve both the complete
    bundle and the selected run evidence.
 
@@ -37,7 +37,7 @@ A consumer Dune stanza uses the installed wrapped library directly:
 
 This does not require a sibling directory named `../hardcaml_asic`. A local,
 isolated-prefix installation is also supported and exercised by
-[`test/package_consumer_smoke.sh`](../test/package_consumer_smoke.sh). See
+[`test/package_consumer_smoke.sh`](../../test/package_consumer_smoke.sh). See
 [consumer installation](consumer-installation.md) for both installation routes
 and exact collateral resolution.
 
@@ -46,7 +46,7 @@ and exact collateral resolution.
 A design implements `Project.Design`: Hardcaml input/output interfaces, a top
 module name, and `create context inputs`. Resource constructors receive that
 context. The following is a declaration excerpt, not a complete executable;
-[`examples/tt_bundle_example.ml`](../examples/tt_bundle_example.ml) is the
+[`examples/tt_bundle_example.ml`](../../examples/tt_bundle_example.ml) is the
 maintained runnable example with the complete `Design` modules, all 24 pin
 descriptions, bundle source enumeration, and error handling.
 
@@ -84,7 +84,7 @@ consumer still owns reset semantics, behavior while `ena` is low, and arbitratio
 of `uio_out`/`uio_oe`; the harness only supplies the pins. Every `ui`, `uo`, and
 `uio` bit needs a meaningful `Pinout.t` description. Declare the primary clock
 and any real min/max I/O timing assumptions; do not fabricate board timing.
-The [target reference](target-reference.md) defines the accepted boundary,
+The [target reference](../reference/target-reference.md) defines the accepted boundary,
 timing subset, protected settings, and optional helper behavior.
 
 Resource policy is mandatory. Prefer explicit `Flops` for the currently
@@ -114,7 +114,7 @@ make misuse visible; implementation flops have no reset or initialization.
 The consumer must own validity, bounds checks, accepted-access gating, and
 response validity. Reset consumer metadata rather than assuming reset clears
 hardware storage. The [memory example](memory-example.md) and normative
-[memory contract](program-memory-contract.md) give the complete behavior.
+[memory contract](../reference/program-memory-contract.md) give the complete behavior.
 
 ## 4. Emit and inspect an immutable bundle
 
@@ -149,8 +149,9 @@ SDC, RTL, metadata, or the manifest before a run.
 
 ## 5. Prepare the external environment
 
-Keep a checkout at the same `ASIC_REV` to obtain the current checkout-distributed
-scripts and lockfile. This is separate from the installed OCaml package:
+The installed provisioning spelling is shown in [installation](consumer-installation.md#resolve-ttlibrelane-collateral).
+The commands below retain the repository-development route and therefore use a
+checkout at the same `ASIC_REV`; that checkout is not required by the installed CLI:
 
 ```sh
 ASIC_SOURCE=/absolute/path/to/hardcaml_asic-source
@@ -164,13 +165,17 @@ source "$TOOLCHAIN/toolchain-env.sh"
 Provisioning fetches substantial external collateral and the LibreLane image;
 it is never part of elaboration or emission. `bootstrap.sh --check` is read-only.
 See [bootstrapping](bootstrap.md) for prerequisites, disk use, pins, offline and
-native options. There is currently no separately installed/versioned flow CLI;
-shared-tool distribution remains future work.
+native options. The shared CLI is installed with the library. Its source stamp,
+strict provisioning semantics and final independent-installation acceptance are
+still ASIC P6.5/P6.6 work; these instructions do not close those gates.
 
 ## 6. Preflight, execute, and collect
 
-Use the scripts from `$ASIC_SOURCE`. These are the supported entry points and
-flags for an arbitrary emitted bundle:
+These development examples use scripts from `$ASIC_SOURCE`. They delegate to the
+installed package's source implementation but retain some historical output and
+option spellings. In particular, the installed `run` returns final JSON, whereas
+the development adapter below prints a path. See the installed command's `--help`
+and [installation guide](consumer-installation.md) for the public boundary:
 
 ```sh
 RUNS=/absolute/path/to/run-storage
@@ -285,7 +290,7 @@ Running preflight or executing the restored bundle still needs the exact
 separately recorded toolchain and external collateral. Archives produced before
 this capability may lack `input-bundle.tar.gz`; reports alone cannot reconstruct
 the omitted generated RTL or source copies. The consumer's
-[clean-staging P5.4 record](../../scaf/tinytapeout/reports/2026-09-20-p0.5c-clean-staging-physical.md)
+[clean-staging P5.4 record](../../../scaf/tinytapeout/reports/2026-09-20-p0.5c-clean-staging-physical.md)
 documents the earlier manual procedure and remains historical evidence.
 
 ## Diagnostics and limits
@@ -309,9 +314,10 @@ documents the earlier manual procedure and remains historical evidence.
 - The pinned LibreLane ABC renderer passes a `cell/pin` token where ABC expects a
   cell name. This invalidates ABC's printed delay estimate, not the recorded
   mapped cells/area or the separate post-route OpenSTA result; see the consumer's
-  [P5.3 analysis](../../scaf/tinytapeout/reports/2026-09-20-p0.7-memory-synthesis.md#abc-diagnostics).
-- Commercial adapters, additional targets/flows, a packaged shared-tool CLI,
-  and broader memory/resource support remain future work.
+  [P5.3 analysis](../../../scaf/tinytapeout/reports/2026-09-20-p0.7-memory-synthesis.md#abc-diagnostics).
+- Commercial adapters, additional targets/flows and broader memory/resource
+  support remain future work. The shared CLI is installed; source-artifact
+  identity and the remaining independent-installation gates are still open.
 
-The phase-by-phase records remain in the [implementation plan](phase_plan.md),
+The phase-by-phase records are linked from the [implementation plan](../phase_plan.md),
 but they are evidence and history rather than the onboarding route.
