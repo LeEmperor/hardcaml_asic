@@ -58,7 +58,9 @@ def observation_updates(payload, *, path, output=print, elide=True):
         elif event.get("event") == "planned":
             plan = data.get("plan") or {}
             detail = " " + (" -> ".join(plan.get("stages") or []) or text(plan.get("endpoint")))
-        output(f"  {text(event.get('sequence')):>4} {text(event.get('event'))}{detail}")
+        timing = (f" [recorded {event['recorded_at']}; +{event['elapsed_seconds']:.3f}s]"
+                  if "recorded_at" in event else "")
+        output(f"  {text(event.get('sequence')):>4} {text(event.get('event'))}{detail}{timing}")
         if artifact:
             output(f"       published {text(artifact.get('boundary'))}: {text(artifact.get('path'))}")
         if data.get("error") or occurrence.get("error"):

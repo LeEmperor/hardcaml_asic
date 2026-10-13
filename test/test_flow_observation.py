@@ -15,6 +15,7 @@ PACKAGE_ROOT = os.environ.get("STAGE_TEST_PACKAGE_ROOT", str(Path(__file__).reso
 sys.path.insert(0, PACKAGE_ROOT)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from hardcaml_asic_flow import flow_observation as obs, execution_plan as plans, stages, result_store
+from hardcaml_asic_flow import presentation
 import test_stages
 
 
@@ -32,6 +33,155 @@ class ObservationTest(unittest.TestCase):
 
     def run_plan(self, endpoint="floorplan", **kwargs):
         return self.writer.run(lambda: plans.resolve_stages(endpoint), lambda: self.fixture.adapter(**kwargs))
+
+    def test_recording_clock_regression_and_monotonic_origin_before_promotion(self):
+        self.writer.close()
+        stamps = ["2026-10-13T12:00:01.123456Z", "2026-10-13T11:59:59.000000Z",
+                  "2026-10-13T12:00:02.000000Z"]
+        save = result_store.save_json
+        visible = []
+        def promote(path, value):
+            self.assertFalse(path.exists())
+            visible.append((value["recorded_at"], value["elapsed_seconds"]))
+            save(path, value)
+        with patch.object(obs.time, "monotonic", side_effect=[100, 100.25, 101, 101]), \
+             patch.object(obs, "recorded_at_now", side_effect=stamps), \
+             patch.object(result_store, "save_json", side_effect=promote):
+            self.writer = obs.Writer(self.root / "clock", workspace=self.root / "clock-work",
+                                     checkpoint_store=self.fixture.store, request={})
+            with patch.object(obs.time, "monotonic", return_value=100.1), \
+                 patch.object(obs, "recorded_at_now", return_value=stamps[0]):
+                with self.assertRaisesRegex(obs.ObservationError, "regressed"):
+                    self.writer.append("planned", {"plan": plans.resolve_stages("synthesis").as_dict()})
+            self.assertEqual(self.writer.sequence, 1)
+            self.assertFalse((self.writer.directory / "000000000002.json").exists())
+            self.writer.append("planned", {"plan": plans.resolve_stages("synthesis").as_dict()})
+            self.writer.append("outcome", {"status": "failed", "exit_code": 2, "error": None})
+        events = obs.load(self.writer.directory)[1]
+        self.assertEqual(visible, list(zip(stamps, [.25, 1, 1])))
+        self.assertEqual([e["sequence"] for e in events], [1, 2, 3])
+        reader = obs.IncrementalReader(self.writer.directory, stream_id=self.writer.stream_id, after=1)
+        self.assertEqual(reader.poll()[0]["events"], events[1:])
+        output = []
+        presentation.observation_updates(obs.read_updates(self.writer.directory, stream_id=self.writer.stream_id),
+                                         path=self.writer.directory, output=output.append)
+        self.assertIn("recorded " + stamps[1] + "; +1.000s", "\n".join(output))
+
+    def test_strict_timing_validation_even_when_rehashed(self):
+        # strftime %Y is not four-digit padded on every platform for years <1000.
+        from datetime import datetime, timezone
+        with patch.object(obs, "datetime") as clock:
+            clock.now.return_value = datetime(1, 1, 1, tzinfo=timezone.utc)
+            self.assertEqual(obs.recorded_at_now(), "0001-01-01T00:00:00.000000Z")
+        for stamp in ("0001-01-01T00:00:00.000000Z", "2024-02-29T23:59:59.999999Z"):
+            obs.validate_timing({"recorded_at": stamp, "elapsed_seconds": 0})
+        path = self.writer.directory / "000000000001.json"
+        original = obs.strict_read(path)
+        bad_stamps = [None, 123, "2026-10-13T12:00:00Z", "2026-10-13T12:00:00.000000+00:00",
+                      "2026-02-30T12:00:00.000000Z", "2026-10-13T12:00:60.000000Z",
+                      "0000-01-01T00:00:00.000000Z", "2026-02-29T00:00:00.000000Z",
+                      "2026-10-13t12:00:00.000000z", "2026-10-13T12:00:00.000000Z\n"]
+        for key, values in (("recorded_at", bad_stamps),
+                            ("elapsed_seconds", [None, True, "1", -1, float("inf"), float("nan"), 10**400])):
+            for bad in values:
+                with self.subTest(key=key, bad=bad):
+                    value = dict(original, **{key: bad})
+                    # Nonfinite JSON fails at decoding/canonicalization; all finite
+                    # mutations have a valid hash so validation must reject facts.
+                    try:
+                        value["sha256"] = obs.digest({k: v for k, v in value.items() if k != "sha256"})
+                    except ValueError:
+                        pass
+                    path.write_text(json.dumps(value))
+                    with self.assertRaises(obs.ObservationError):
+                        obs.load(self.writer.directory)
+        for mutation in ({k: v for k, v in original.items() if k != "recorded_at"},
+                         {k: v for k, v in original.items() if k != "elapsed_seconds"},
+                         dict(original, schema_version=1)):
+            mutation["sha256"] = obs.digest({k: v for k, v in mutation.items() if k != "sha256"})
+            path.write_text(json.dumps(mutation))
+            with self.assertRaisesRegex(obs.ObservationError, "record fields"):
+                obs.load(self.writer.directory)
+        path.write_text(json.dumps(original))
+
+    def test_timing_hash_mixed_schema_and_elapsed_regression(self):
+        self.writer.append("outcome", {"status": "failed", "exit_code": 2, "error": None})
+        events = obs.load(self.writer.directory)[1]
+        # Fixed elapsed values make the malformed-chain cases clock-independent.
+        for index, event in enumerate(events):
+            event.update(elapsed_seconds=index + 1,
+                         previous_sha256=events[index - 1]["sha256"] if index else None)
+            event["sha256"] = obs.digest({k: v for k, v in event.items() if k != "sha256"})
+            (self.writer.directory / f"{index + 1:012d}.json").write_text(json.dumps(event))
+        path = self.writer.directory / "000000000002.json"
+        for key, value in (("recorded_at", "2026-01-01T00:00:00.000000Z"), ("elapsed_seconds", 999)):
+            path.write_text(json.dumps(dict(events[1], **{key: value})))
+            with self.assertRaisesRegex(obs.ObservationError, "chain mismatch"):
+                obs.load(self.writer.directory)
+        for mutation in (dict(events[1], elapsed_seconds=0),
+                         {k: v for k, v in dict(events[1], schema_version=1).items()
+                          if k not in ("recorded_at", "elapsed_seconds")}):
+            path.unlink()
+            reader = obs.IncrementalReader(self.writer.directory, stream_id=self.writer.stream_id, after=1)
+            mutation["sha256"] = obs.digest({k: v for k, v in mutation.items() if k != "sha256"})
+            path.write_text(json.dumps(mutation))
+            with self.assertRaises(obs.ObservationError):
+                obs.load(self.writer.directory)
+            with self.assertRaises(obs.ObservationError):
+                reader.poll()
+        allocation = {k: v for k, v in dict(events[0], schema_version=1).items()
+                      if k not in ("recorded_at", "elapsed_seconds")}
+        allocation["sha256"] = obs.digest({k: v for k, v in allocation.items() if k != "sha256"})
+        (self.writer.directory / "000000000001.json").write_text(json.dumps(allocation))
+        tail = dict(events[1], previous_sha256=allocation["sha256"])
+        tail["sha256"] = obs.digest({k: v for k, v in tail.items() if k != "sha256"})
+        path.write_text(json.dumps(tail))
+        with self.assertRaisesRegex(obs.ObservationError, "mixed"):
+            obs.load(self.writer.directory)
+
+    def test_legacy_journal_exact_payloads_no_synthesized_timing(self):
+        self.run_plan("synthesis")
+        self.writer.close()
+        expected_state = obs.load(self.writer.directory)[0]
+        expected_inspect = dict(obs.inspect(self.writer.directory), schema_version=1)
+        events = []
+        previous = None
+        for path in sorted(self.writer.directory.glob("[0-9]*.json")):
+            value = obs.strict_read(path)
+            value.pop("recorded_at")
+            value.pop("elapsed_seconds")
+            value.update(schema_version=1, previous_sha256=previous)
+            value["sha256"] = obs.digest({k: v for k, v in value.items() if k != "sha256"})
+            path.write_text(json.dumps(value))
+            previous = value["sha256"]
+            events.append(value)
+        before = {p.name: p.read_bytes() for p in self.writer.directory.iterdir()}
+        expected = {"contract": obs.CONTRACT, "schema_version": 1, "stream_id": self.writer.stream_id,
+                    "after": 2, "cursor": len(events), "events": events[2:]}
+        self.assertEqual(obs.read_updates(self.writer.directory, stream_id=self.writer.stream_id, after=2), expected)
+        reader = obs.IncrementalReader(self.writer.directory, stream_id=self.writer.stream_id, after=2)
+        updates, status = reader.poll()
+        self.assertEqual(updates, expected)
+        self.assertEqual(status["schema_version"], 1)
+        inspected = obs.inspect(self.writer.directory)
+        self.assertEqual(inspected, expected_inspect)
+        self.assertEqual(inspected["schema_version"], 1)
+        self.assertEqual(inspected["state"], expected_state)
+        entry = "import sys; sys.path.insert(0, sys.argv.pop(1)); from hardcaml_asic_flow.cli import main; sys.exit(main())"
+        command = [sys.executable, "-I", "-B", "-c", entry, PACKAGE_ROOT,
+                   "observation", "watch", str(self.writer.directory), "--stream-id", self.writer.stream_id, "--after", "2"]
+        watched = subprocess.run([*command, "--json"], capture_output=True, text=True, timeout=10)
+        self.assertEqual(watched.returncode, 0, watched.stderr)
+        envelopes = [json.loads(line) for line in watched.stdout.splitlines()]
+        self.assertEqual(envelopes[0], dict(expected, event="updates"))
+        self.assertEqual(envelopes[1], dict(status, event="status"))
+        human = subprocess.run(command, capture_output=True, text=True, timeout=10)
+        self.assertEqual(human.returncode, 0, human.stderr)
+        self.assertNotIn("[recorded", human.stdout)
+        output = []
+        presentation.observation_updates(updates, path=self.writer.directory, output=output.append)
+        self.assertNotIn("[recorded", "\n".join(output))
+        self.assertEqual(before, {p.name: p.read_bytes() for p in self.writer.directory.iterdir()})
 
     def test_publication_precedes_finished_and_replay_reconnect(self):
         result = self.run_plan()

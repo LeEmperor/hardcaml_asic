@@ -61,7 +61,7 @@ The command flushes an early human allocation receipt, then a stage and
 publication summary, and retains `WORKSPACE/execution-<attempt>.json`. Add `--json`
 to the stages invocation for contract-4 allocation/terminal JSONL. Successful
 terminal execution payloads are unchanged; caught preparation/storage/interruption
-errors use the [defined terminal envelope](flow.md#default-persistent-stage-observation-schema-1).
+errors use the [defined terminal envelope](flow.md#default-persistent-stage-observation-schema-2-reads-schema-1).
 Use the receipt's
 explicit attempt path and stream ID; the readers below default to human reports:
 

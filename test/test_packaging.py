@@ -177,6 +177,9 @@ class IdentityTest(unittest.TestCase):
         described = json.loads(stdout.getvalue())
         self.assertEqual(described["tool"], "hardcaml-asic-flow")
         self.assertEqual(described["supported_record_schemas"], [1])
+        self.assertEqual(described["cli_contract"]["capabilities"]["stage_observation_schemas"],
+                         {"write": 2, "read": [1, 2]})
+        self.assertTrue(described["cli_contract"]["capabilities"]["producer_event_timestamps"])
         contract = described["cli_contract"]
         self.assertEqual(contract["version"], 4)
         self.assertEqual(contract["default_output"], "human")

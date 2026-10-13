@@ -4,6 +4,16 @@ Status: **delivered; final independent review, fix and documentation closeout co
 2026-10-13. The initial audit added only this document; dated slice evidence and
 the final tested scope are recorded below. Remaining limits are explicit.
 
+Producer event timing follow-on: new writers now produce **journal schema 2** with
+hash-protected `recorded_at` (canonical UTC) and `elapsed_seconds` (monotonic seconds
+since attempt creation). New readers retain schema-1 facts/payloads without invented
+times and reject mixed-version streams. CLI contract remains 4; inspect/read-updates/
+watch responses match the stream version, while allocation/terminal/error delivery
+envelopes remain schema 1. Human timed events display both producer values. See
+[timing contract, controlled live tests and integration handoff](journal-event-timing.md).
+The historical schema-1 evidence below remains a dated record; the timing feature's
+private consumer refresh and real EDA verification are still pending independently.
+
 **Slices 1–3 and independent review delivered (2026-10-13):** default
 fresh/resumed CLI journaling, contract-4 allocation/terminal delivery, incremental
 foreground reader/watch, ordinary consumer endpoint route, private installation

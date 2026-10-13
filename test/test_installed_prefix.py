@@ -412,7 +412,7 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
                                     "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
             text=True, capture_output=True)
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("Ran 16 tests", completed.stderr)
+        self.assertIn("Ran 20 tests", completed.stderr)
         descriptor = self.invoke("observation", "describe", "--json")
         self.assertEqual(descriptor.returncode, 0, descriptor.stderr)
         self.assertEqual(json.loads(descriptor.stdout)["contract"], "hardcaml-asic.stage-observation")
@@ -461,9 +461,11 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
                                     "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
             text=True, capture_output=True)
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("Ran 10 tests", completed.stderr)
+        self.assertIn("Ran 11 tests", completed.stderr)
         descriptor = json.loads(self.invoke("observation", "describe", "--json").stdout)
         self.assertTrue(descriptor["capabilities"]["incremental_reader"])
+        self.assertEqual(descriptor["supported_schema_versions"], [1, 2])
+        self.assertTrue(descriptor["capabilities"]["producer_event_timestamps"])
 
     def test_installed_default_journal_lifecycle_suite(self):
         completed = subprocess.run(

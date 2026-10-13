@@ -191,7 +191,7 @@ reuse, exclusive no-clobber publication and race behavior are documented in
 `scripts/phase4.py` retains its historical path-only run contract and development
 preflight JSON spelling; it is not the installed CLI presentation contract.
 
-### Default persistent stage observation (schema 1)
+### Default persistent stage observation (schema 2; reads schema 1)
 
 The installed provider exposes a separate structured API for Workbench and other
 machine readers. CLI `stages` journals by default; standalone Python adapters and
@@ -259,7 +259,7 @@ Human updates show up to 20 chronological event summaries (first/last ten for la
 responses), publication paths, omitted count and an explicit complete-response cursor;
 empty reads do not imply completion. These read commands
 need no tools, a PDK, or original producer process. `describe` returns the contract
-`hardcaml-asic.stage-observation`, `schema_version: 1`, capabilities, closed field
+`hardcaml-asic.stage-observation`, `schema_version: 2`, `supported_schema_versions: [1, 2]`, capabilities, closed field
 descriptions under `schemas`, writer and retention policies. Python callers can use
 the installed `hardcaml_asic_flow.flow_observation.describe()`, `inspect(directory)`
 and `read_updates(directory, stream_id=..., after=...)` directly. For an efficient
@@ -286,7 +286,8 @@ each stdout line is one complete object. Diagnostics go to stderr.
 | `updates` | `event: "updates"`, `contract`, `schema_version`, `stream_id`, `after`, `cursor`, `events` |
 | `status` | `event: "status"`, `contract`, `schema_version`, `stream_id`, `cursor`, `writer_active`, `observation_status`, `outcome`, `final_results` |
 
-The contract is `hardcaml-asic.stage-observation`, schema 1. `updates` contains
+The contract is `hardcaml-asic.stage-observation`; updates/status use the validated
+stream's schema version (1 for legacy journals, 2 for new journals). `updates` contains
 the unchanged complete `read_updates` payload plus its envelope discriminator;
 `events` contains full journal records, including hashes and event-specific data.
 It is emitted only for a nonempty suffix. `after` is the supplied cursor on first
@@ -340,8 +341,45 @@ preflight is reached, `preflight.json`. Each record has exactly:
 
 ```text
 contract, schema_version, stream_id, sequence, previous_sha256,
-event, data, sha256
+event, data, recorded_at, elapsed_seconds, sha256
 ```
+
+New writers produce **schema 2**. The timing fields are included in the canonical
+record hash, not reader delivery metadata:
+
+| Field | Schema-2 meaning and strict validation |
+| --- | --- |
+| `recorded_at` | Producer recording time in UTC, exactly `YYYY-MM-DDTHH:MM:SS.ffffffZ`; valid calendar date/time, six fractional digits, no offsets or leap-second spelling |
+| `elapsed_seconds` | Finite nonnegative JSON number (not boolean/string), monotonic seconds since attempt creation immediately before allocation after workspace ownership; nondecreasing across the stream |
+
+Recording time is sampled during append **before atomic record promotion**; it is
+not physical tool-start time, fsync/durable-write time, or reader receipt time.
+Lifecycle callbacks append synchronously while execution runs: `started` precedes
+the stage operation, `published` follows validated checkpoint promotion, and
+`finished` follows the stage return. Records are not batched at execution end.
+Sequence remains authoritative even when the UTC wall clock moves backward.
+Elapsed time is independent of wall-clock adjustments and differs from each
+occurrence's `duration_seconds`.
+
+Schema-1 records have exactly the fields above **except** `recorded_at` and
+`elapsed_seconds`. New readers retain their original facts, hashes and schema-1
+inspect/read-updates/watch payloads without modifying historical files or inventing
+times from mtimes. A stream must use one schema throughout; missing/extra timing,
+invalid UTC, nonnumeric/nonfinite/negative or regressing elapsed values and mixed
+schema streams fail closed. Human watch/read-updates append a succinct
+`[recorded 2026-10-13T12:00:00.123456Z; +1.250s]` to timed events; legacy events
+have no timing label. JSON retains the full precision of both fields.
+
+CLI contract stays **4**, package **0.1.0**, identity schema **1**. Negotiate journal
+support through `observation describe --json` (`supported_schema_versions`,
+`producer_event_timestamps`, `monotonic_elapsed_seconds`) or identity capabilities
+(`stage_observation_schemas: {write: 2, read: [1, 2]}` plus both timing flags).
+Consumers of timed journals must accept schema 2 explicitly. The JSONL discriminators
+and field sets are unchanged; inspect/read-updates/watch report the stream's schema.
+Allocation/terminal/error CLI delivery envelopes keep their independent schema 1;
+a terminal envelope's nested `observation` reports the stream's version. Identity's
+generic `supported_record_schemas: [1]` still describes the existing coarse
+runner/collector/reporter/archiver records, not the separately versioned journal.
 
 Sequence starts at 1. `previous_sha256` is null at 1 and otherwise the preceding
 record hash. `sha256` hashes UTF-8 JSON of the other fields with sorted keys,

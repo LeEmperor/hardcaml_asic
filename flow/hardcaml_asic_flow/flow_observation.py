@@ -6,20 +6,48 @@ This is deliberately not the provisional store-wide provider fixture contract.
 """
 
 from copy import deepcopy
+from datetime import datetime, timezone
 import fcntl
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 import signal
 import stat
+import time
 
 from . import result_store
 from .execution_plan import StagePlan, boundary_capabilities
 from .runner import Occurrence, execute
 
 CONTRACT = "hardcaml-asic.stage-observation"
-VERSION = 1
+VERSION = 2
+SUPPORTED_VERSIONS = (1, 2)
+
+
+def recorded_at_now():
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def validate_timing(record, previous_elapsed=None):
+    stamp = record["recorded_at"]
+    require(isinstance(stamp, str) and re.fullmatch(
+        r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z", stamp),
+        "recorded_at must be canonical UTC with six fractional digits and Z")
+    try:
+        datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%S.%fZ")
+    except ValueError as exc:
+        raise ObservationError("INVALID_RECORD", "invalid recorded_at calendar time") from exc
+    elapsed = record["elapsed_seconds"]
+    try:
+        finite = type(elapsed) in (int, float) and math.isfinite(elapsed)
+    except OverflowError:
+        finite = False
+    require(finite and elapsed >= 0,
+            "elapsed_seconds must be a finite nonnegative number")
+    require(previous_elapsed is None or elapsed >= previous_elapsed,
+            "elapsed_seconds regressed")
 
 
 class ObservationError(ValueError):
@@ -60,10 +88,18 @@ def strict_read(path):
 
 def describe():
     return {"contract": CONTRACT, "schema_version": VERSION,
+            "supported_schema_versions": list(SUPPORTED_VERSIONS),
+            "response_schema_policy": "inspect_read_updates_watch_match_stream; CLI_allocation_terminal_error_envelopes_remain_1",
+            "timing": {"recorded_at": "UTC_YYYY-MM-DDTHH:MM:SS.ffffffZ_before_atomic_promotion",
+                       "elapsed_seconds": "finite_nonnegative_monotonic_seconds_since_attempt_creation",
+                       "ordering": "sequence_authoritative; wall_clock_may_regress",
+                       "legacy": "schema_1_has_no_timing; never_synthesized",
+                       "stream": "single_schema_version; timing_inside_record_hash"},
             "scope": "one_path_bound_stage_attempt", "cursor": "stream_id_and_sequence",
             "events": ["allocated", "planned", "prepared", "started", "published", "finished", "outcome"],
             "capabilities": {"inspect": True, "read_updates": True, "watch": True,
                              "incremental_reader": True, "reader_mutations": False,
+                             "producer_event_timestamps": True, "monotonic_elapsed_seconds": True,
                              "stage_lifecycle": True, "backend_step_lifecycle": False,
                              "runtime_observation": False, "execution_resume": False,
                              "request_idempotency": False, "store_wide_journal": False,
@@ -81,8 +117,14 @@ def describe():
                                      "query_error": 2, "reader_sigint": 130},
                       "delivery": "flushed_JSONL; updates_only_when_nonempty; changed_status_and_final_status"},
             "schemas": {
+                "legacy_record": {"contract": CONTRACT, "schema_version": 1, "stream_id": "32_lowercase_hex",
+                                  "sequence": "positive_integer", "previous_sha256": "sha256_or_null_at_1",
+                                  "event": "declared_event_enum", "data": "event_specific_object",
+                                  "sha256": "canonical_unsigned_record_sha256"},
                 "record": {"contract": CONTRACT, "schema_version": VERSION, "stream_id": "32_lowercase_hex",
                            "sequence": "positive_integer", "previous_sha256": "sha256_or_null_at_1",
+                           "recorded_at": "canonical_UTC_with_six_fractional_digits_and_Z",
+                           "elapsed_seconds": "finite_nonnegative_number_nondecreasing",
                            "event": "declared_event_enum", "data": "event_specific_object", "sha256": "canonical_unsigned_record_sha256"},
                 "event_data": {
                     "allocated": {"request": "object", "workspace": "absolute_path", "checkpoint_store": "absolute_path",
@@ -116,7 +158,7 @@ def describe():
                                  "stream_id": "32_lowercase_hex", "cursor": "validated_prefix_length",
                                  "writer_active": "boolean_or_null", "observation_status": "final|live|writer_lost_or_unknown",
                                  "outcome": "outcome_data_or_null", "final_results": "final_results"},
-                "error": {"contract": CONTRACT, "schema_version": VERSION,
+                "error": {"contract": CONTRACT, "schema_version": 1,
                           "error": {"code": "INVALID_RECORD|RESET_REQUIRED|BUSY|EXECUTION_FAILED", "detail": "string"}}}}
 
 
@@ -209,6 +251,9 @@ class Writer:
             self.lock.close()
             raise
         try:
+            # Attempt creation starts immediately before allocation, after ownership.
+            self.created_monotonic = time.monotonic()
+            self.elapsed_seconds = None
             allocation = result_store.allocate(root)
             self.directory, self.stream_id = allocation.directory, allocation.identity
             activity_path = self.directory / "writer.lock"
@@ -232,12 +277,16 @@ class Writer:
         state = reduce_event(self.state, event, data, self.stream_id)
         value = {"contract": CONTRACT, "schema_version": VERSION, "stream_id": self.stream_id,
                  "sequence": self.sequence + 1, "previous_sha256": self.previous,
-                 "event": event, "data": deepcopy(data)}
+                 "event": event, "data": deepcopy(data),
+                 "recorded_at": recorded_at_now(),
+                 "elapsed_seconds": time.monotonic() - self.created_monotonic}
+        validate_timing(value, self.elapsed_seconds)
         value["sha256"] = digest(value)
         path = self.directory / f"{value['sequence']:012d}.json"
         require(not path.exists(), "record overwrite conflict")
         result_store.save_json(path, value)
         self.sequence, self.previous, self.state = value["sequence"], value["sha256"], state
+        self.elapsed_seconds = value["elapsed_seconds"]
 
     def lifecycle(self, event, action, occurrence, artifact):
         self.append(event, {"occurrence": occurrence, "artifact": artifact})
@@ -262,11 +311,18 @@ class Writer:
                 raise
 
 
-def validate_record(value, *, sequence, stream, previous, state):
+def validate_record(value, *, sequence, stream, previous, state, schema_version=None, previous_elapsed=None):
     """Shared strict record and transition validator for cold and warm readers."""
-    require(isinstance(value, dict) and set(value) == {"contract", "schema_version", "stream_id", "sequence", "previous_sha256", "event", "data", "sha256"}, "invalid record fields")
-    require(value["contract"] == CONTRACT and type(value["schema_version"]) is int and value["schema_version"] == VERSION
+    require(isinstance(value, dict), "record must be an object")
+    version = value.get("schema_version")
+    require(type(version) is int and version in SUPPORTED_VERSIONS
+            and (schema_version is None or version == schema_version), "unsupported or mixed record schema")
+    fields = {"contract", "schema_version", "stream_id", "sequence", "previous_sha256", "event", "data", "sha256"}
+    require(set(value) == fields | ({"recorded_at", "elapsed_seconds"} if version == 2 else set()), "invalid record fields")
+    require(value["contract"] == CONTRACT
             and type(value["sequence"]) is int and value["sequence"] == sequence, "unsupported record")
+    if version == 2:
+        validate_timing(value, previous_elapsed)
     if stream is None:
         stream = value["stream_id"]
         require(isinstance(stream, str) and len(stream) == 32 and all(c in "0123456789abcdef" for c in stream), "invalid stream identity")
@@ -315,7 +371,9 @@ class IncrementalReader:
                 continue
             value = strict_read(path)
             state, stream = validate_record(value, sequence=sequence, stream=self.stream_id,
-                                            previous=self.previous, state=self.state)
+                                            previous=self.previous, state=self.state,
+                                            schema_version=self.events[0]["schema_version"] if self.events else None,
+                                            previous_elapsed=self.events[-1].get("elapsed_seconds") if self.events else None)
             require(record_metadata(path) == before, "record changed during read")
             self.state, self.stream_id, self.previous = state, stream, value["sha256"]
             self.events.append(value)
@@ -328,10 +386,11 @@ class IncrementalReader:
         if active is not True:
             # A writer can promote its final record between listing and unlocking.
             self._refresh()
-        updates = {"contract": CONTRACT, "schema_version": VERSION, "stream_id": self.stream_id,
+        version = self.events[0]["schema_version"]
+        updates = {"contract": CONTRACT, "schema_version": version, "stream_id": self.stream_id,
                    "after": self.after, "cursor": len(self.events), "events": deepcopy(self.events[self.after:])}
         self.after = len(self.events)
-        snapshot = observation_snapshot(self.state, len(self.events), active)
+        snapshot = observation_snapshot(self.state, len(self.events), active, schema_version=version)
         status = {k: snapshot[k] for k in ("contract", "schema_version", "stream_id", "cursor",
                                           "writer_active", "observation_status", "final_results")}
         status["outcome"] = deepcopy(self.state["outcome"])
@@ -358,14 +417,14 @@ def writer_active(lock_path):
 def inspect(directory):
     state, events = load(directory)
     active = writer_active(state["lock_path"])
-    return observation_snapshot(state, len(events), active)
+    return observation_snapshot(state, len(events), active, schema_version=events[0]["schema_version"])
 
 
-def observation_snapshot(state, cursor, active):
+def observation_snapshot(state, cursor, active, *, schema_version=VERSION):
     outcome = state["outcome"]
     physical = any(a["boundary"] == "signoff" for a in state["artifacts"]) and any(
         o["action_key"] == "implementation.signoff" and o["status"] == "completed" for o in state["occurrences"])
-    return {"contract": CONTRACT, "schema_version": VERSION, "stream_id": state["attempt_id"],
+    return {"contract": CONTRACT, "schema_version": schema_version, "stream_id": state["attempt_id"],
             "cursor": cursor, "state": deepcopy(state), "writer_active": active,
             "observation_status": "final" if outcome else "live" if active else "writer_lost_or_unknown",
             "final_results": {"physical_completion": "completed" if physical else "not_recorded",
@@ -377,5 +436,5 @@ def read_updates(directory, *, stream_id, after=0):
     state, events = load(directory)
     if stream_id != state["attempt_id"] or type(after) is not int or not 0 <= after <= len(events):
         raise ObservationError("RESET_REQUIRED", "wrong stream or cursor outside retained prefix")
-    return {"contract": CONTRACT, "schema_version": VERSION, "stream_id": stream_id,
+    return {"contract": CONTRACT, "schema_version": events[0]["schema_version"], "stream_id": stream_id,
             "after": after, "cursor": len(events), "events": events[after:]}

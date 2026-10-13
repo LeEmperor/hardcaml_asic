@@ -17,6 +17,9 @@ finalization commands; stages journal by default and emit allocation/terminal JS
 Foreground watch delivers reader updates/status JSONL. Independent review and consumer
 integration are complete; see [flow journal closeout](development/flow-journal.md)
 and the historical [contract-3 presentation slices](development/human-readable-flow-output.md).
+New journal schema **2** adds hash-protected producer UTC and monotonic elapsed
+timestamps while retaining schema-1 readers. See [event timing and live verification](development/journal-event-timing.md)
+for activation instructions, actual receipt measurements and historical backfill semantics.
 Role-specific host/container runtime policy,
 shared readiness checks and observed image/engine launch binding passed final
 2026-10-12 acceptance; see [closeout evidence](phase_plan.md#hostcontainer-runtime-policy-closeout)
@@ -93,6 +96,11 @@ The public lifecycle now uses `Elaborated_project` and `Resolved_flow`; see the
 Historical records retain their original API names and commands.
 
 ## Where things live
+
+For the proposed OCaml-first execution refactor and stage/step decomposition, see
+[Flow infrastructure refactor](flow-infrastructure-refactor.md). It describes the
+infrastructure foundation for later **modularized flow** support; it is a proposal,
+not delivered flow-file functionality or a replacement implementation queue.
 
 | Area | Purpose | Start here |
 | --- | --- | --- |

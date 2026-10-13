@@ -191,8 +191,96 @@ class WatchTest(unittest.TestCase):
             self.assertNotIn("omitted", stdout)
             for event in events:
                 self.assertIn(f"{event['sequence']:>4} {event['event']}", stdout)
+                self.assertIn(f"recorded {event['recorded_at']}", stdout)
         finally:
             fixture.tearDown()
+
+    def test_live_spaced_stage_events_delivered_before_terminal(self):
+        # Each real producer append is atomically published, then blocks for a
+        # reader-owned acknowledgement. A generous timeout bounds hangs, not latency.
+        code = '''import sys, time
+sys.path.insert(0, sys.argv[1])
+sys.path.insert(0, sys.argv[2])
+from hardcaml_asic_flow import flow_observation as obs, execution_plan
+import test_stages
+fixture = test_stages.StagesTest()
+fixture.setUp()
+class GatedWriter(obs.Writer):
+    def append(self, event, data):
+        super().append(event, data)
+        if event != "allocated":
+            if sys.stdin.readline() != "next\\n": raise RuntimeError("lost test reader")
+            time.sleep(.02)
+w = GatedWriter(fixture.root / "obs", workspace=fixture.root / "work",
+                checkpoint_store=fixture.store, request={})
+adapter = fixture.adapter()
+launch = adapter.launch
+def marked_launch(*args):
+    (fixture.root / "launched").touch()
+    return launch(*args)
+adapter.launch = marked_launch
+print(w.directory, flush=True)
+sys.stdin.readline()
+w.run(lambda: execution_plan.resolve_stages("synthesis"), lambda: adapter)
+w.close()
+fixture.tearDown()
+'''
+        producer = subprocess.Popen([sys.executable, "-I", "-B", "-c", code, PACKAGE_ROOT,
+                                     str(Path(__file__).resolve().parent)], stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.children.append(producer)
+        self.assertTrue(select.select([producer.stdout], [], [], 10)[0])
+        attempt = Path(producer.stdout.readline().strip())
+        entry = "import sys; sys.path.insert(0, sys.argv.pop(1)); from hardcaml_asic_flow.cli import main; sys.exit(main())"
+        watcher = subprocess.Popen([sys.executable, "-I", "-B", "-c", entry, PACKAGE_ROOT,
+                                    "observation", "watch", str(attempt), "--json", "--interval", ".01"],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.children.append(watcher)
+        pending = b""
+        def delivery():
+            nonlocal pending
+            while b"\n" not in pending:
+                self.assertTrue(select.select([watcher.stdout], [], [], 10)[0], "watch delivery timed out")
+                chunk = os.read(watcher.stdout.fileno(), 65536)
+                self.assertTrue(chunk, "watch ended before requested event")
+                pending += chunk
+            line, pending = pending.split(b"\n", 1)
+            return json.loads(line)
+        received = []
+        receipts = []  # Independent reader measurements, never persisted as facts.
+        for expected in ("allocated", "planned", "prepared", "started", "published", "finished", "outcome"):
+            while True:
+                payload = delivery()
+                if payload["event"] == "updates":
+                    break
+            self.assertEqual([e["event"] for e in payload["events"]], [expected])
+            event = payload["events"][0]
+            received.append(event)
+            receipts.append(time.monotonic())
+            self.assertEqual(payload["schema_version"], 2)
+            self.assertIsNone(producer.poll(), "producer completed before intermediate delivery")
+            if expected != "outcome":
+                self.assertIsNone(obs.inspect(attempt)["state"]["outcome"])
+            if expected == "started":
+                self.assertFalse((attempt.parent.parent / "launched").exists(),
+                                 "start was delivered only after the stage operation")
+            if expected == "published":
+                self.assertTrue((attempt.parent.parent / "launched").exists())
+                checkpoint = Path(event["data"]["artifact"]["path"])
+                manifest = test_stages.cp.read(checkpoint / "manifest.json")
+                test_stages.cp.validate(checkpoint, compatibility=manifest["compatibility"])
+            producer.stdin.write("next\n")
+            producer.stdin.flush()
+        final = delivery()
+        self.assertEqual(final["event"], "status")
+        self.assertEqual(final["outcome"]["status"], "completed")
+        watcher.communicate(timeout=10)
+        self.assertEqual(watcher.returncode, 0)
+        _, stderr = producer.communicate(timeout=10)
+        self.assertEqual(producer.returncode, 0, stderr)
+        elapsed = [e["elapsed_seconds"] for e in received]
+        self.assertEqual(elapsed, sorted(elapsed))
+        self.assertEqual(receipts, sorted(receipts))
 
     def test_subprocess_producer_reconnect_sigint_and_broken_pipe(self):
         # Producer blocks on a caller-owned gate; readers cannot signal or release it.
