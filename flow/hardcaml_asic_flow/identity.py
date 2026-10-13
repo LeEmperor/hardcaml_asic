@@ -79,6 +79,27 @@ def describe():
         "package_version": version,
         "package_version_source": version_source,
         "supported_record_schemas": list(SUPPORTED_RECORD_SCHEMAS),
+        "cli_contract": {
+            "version": 2,
+            "default_output": "human",
+            "json_option": "--json",
+            "results_defaults": {
+                "root": "<caller-cwd>/_flow_results",
+                "operations": "<results-root>/operations",
+                "runs": "<results-root>/runs",
+            },
+            "capabilities": {
+                "json_commands": ["preflight", "run", "postcheck", "collect",
+                                  "report", "execute", "archive"],
+                "verbose_diagnostics": "stderr",
+                "runs_override": True,
+                "preflight_explicit_output": "file-existing-parent",
+                "collect_json_writes_results": True,
+                "collect_stdout": "legacy-read-only-json",
+                "archive_json_list": False,
+                "provision_json": False,
+            },
+        },
         "source": source_identity(),
         "module_dir": str(paths.PACKAGE_DIR),
         "data_dir": str(paths.DATA_DIR),
@@ -102,7 +123,8 @@ def report(as_json=False, output=print):
     output(f"source identity   unstamped; revision unknown, "
            f"library artifact match unverified (P6.5)")
     output(f"record schemas    "
-           f"{', '.join(str(v) for v in described['supported_record_schemas'])}")
+            f"{', '.join(str(v) for v in described['supported_record_schemas'])}")
+    output("CLI contract      2; human output by default, --json for machine output")
     output(f"modules           {described['module_dir']}")
     output(f"runtime data      {described['data_dir']}")
     return 0

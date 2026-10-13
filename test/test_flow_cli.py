@@ -5,11 +5,13 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import signal
 from types import SimpleNamespace
 import sys
 import tempfile
 import unittest
 import venv
+from unittest import mock
 
 
 sys.dont_write_bytecode = True
@@ -65,13 +67,13 @@ class FakeOperations:
     def report(self, args):
         self.calls.append(("report", args))
         if not getattr(args, "diagnostics_only", False):
-            print("human report")
+            print("{}" if args.json else "human report")
         return self.codes.get("report", 0)
 
     def archive(self, args):
         self.calls.append(("archive", args))
         if not getattr(args, "quiet", False):
-            print('{"archive": "operation output"}')
+            print('{"archive": "operation output"}' if args.json else "archive: operation output")
         return self.codes.get("archive", 0)
 
 
@@ -94,7 +96,7 @@ class FlowCliTest(unittest.TestCase):
         return code, stdout.getvalue(), stderr.getvalue()
 
     def tool_args(self):
-        return ["--toolchain", "tools"]
+        return ["--toolchain", "tools", "--json"]
 
     def test_help_and_invalid_arguments_do_no_work(self):
         cases = (
@@ -411,6 +413,252 @@ class FlowCliTest(unittest.TestCase):
             code = flow_cli.main(["collect", str(run)], environ={}, cwd=self.cwd)
         self.assertEqual(code, 2)
         self.assertNotIn("Traceback", stderr.getvalue())
+
+
+class PresentationTest(unittest.TestCase):
+    """CLI boundary with durable stores and synthetic operation payloads only."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.cwd = Path(temporary.name)
+        self.operations = flow_cli.Operations()
+        self.payload = {"ready": True, "issues": [], "actual": {"python": "fixture"}}
+
+    def invoke(self, argv, operations=None):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            try:
+                code = flow_cli.main(argv, operations=operations or self.operations,
+                                     cwd=self.cwd, environ={})
+            except SystemExit as exc:
+                code = exc.code
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def preflight(self, *options):
+        return self.invoke(["preflight", "bundle", "--toolchain", "tools", *options])
+
+    def test_preflight_default_is_concise_and_repeated_diagnostics_are_distinct(self):
+        with mock.patch.object(flow_cli.phase4, "preflight", return_value=self.payload) as probe:
+            for _ in range(2):
+                code, stdout, stderr = self.preflight()
+                self.assertEqual(code, 0, stderr)
+                self.assertIn("preflight: ready", stdout)
+                self.assertNotIn('"ready"', stdout)
+                self.assertNotIn("actual", stdout)
+                self.assertIn("operation:", stdout)
+                self.assertIn("report:", stdout)
+            self.assertEqual(probe.call_count, 2)
+        root = self.cwd / "_flow_results"
+        directories = list((root / "operations").iterdir())
+        self.assertEqual(len(directories), 2)
+        self.assertFalse((root / "runs").exists())
+        identities = []
+        for directory in directories:
+            self.assertRegex(directory.name, r"^\d{8}T\d{12}Z_[0-9a-f]{8}$")
+            receipt = json.loads((directory / "operation.json").read_text())
+            identities.append(receipt["operation_id"])
+            self.assertRegex(receipt["operation_id"], r"^[0-9a-f]{32}$")
+            self.assertEqual(receipt["status"], "ready")
+            self.assertEqual(json.loads((directory / receipt["report"]).read_text()), self.payload)
+        self.assertNotEqual(*identities)
+
+    def test_preflight_explicit_file_only_and_raw_json_is_unchanged(self):
+        with mock.patch.object(flow_cli.phase4, "preflight", return_value=self.payload):
+            code, stdout, stderr = self.preflight("--output", "exact.json", "--json", "--verbose")
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(json.loads(stdout), self.payload)
+        self.assertEqual(json.loads((self.cwd / "exact.json").read_text()), self.payload)
+        self.assertIn(str(self.cwd / "exact.json"), stderr)
+        self.assertIn("preflight actual:", stderr)
+        self.assertFalse((self.cwd / "_flow_results").exists())
+
+    def test_json_flag_order_preserves_global_and_local_spelling(self):
+        base = ["preflight", "bundle", "--toolchain", "tools", "--output", "exact.json"]
+        with mock.patch.object(flow_cli.phase4, "preflight", return_value=self.payload):
+            for argv in (["--json", *base], [*base, "--json"],
+                         ["--json", *base, "--json", "--verbose"]):
+                code, stdout, stderr = self.invoke(argv)
+                self.assertEqual(code, 0, stderr)
+                self.assertEqual(json.loads(stdout), self.payload)
+        fake = FakeOperations()
+        code, stdout, _ = self.invoke(["--json", "run", "bundle", "--stage", "synthesis",
+                                      "--toolchain", "tools"], fake)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(stdout)["run_id"], "run-1")
+        code, _, _ = self.invoke(["--json", "report", "run"], fake)
+        self.assertEqual(code, 0)
+        self.assertTrue(fake.called("report")[-1].json)
+
+    def test_preflight_failure_exception_and_interruption_are_durable(self):
+        for error, expected, status in ((RuntimeError("probe broke"), 1, "failed"),
+                (flow_cli.result_store.FlowInterrupted(signal.SIGTERM), 143, "interrupted")):
+            with mock.patch.object(flow_cli.phase4, "preflight", side_effect=error):
+                code, stdout, stderr = self.preflight("--json")
+            self.assertEqual(code, expected, stderr)
+            payload = json.loads(stdout)
+            self.assertFalse(payload["ready"])
+            self.assertEqual(payload["diagnostic"]["status"], status)
+            self.assertIn(payload["issues"][0], stderr)
+            report = Path(stderr.splitlines()[0].removeprefix("preflight: report "))
+            self.assertEqual(json.loads(report.read_text()), payload)
+            receipt = json.loads((report.parent / "operation.json").read_text())
+            self.assertEqual(receipt["exit_code"], expected)
+            self.assertEqual(receipt["status"], status)
+            self.assertIsNotNone(receipt["ended_at"])
+
+    def test_preflight_not_ready_preserves_raw_payload_and_scoped_signal(self):
+        failed = {"ready": False, "issues": ["fixture tool unavailable"], "actual": {}}
+        with mock.patch.object(flow_cli.phase4, "preflight", return_value=failed):
+            code, stdout, stderr = self.preflight("--json", "--output", "failed.json")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(stdout), failed)
+        self.assertIn("fixture tool unavailable", stderr)
+        previous = signal.getsignal(signal.SIGINT)
+        with mock.patch.object(flow_cli.phase4, "preflight",
+                               side_effect=lambda *a: signal.raise_signal(signal.SIGINT)):
+            code, stdout, stderr = self.preflight("--output", "interrupted.json")
+        self.assertEqual(code, 130)
+        self.assertIn("preflight: interrupted", stdout)
+        self.assertIn("SIGINT", stderr)
+        self.assertEqual(json.loads((self.cwd / "interrupted.json").read_text())
+                         ["diagnostic"]["status"], "interrupted")
+        self.assertEqual(signal.getsignal(signal.SIGINT), previous)
+        self.assertFalse((self.cwd / "_flow_results").exists())
+
+    def test_validation_and_allocation_errors_precede_probes(self):
+        blocked = self.cwd / "blocked"
+        blocked.write_text("existing")
+        cases = (["--output", "missing/report.json"], ["--output", "."],
+                 ["--results-root", "blocked"], ["--waiver", "unknown=reason"],
+                 ["--waiver", "python-version=unsupported"], ["--results-root", ""])
+        with mock.patch.object(flow_cli.phase4, "preflight") as probe:
+            for options in cases:
+                code, stdout, _ = self.preflight(*options)
+                self.assertEqual(code, 2, options)
+                self.assertEqual(stdout, "")
+            probe.assert_not_called()
+        self.assertFalse((self.cwd / "_flow_results").exists())
+
+    def test_result_defaults_and_runs_override_are_anchored_to_caller(self):
+        for command in ("run", "execute"):
+            for options, root, runs in (([], "_flow_results", "_flow_results/runs"),
+                    (["--results-root", "nested/../custom"], "custom", "custom/runs"),
+                    (["--results-root", "custom", "--runs", "explicit"], "custom", "explicit")):
+                fake = FakeOperations()
+                code, stdout, stderr = self.invoke([command, "bundle", "--stage", "synthesis",
+                    "--toolchain", "tools", *options], fake)
+                self.assertEqual(code, 0, stderr)
+                args = fake.called("run")[0]
+                self.assertEqual(args.results_root, self.cwd / root)
+                self.assertEqual(args.runs, self.cwd / runs)
+                self.assertIn("run-1", stdout)
+                self.assertNotIn('"run_id"', stdout)
+                self.assertNotIn("signoff", stdout)
+        self.assertFalse((self.cwd / "_flow_results").exists())
+
+    def test_collect_json_writes_and_stdout_is_read_only(self):
+        run = self.cwd / "run"
+        run.mkdir()
+        payload = {"schema_version": 1, "run_id": "fixture"}
+        with mock.patch.object(flow_cli.phase4, "collect", return_value=payload):
+            code, stdout, _ = self.invoke(["collect", "run"])
+            self.assertEqual(code, 0)
+            self.assertIn(str(run / "results.json"), stdout)
+            self.assertNotIn('"run_id"', stdout)
+            self.assertEqual(json.loads((run / "results.json").read_text()), payload)
+            (run / "results.json").unlink()
+            code, stdout, _ = self.invoke(["collect", "run", "--json"])
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(stdout), payload)
+            self.assertEqual(json.loads((run / "results.json").read_text()), payload)
+            code, stdout, _ = self.invoke(["collect", "run", "--json", "--output", "custom.json"])
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(stdout), payload)
+            self.assertEqual(json.loads((self.cwd / "custom.json").read_text()), payload)
+            (run / "results.json").write_text("sentinel")
+            code, stdout, _ = self.invoke(["collect", "run", "--stdout"])
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(stdout), payload)
+            self.assertEqual((run / "results.json").read_text(), "sentinel")
+
+    def test_execute_json_internal_operations_do_not_leak_stdout(self):
+        run = self.cwd / "run"
+        run.mkdir()
+        outcome = flow_cli.phase4.RunOutcome("full-identity", run, run / "run.json", "completed", 0)
+        with mock.patch.object(self.operations, "run", return_value=outcome), \
+                mock.patch.object(flow_cli.phase4, "collect", return_value={"run_id": "full-identity"}), \
+                mock.patch.object(flow_cli.reporter, "results_for", return_value=({}, "fixture")), \
+                mock.patch.object(flow_cli.reporter, "report", side_effect=lambda *a, **kw:
+                                  (kw["output"]("report details"), 0)[1]), \
+                mock.patch.object(flow_cli.archiver, "archive", return_value=(run / "reports.tgz", [], [])):
+            code, stdout, stderr = self.invoke(["execute", "bundle", "--stage", "synthesis",
+                "--toolchain", "tools", "--json", "--verbose", "--archive", "evidence"])
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(len(stdout.splitlines()), 1)
+        aggregate = json.loads(stdout)
+        self.assertEqual(aggregate["run_id"], "full-identity")
+        self.assertEqual([step["operation"] for step in aggregate["steps"]],
+                         ["run", "collect", "report", "archive"])
+        self.assertEqual(json.loads((run / "results.json").read_text()), {"run_id": "full-identity"})
+        self.assertIn("report details", stderr)
+
+    def test_postcheck_summary_names_existing_attempt(self):
+        fake = FakeOperations()
+        code, stdout, _ = self.invoke(["postcheck", "run", "--toolchain", "tools",
+            "--testbench", "tb.v", "--testbench-top", "tb", "--verbose"], fake)
+        self.assertEqual(code, 0)
+        self.assertIn("check id: check-1", stdout)
+        self.assertIn("record: /absolute/run-1/checks/check-1/postcheck.json", stdout)
+        self.assertNotIn('"check_id"', stdout)
+        self.assertEqual(list(self.cwd.iterdir()), [])
+
+    def test_run_diagnostics_visible_with_only_available_paths(self):
+        run = self.cwd / "attempt"
+        run.mkdir()
+        record = run / "run.json"
+        record.write_text(json.dumps({"error": "fixture run failed", "requested_stage": "synthesis"}))
+        outcome = flow_cli.phase4.RunOutcome("full-identity", run, record, "failed", 1)
+        fake = FakeOperations()
+        fake.run_outcome = outcome
+        for options in ([], ["--json", "--verbose"]):
+            code, stdout, stderr = self.invoke(["run", "bundle", "--stage", "synthesis",
+                "--toolchain", "tools", *options], fake)
+            self.assertEqual(code, 1)
+            self.assertIn("fixture run failed", stderr)
+            if options:
+                self.assertEqual(json.loads(stdout), outcome.as_dict())
+                self.assertIn("run requested_stage: synthesis", stderr)
+            else:
+                self.assertIn(str(record), stdout)
+                self.assertNotIn("results.json", stdout)
+                self.assertNotIn("execution.log", stdout)
+
+    def test_archive_creation_human_and_json_payload(self):
+        with mock.patch.object(flow_cli.archiver, "archive", return_value=(self.cwd / "reports.tgz", [], [])):
+            code, stdout, _ = self.invoke(["archive", "run", "--output", "evidence"])
+            self.assertEqual(code, 0)
+            self.assertIn("archive: created", stdout)
+            self.assertNotIn('"archive"', stdout)
+            code, stdout, _ = self.invoke(["archive", "run", "--output", "evidence", "--json"])
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(stdout), {"archive": str(self.cwd / "evidence"),
+                                                 "reports": str(self.cwd / "reports.tgz")})
+
+    def test_read_only_commands_and_unsupported_formats_do_not_allocate(self):
+        fake = FakeOperations()
+        for argv in ([], ["--help"], ["preflight", "--help"], ["--version", "--json"],
+                     ["archive", "run", "--list"], ["report", "run"]):
+            code, _, _ = self.invoke(argv, fake)
+            self.assertEqual(code, 0)
+        for argv in (["archive", "run", "--list", "--json"],
+                     ["--json", "archive", "run", "--list"],
+                     ["--json", "provision"], ["provision", "--json"]):
+            code, stdout, stderr = self.invoke(argv, fake)
+            self.assertEqual(code, 2)
+            self.assertEqual(stdout, "")
+            self.assertIn("--json", stderr)
+        self.assertEqual(list(self.cwd.iterdir()), [])
 
 
 class RepositoryDriverTest(unittest.TestCase):

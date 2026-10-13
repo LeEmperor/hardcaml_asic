@@ -183,10 +183,9 @@ let elaborate_for_flow ?inputs t =
   |> Or_error.tag_s ~tag:[%message "flow resolution failed" ~project:t.name]
 ;;
 
-(* The explicit I/O boundary. Keep render before write, and leave source
-   canonicalization, synthesis-source fallback and output rules to Bundle.
-   Bundle.write requires a new/empty directory and is not atomic. *)
-let emit_bundle ?inputs ?(include_simulation = true) t ~source_root ~output_dir =
+(* Shared private rendering sequence; reject empty inventory before construction,
+   and leave source canonicalization and synthesis-source fallback to Bundle; *)
+let render_bundle ?inputs ?(include_simulation = true) t ~source_root =
   let open Or_error.Let_syntax in
   let%bind () =
     if List.is_empty t.source_inputs
@@ -201,10 +200,22 @@ let emit_bundle ?inputs ?(include_simulation = true) t ~source_root ~output_dir 
       Some project
     else Ok None
   in
-  let%bind bundle =
-    Bundle.render ?simulation_project ~source_root ~input_paths:t.source_inputs resolved
-  in
+  Bundle.render ?simulation_project ~source_root ~input_paths:t.source_inputs resolved
+;;
+
+(* Explicit empty-directory emission keeps Bundle.write's original semantics; *)
+let emit_bundle ?inputs ?include_simulation t ~source_root ~output_dir =
+  let open Or_error.Let_syntax in
+  let%bind bundle = render_bundle ?inputs ?include_simulation t ~source_root in
   let%map () = Bundle.write bundle ~output_dir in
   bundle
+;;
+
+(* Project owns elaboration once; publication uses that exact rendered bundle; *)
+let emit_bundle_to_store ?inputs ?include_simulation t ~source_root ~store_dir =
+  let open Or_error.Let_syntax in
+  let%bind bundle = render_bundle ?inputs ?include_simulation t ~source_root in
+  let%map publication = Bundle.publish bundle ~store_dir in
+  bundle, publication
 ;;
 [@@@ocamlformat "enable"]

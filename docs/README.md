@@ -8,7 +8,11 @@
    proposed provider/refactoring direction. Read this before changing an interface.
 3. **[User workflow](guides/usage.md)** — how to use the existing library and CLI.
 
-Current checkpoint (2026-10-13): role-specific host/container runtime policy,
+Current checkpoint (2026-10-13): default result store and CLI contract **2**,
+human-default/explicit-JSON output and project `describe|emit|preflight|run` are
+delivered; see [current closeout](phase_plan.md#default-result-store-and-cli-2-closeout)
+and the [command/storage matrix](guides/flow.md#default-result-store-and-cli-contract-2).
+Machine callers must now request `--json`. Role-specific host/container runtime policy,
 shared readiness checks and observed image/engine launch binding passed final
 2026-10-12 acceptance; see [closeout evidence](phase_plan.md#hostcontainer-runtime-policy-closeout)
 and [fresh-emission requirements](guides/flow.md#runtime-policy-and-launch-binding).
@@ -30,14 +34,15 @@ Next is the bounded observation rerun with that verified scratch venv, separatel
 from synthesis/full-flow execution. The final actual read-only bootstrap check,
 including container metadata, exits 0; the earlier five-gap check remains dated
 historical evidence.
-Project run routing needs separate agreement. Live catalog, early correlation,
+Project run routing is delivered with a required explicit stage. Live catalog, early correlation,
 step updates and incremental result publication remain undelivered.
 The owner's [development specimen](../../hardcaml_asic_example/README.md) now has
 the fixed FIFO contract/core, independent scoreboard, TT wrapper/declaration,
-project-centered `describe|emit` CLI and PDK-free generated-RTL acceptance.
+project-centered `describe|emit|preflight|run` CLI and PDK-free generated-RTL acceptance.
 The consumer owns `Fifo_asic.project ()`; the provider owns shared
-`Project.emit_bundle`. Description is a local declaration S-expression, not a
-Workbench protocol; runtime project `run`/`inspect` commands are not delivered.
+`Project.emit_bundle` / `emit_bundle_to_store`. Description is local S-expression
+or a JSON wrapper, not a Workbench protocol. Project run is implementation only;
+existing-run collection/reporting remain separate installed operations.
 See [entrypoint usage and regression coverage](guides/bundle-emission.md#project-centered-entry-point).
 A recorded ASIC baseline
 and explicit development override now support isolated library/CLI refresh,

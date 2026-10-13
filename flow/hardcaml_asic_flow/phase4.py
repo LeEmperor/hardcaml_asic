@@ -5,7 +5,6 @@ Installed as `hardcaml-asic-flow preflight|run|postcheck|collect`;
 """
 
 import argparse
-import contextlib
 import csv
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -20,20 +19,14 @@ import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import uuid
 
-from . import runtime_contract, runtime_observation, execution_transport
+from . import runtime_contract, runtime_observation, execution_transport, result_store
+from .result_store import FlowInterrupted, interrupt_handler, interruption_handlers
 
 
 class PrerequisiteError(Exception):
     pass
-
-
-class FlowInterrupted(Exception):
-    def __init__(self, signum):
-        super().__init__(f"interrupted by {signal.Signals(signum).name}")
-        self.signum = signum
 
 
 @dataclass(frozen=True)
@@ -76,36 +69,12 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def interrupt_handler(signum, _frame):
-    raise FlowInterrupted(signum)
-
-
-@contextlib.contextmanager
-def interruption_handlers():
-    previous = {}
-    for signum in (signal.SIGINT, signal.SIGTERM):
-        previous[signum] = signal.signal(signum, interrupt_handler)
-    try:
-        yield
-    finally:
-        for signum, handler in previous.items():
-            signal.signal(signum, handler)
-
-
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def save(path, value):
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    temporary = Path(temporary)
-    try:
-        with os.fdopen(descriptor, "w") as stream:
-            stream.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
-        os.replace(temporary, path)
-    except Exception:
-        temporary.unlink(missing_ok=True)
-        raise
+    result_store.save_json(path, value)
 
 
 def read_json(path):
@@ -312,11 +281,16 @@ def run_logged(argv, cwd, env, log, record, record_path, cleanup=None, timeout=N
 
 
 def run(args):
+    with interruption_handlers():
+        return _run(args)
+
+
+def _run(args):
     bundle = args.bundle.resolve()
     manifest = read_json(bundle / "manifest.json")
-    run_id = uuid.uuid4().hex
-    run_dir = args.runs.resolve() / run_id
-    run_dir.mkdir(parents=True, exist_ok=False)
+    allocation = result_store.allocate(args.runs)
+    run_id = allocation.identity
+    run_dir = allocation.directory
     record_path = run_dir / "run.json"
     record = {"schema_version": 1, "run_id": run_id,
               "execution_binding_required": True,
@@ -329,10 +303,14 @@ def run(args):
     save(record_path, record)
     log = run_dir / "execution.log"
     try:
-        check = preflight(bundle, args.support_tools, args.pdk_root, args.python,
-                           args.allow_python_mismatch, args.native)
+        checked = result_store.durable_preflight(
+            bundle, run_dir / "preflight.json",
+            lambda: preflight(bundle, args.support_tools, args.pdk_root, args.python,
+                              args.allow_python_mismatch, args.native), save=save)
+        check = checked.result
         record["environment"] = check
-        save(run_dir / "preflight.json", check)
+        if checked.status == "interrupted":
+            raise FlowInterrupted(checked.exit_code - 128)
         if not check["ready"]:
             raise PrerequisiteError("; ".join(check["issues"]))
         binding = execution_transport.validate(check.get("execution_binding"))
@@ -789,8 +767,6 @@ def main():
                 save(args.output, result)
             return 0 if result["ready"] else 1
         if args.action == "run":
-            signal.signal(signal.SIGINT, interrupt_handler)
-            signal.signal(signal.SIGTERM, interrupt_handler)
             return execute(args)
         if args.action == "postcheck":
             signal.signal(signal.SIGINT, interrupt_handler)

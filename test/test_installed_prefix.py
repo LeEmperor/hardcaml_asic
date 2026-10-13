@@ -507,6 +507,11 @@ class InstalledPrefixTest(unittest.TestCase):
         environment = {"STUB_LOG": str(fixture.log),
                        "STUB_NIX_PATH_LOG": str(fixture.nix_path_log)}
         environment.update(env or {})
+        # These fixture operations consume machine payloads explicitly. Report
+        # and archive listing retain their human/read-only assertions.
+        if arguments[0] in ("preflight", "run", "postcheck", "execute") or (
+                arguments[0] == "archive" and "--list" not in arguments):
+            arguments = (*arguments, "--json")
         return self.invoke(*arguments, env=environment, cwd=cwd,
                            path=f"{fixture.tools.bin}:/usr/bin:/bin")
 
@@ -533,6 +538,55 @@ class InstalledPrefixTest(unittest.TestCase):
         return json.loads(completed.stdout)
 
     # -- preflight -------------------------------------------------------
+
+    def test_installed_human_preflight_defaults_to_callers_operations_store(self):
+        fixture = self.stubbed()
+        environment = {"STUB_LOG": str(fixture.log)}
+        for _ in range(2):
+            completed = self.invoke("preflight", "bundle", "--native", *self.locations(fixture),
+                cwd=fixture.root, env=environment, path=f"{fixture.tools.bin}:/usr/bin:/bin")
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("preflight: ready", completed.stdout)
+            self.assertIn("report:", completed.stdout)
+            self.assertNotIn('"actual"', completed.stdout)
+        root = fixture.root / "_flow_results"
+        operations = list((root / "operations").iterdir())
+        self.assertEqual(len(operations), 2)
+        self.assertFalse((root / "runs").exists())
+        for operation in operations:
+            receipt = json.loads((operation / "operation.json").read_text())
+            self.assertRegex(operation.name, r"^\d{8}T\d{12}Z_[0-9a-f]{8}$")
+            self.assertEqual(len(receipt["operation_id"]), 32)
+            self.assertTrue(json.loads((operation / receipt["report"]).read_text())["ready"])
+
+    def test_installed_human_run_default_store_and_explicit_runs_precedence(self):
+        fixture = self.stubbed()
+        for options, store in (([], fixture.root / "_flow_results/runs"),
+                (["--results-root", "custom"], fixture.root / "custom/runs"),
+                (["--results-root", "unused", "--runs", "explicit"], fixture.root / "explicit")):
+            completed = self.invoke("run", "bundle", "--stage", "synthesis", "--native",
+                *self.locations(fixture), *options, cwd=fixture.root,
+                env={"STUB_LOG": str(fixture.log)}, path=f"{fixture.tools.bin}:/usr/bin:/bin")
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            run = next(store.iterdir())
+            record = json.loads((run / "run.json").read_text())
+            self.assertRegex(run.name, r"^\d{8}T\d{12}Z_[0-9a-f]{8}$")
+            self.assertEqual(len(record["run_id"]), 32)
+            self.assertIn(record["run_id"], completed.stdout)
+            self.assertIn(str(run / "run.json"), completed.stdout)
+            self.assertIn(str(run / "preflight.json"), completed.stdout)
+            self.assertIn(str(run / "execution.log"), completed.stdout)
+            self.assertNotIn('"run_id"', completed.stdout)
+            self.assertFalse((run / "results.json").exists())
+        self.assertFalse((fixture.root / "unused").exists())
+
+    def test_installed_shared_cli_contract_version_is_separate_from_records(self):
+        described = json.loads(self.invoke("--version", "--json").stdout)
+        self.assertEqual(described["cli_contract"]["version"], 2)
+        self.assertEqual(described["cli_contract"]["default_output"], "human")
+        self.assertEqual(described["supported_record_schemas"], [1])
+        self.assertEqual(described["package_version"], "0.1.0")
+        self.assertEqual(described["source"]["state"], "unknown")
 
     def test_installed_real_venvs_keep_selection_through_full_execute(self):
         fixture = self.stubbed(python=f"{sys.version_info.major}.{sys.version_info.minor}")
@@ -762,7 +816,7 @@ class InstalledPrefixTest(unittest.TestCase):
                 environment = {"HOME": str(self.elsewhere), "PATH": f"{fixture.tools.bin}:/usr/bin:/bin",
                     "STUB_LOG": str(fixture.log), "STUB_DOCKER_LOG": str(docker_log),
                     "STUB_FLOW_SLEEP": "60", "STUB_CLEANUP_FAIL": "1" if cleanup_failure else "0"}
-                process = subprocess.Popen([str(self.command), "run", str(fixture.bundle),
+                process = subprocess.Popen([str(self.command), "run", "--json", str(fixture.bundle),
                     "--runs", str(fixture.runs), "--stage", "synthesis", *self.locations(fixture)],
                     cwd=self.elsewhere, env=environment, text=True, stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE)
@@ -845,9 +899,8 @@ class InstalledPrefixTest(unittest.TestCase):
     def test_installed_run_requires_an_explicit_expensive_scope(self):
         fixture = self.stubbed()
         cases = (
-            # No stage, no run store, and the native full flow that is not offered.
+            # Stage is still explicit; native full flow is not offered.
             (["run", str(fixture.bundle), "--runs", str(fixture.runs)], 2),
-            (["run", str(fixture.bundle), "--stage", "synthesis"], 2),
             (["run", str(fixture.bundle), "--runs", str(fixture.runs),
               "--stage", "full", "--native"], 2),
         )
@@ -865,7 +918,7 @@ class InstalledPrefixTest(unittest.TestCase):
                        "STUB_LOG": str(fixture.log),
                        "STUB_FLOW_SLEEP": "20"}
         process = subprocess.Popen(
-            [str(self.command), "run", str(fixture.bundle), "--runs",
+            [str(self.command), "run", "--json", str(fixture.bundle), "--runs",
              str(fixture.runs), "--stage", "synthesis", "--native",
              *self.locations(fixture)],
             cwd=str(self.elsewhere), env=environment, text=True,
@@ -1020,7 +1073,7 @@ class InstalledPrefixTest(unittest.TestCase):
         self.assertFalse(fixture.output.exists())  # --list publishes nothing
 
         published = self.invoke("archive", str(fixture.run),
-                                "--output", str(fixture.output))
+                                "--output", str(fixture.output), "--json")
         self.assertEqual(published.returncode, 0, published.stderr)
         self.assertEqual(json.loads(published.stdout)["archive"], str(fixture.output))
         names = {path.name for path in fixture.output.iterdir()}

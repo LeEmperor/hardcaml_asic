@@ -112,4 +112,18 @@ val emit_bundle
   -> source_root:string
   -> output_dir:string
   -> Bundle.t Or_error.t
+
+(** The same rendering sequence and optional arguments as [emit_bundle], followed
+    by [Bundle.publish]. Returns the rendered bundle and its absolute publication
+    location/reuse result. An empty inventory fails before design construction;
+    render failure leaves no store output. The caller supplies the store location
+    (typically [<results-root>/bundles]); no root is inferred by the library.
+    Inherits Bundle.publish's exact reuse, backing layout and atomic visibility. *)
+val emit_bundle_to_store
+  :  ?inputs:Target.Inputs.t
+  -> ?include_simulation:bool
+  -> t
+  -> source_root:string
+  -> store_dir:string
+  -> (Bundle.t * Bundle.Publication.t) Or_error.t
 [@@@ocamlformat "enable"]

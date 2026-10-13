@@ -5,14 +5,23 @@ Or, after dune build @install: python3 test/check_project_api.py
 No installation, dependency downloads, provisioning or physical/synthesis EDA.
 Provider checks retain normal PATH tool selection, including available RTL simulators.
 Git mutations are confined to temporary fixtures; all commits use Bundle test identity.
+Includes exact publication reuse/collisions, failed-write cleanup, two independent
+processes racing after rendering, and phase-4/archive root-link compatibility.
 """
 
 import argparse
+import json
 import os
 from pathlib import Path
 import shutil
+import resource
+import signal
 import subprocess
+import sys
 import tempfile
+import time
+from types import SimpleNamespace
+from unittest import mock
 
 from check_resolved_flow_api import inventory
 
@@ -34,6 +43,185 @@ def isolated_environment():
     return env
 
 
+def snapshot(root):
+    """Preserve files, directories and link text without following any links."""
+    result = {}
+    def walk(path):
+        stat = path.lstat()
+        key = str(path.relative_to(root))
+        if path.is_symlink():
+            result[key] = ("link", os.readlink(path), stat.st_ino, stat.st_mtime_ns)
+        elif path.is_dir():
+            result[key] = ("directory", stat.st_ino)
+            for child in path.iterdir():
+                walk(child)
+        else:
+            result[key] = ("file", path.read_bytes(), stat.st_ino, stat.st_mtime_ns)
+    walk(root)
+    return result
+
+
+def publication_checks(executable, source, root, env, repo):
+    def invoke(store, *, extra=(), success=True, **kwargs):
+        result = subprocess.run([str(executable), "publish", str(source), str(store), *extra],
+                                env=env, text=True, capture_output=True, **kwargs)
+        assert (result.returncode == 0) == success, result.stdout + result.stderr
+        return json.loads(result.stdout) if success else result.stderr
+
+    # Relative caller-owned root and spaces; public path is absolute, not realpath.
+    store = root / "results with spaces" / "bundles"
+    first = invoke(Path("results with spaces/bundles"), cwd=root)
+    identity = first["identity"]
+    destination = store / identity
+    assert first == dict(identity=identity, directory=str(destination), reused=False)
+    assert destination.is_symlink()
+    assert os.readlink(destination).startswith(".objects/" + identity + ".")
+    manifest = json.loads((destination / "manifest.json").read_text())
+    assert manifest["identity"] == identity == destination.name
+    before = snapshot(store)
+    original_store = before
+    repeated = invoke(store)
+    assert repeated == dict(first, reused=True)
+    assert snapshot(store) == before, "repeat publication modified store"
+    assert len(list((store / ".objects").iterdir())) == 1
+
+    # The exact plain-directory compatibility path must also be a bytewise no-op.
+    direct_store = root / "direct"
+    direct_store.mkdir()
+    shutil.copytree(destination, direct_store / identity)
+    before = snapshot(direct_store)
+    assert invoke(direct_store)["reused"]
+    assert snapshot(direct_store) == before
+
+    # Every collision is preserved, including dangling/escaping links and extra dirs.
+    for case in ("corrupt", "manifest", "missing", "extra", "emptydir", "file",
+                 "empty", "escape", "dangling", "memberlink", "dirlink", "objectlink"):
+        bad_store = root / ("collision " + case)
+        bad_store.mkdir()
+        bad = bad_store / identity
+        if case == "file":
+            bad.write_text("owner file")
+        elif case == "empty":
+            bad.mkdir()
+        elif case in ("escape", "dangling"):
+            bad.symlink_to(destination.resolve() if case == "escape" else root / "absent")
+        elif case == "objectlink":
+            objects = bad_store / ".objects"
+            objects.mkdir()
+            (objects / (identity + ".foreign")).symlink_to(destination.resolve())
+            bad.symlink_to(".objects/" + identity + ".foreign")
+        else:
+            shutil.copytree(destination, bad)
+            if case == "corrupt":
+                (bad / "info.yaml").write_text("wrong bytes")
+            elif case == "manifest":
+                (bad / "manifest.json").write_text("{}\n")
+            elif case == "missing":
+                (bad / "info.yaml").unlink()
+            elif case == "extra":
+                (bad / "extra").write_text("extra")
+            elif case == "emptydir":
+                (bad / "extra empty").mkdir()
+            elif case == "memberlink":
+                (bad / "info.yaml").unlink()
+                (bad / "info.yaml").symlink_to(destination.resolve() / "info.yaml")
+            elif case == "dirlink":
+                shutil.rmtree(bad / "src")
+                (bad / "src").symlink_to(destination.resolve() / "src")
+        before = snapshot(bad_store)
+        diagnostic = invoke(bad_store, success=False)
+        assert "bundle publication failed" in diagnostic, diagnostic
+        assert snapshot(bad_store) == before, case
+
+    for case in ("storefile", "parentfile", "parentlink", "objectsfile", "objectslink"):
+        location = root / case
+        if case in ("storefile", "parentfile"):
+            location.write_text("owner bytes")
+            store_arg = location if case == "storefile" else location / "bundles"
+        elif case == "parentlink":
+            location.symlink_to(store)
+            store_arg = location / "nested"
+        else:
+            location.mkdir()
+            if case == "objectsfile":
+                (location / ".objects").write_text("owner object")
+            else:
+                (location / ".objects").symlink_to(store / ".objects")
+            store_arg = location
+        before = snapshot(location)
+        diagnostic = invoke(store_arg, success=False)
+        assert "not a plain directory" in diagnostic, diagnostic
+        assert snapshot(location) == before
+        assert snapshot(store) == original_store
+
+    # Real write failure, even as root: enforce a small per-file resource limit.
+    failed_store = root / "failed write"
+    def small_files():
+        signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+        resource.setrlimit(resource.RLIMIT_FSIZE, (1024, 1024))
+    diagnostic = invoke(failed_store, success=False, preexec_fn=small_files)
+    assert "bundle publication failed" in diagnostic, diagnostic
+    assert not os.path.lexists(failed_store / identity)
+    assert list(failed_store.iterdir()) == [failed_store / ".objects"]
+    assert not list((failed_store / ".objects").iterdir()), "unpublished stage leaked"
+
+    # Two independent OCaml processes render first, then race through Bundle.publish.
+    race_store = root / "process race" / "bundles"
+    gate = root / "go"
+    ready = [root / ("ready-" + str(i)) for i in range(2)]
+    processes = [subprocess.Popen([str(executable), "publish", str(source), str(race_store),
+                                  str(gate), str(marker)], env=env, text=True,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                 for marker in ready]
+    try:
+        deadline = time.monotonic() + 30
+        while not all(marker.exists() for marker in ready):
+            assert all(p.poll() is None for p in processes), "publisher failed before race"
+            assert time.monotonic() < deadline, "publisher gate timeout"
+            time.sleep(0.01)
+        gate.write_text("go")
+        outcomes = []
+        for process in processes:
+            stdout, stderr = process.communicate(timeout=30)
+            assert process.returncode == 0, stdout + stderr
+            outcomes.append(json.loads(stdout))
+        assert sorted(o["reused"] for o in outcomes) == [False, True]
+        assert all(o["identity"] == identity for o in outcomes)
+        assert inventory(race_store / identity) == inventory(destination)
+        assert len(list((race_store / ".objects").iterdir())) == 1
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+            process.communicate()
+
+    # Actual phase-4 run entry canonicalizes the root before preflight. Rejecting
+    # preflight exercises that entry without any external tool/PDK invocation.
+    sys.path.insert(0, str(repo / "flow"))
+    from hardcaml_asic_flow import archive, phase4
+    args = SimpleNamespace(bundle=destination, runs=root / "runs", stage="synthesis",
+                           support_tools=root / "tools", pdk_root=root / "pdk",
+                           python=Path(sys.executable), allow_python_mismatch=False, native=True)
+    def preflight(bundle, *_args):
+        assert bundle == destination.resolve() and not bundle.is_symlink()
+        return {"ready": False, "issues": ["fixture stops before EDA"]}
+    with mock.patch.object(phase4, "preflight", side_effect=preflight):
+        outcome = phase4.run(args)
+    record = phase4.read_json(outcome.run_record)
+    assert record["bundle"] == str(destination.resolve())
+    kind, selected, value, files = archive.bundle_source(outcome.run_dir, record)
+    assert kind == "original" and selected == destination.resolve()
+    assert value == manifest
+    assert {relative for _, relative in files} == set(inventory(destination)) - {"manifest.json"}
+    tarball = root / "input-bundle.tar.gz"
+    archive.write_input_bundle(tarball, selected / "manifest.json", files)
+    archive.verify_input_bundle(tarball, record, archive.manifest_paths(manifest))
+    assert invoke(store)["reused"]
+    assert snapshot(store) == original_store
+    print("publication: exact/no-op reuse, preserved collisions, failed-write cleanup, "
+          "real-process race and phase-4/archive root-link compatibility pass")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider-checks", action="store_true")
@@ -50,11 +238,12 @@ def main():
         assert (public_lib / "hardcaml_asic").is_dir(), "run dune build @install first"
         env["OCAMLPATH"] = str(public_lib) + (
             os.pathsep + env["OCAMLPATH"] if env.get("OCAMLPATH") else "")
-        source = root / "source"
+        source = root / "source with spaces"
         source.mkdir()
         for name in ("lib", "examples"):
             shutil.copytree(repo / name, source / name)
         shutil.copy2(repo / "dune-project", source / "dune-project")
+        (source / "lib/source with spaces.ml").write_text("(* publication fixture *)\n")
         checked("git", "init", "-q", str(source), env=env)
         checked("git", "add", ".", cwd=source, env=env)
         checked("git", "commit", "-qm", "baseline", cwd=source, env=env)
@@ -87,7 +276,24 @@ def main():
             for simulation in ("true", "false"):
                 suffix = kind + simulation
                 assert inventory(outputs / ("high-" + suffix)) == inventory(outputs / ("manual-" + suffix))
+                store = outputs / ("store-" + suffix)
+                public = [p for p in store.iterdir() if p.name != ".objects"]
+                assert len(public) == 1
+                assert inventory(public[0]) == inventory(outputs / ("manual-" + suffix))
         print("external Project consumer: four complete on-disk bundles byte-identical")
+        publication_checks(consumer / "_build/default/main.exe", source, root, env, repo)
+        for label, snippet in {
+            "construct": 'let forge : Bundle.Publication.t = { directory = "/tmp"; reused = true }',
+            "update": 'let forge (p : Bundle.Publication.t) = { p with reused = true }',
+        }.items():
+            (consumer / "main.ml").write_text("open Hardcaml_asic\n" + snippet + "\n")
+            result = subprocess.run(["dune", "build", "--root", str(consumer), "main.exe"],
+                                    cwd=consumer, env=env, text=True, capture_output=True)
+            diagnostic = result.stdout + result.stderr
+            assert result.returncode != 0, "forged publication compiled"
+            assert "Cannot create values of the private type" in diagnostic, diagnostic
+            assert "Bundle.Publication.t" in diagnostic, diagnostic
+            print(f"Publication {label}: rejected for private Bundle.Publication.t")
 
 
 if __name__ == "__main__":

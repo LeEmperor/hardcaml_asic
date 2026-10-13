@@ -733,4 +733,155 @@ let write t ~output_dir =
       Out_channel.write_all full ~data))
 ;;
 
+(* A successful publication; private in the interface so only publish can mint it; *)
+module Publication = struct
+  type t = { directory : string; reused : bool }
+end
+
+(* lstat preserves dangling links as collisions; only ENOENT means absent; *)
+let publication_stat path =
+  try Some (U.lstat path) with U.Unix_error (U.ENOENT, _, _) -> None
+;;
+
+(* Create directory ancestors without following links. EEXIST is a normal mkdir race,
+   but its winner must have installed a real directory; *)
+let rec publication_mkdir path =
+  match publication_stat path with
+  | Some stat when Poly.equal stat.U.st_kind U.S_DIR -> ()
+  | Some _ ->
+    raise_s [%message "bundle store ancestor is not a plain directory" (path : string)]
+  | None ->
+    publication_mkdir (Filename.dirname path);
+    (try U.mkdir path 0o755 with U.Unix_error (U.EEXIST, _, _) -> ());
+    (match publication_stat path with
+     | Some stat when Poly.equal stat.U.st_kind U.S_DIR -> ()
+     | _ ->
+       raise_s [%message "bundle store directory creation collided" (path : string)])
+;;
+
+(* Check every ancestor, including those of an already existing store; *)
+let rec publication_ancestors path =
+  let parent = Filename.dirname path in
+  if not (String.equal path parent) then publication_ancestors parent;
+  publication_mkdir path
+;;
+
+(* Exact tree equality includes directories: an extra empty directory is corruption,
+   as are links and special files. The manifest is compared as bytes too; *)
+let verify_publication t root =
+  let directories =
+    List.concat_map t.files ~f:(fun (path, _) ->
+      let rec parents path =
+        let parent = Filename.dirname path in
+        if String.equal parent "." then [] else parent :: parents parent
+      in
+      parents path)
+    |> String.Set.of_list
+  in
+  let seen = ref String.Set.empty in
+  let rec walk relative =
+    let full = if String.is_empty relative then root else Filename.concat root relative in
+    match (U.lstat full).U.st_kind with
+    | U.S_DIR ->
+      if not (String.is_empty relative || Set.mem directories relative)
+      then raise_s [%message "unexpected bundle directory" (full : string)];
+      Array.iter (Stdlib.Sys.readdir full) ~f:(fun name ->
+        walk (if String.is_empty relative then name else Filename.concat relative name))
+    | U.S_REG ->
+      (match file t relative with
+       | Some expected when String.equal expected (In_channel.read_all full) ->
+         seen := Set.add !seen relative
+       | Some _ -> raise_s [%message "bundle bytes differ" (full : string)]
+       | None -> raise_s [%message "unexpected bundle file" (full : string)])
+    | _ -> raise_s [%message "bundle member is not a plain file or directory" (full : string)]
+  in
+  walk "";
+  List.iter t.files ~f:(fun (path, _) ->
+    if not (Set.mem !seen path)
+    then raise_s [%message "bundle file is missing" (root : string) (path : string)])
+;;
+
+(* Existing plain directories are supported. A publication link must name exactly
+   one direct, identity-prefixed object; neither object nor members may be links; *)
+let verify_destination t ~store_dir destination =
+  let root =
+    match (U.lstat destination).U.st_kind with
+    | U.S_DIR -> destination
+    | U.S_LNK ->
+      let target = U.readlink destination in
+      let name = Filename.basename target in
+      if not (valid_path target)
+         || not (String.equal target (Filename.concat ".objects" name))
+         || not (String.is_prefix name ~prefix:(t.identity ^ "."))
+      then raise_s [%message "bundle publication link escapes private object layout"
+                              (destination : string) (target : string)];
+      Filename.concat store_dir target
+    | _ -> raise_s [%message "bundle identity destination is not a directory"
+                            (destination : string)]
+  in
+  verify_publication t root
+;;
+
+(* Remove only this call's exclusively allocated, unpublished object. Never follow
+   links during cleanup and never scan the store for old objects; *)
+let rec remove_unpublished path =
+  match (U.lstat path).U.st_kind with
+  | U.S_DIR ->
+    Array.iter (Stdlib.Sys.readdir path) ~f:(fun name ->
+      remove_unpublished (Filename.concat path name));
+    U.rmdir path
+  | _ -> U.unlink path
+;;
+
+(* Atomic no-replace publication on local POSIX filesystems. rename cannot be used:
+   the installed Unix API would allow replacing an existing empty directory.
+   Exclusive symlink installs the public name only after complete verification; *)
+let publish t ~store_dir =
+  Or_error.try_with (fun () ->
+    let absolute =
+      if Filename.is_relative store_dir
+      then Filename.concat (U.getcwd ()) store_dir
+      else store_dir
+    in
+    publication_ancestors absolute;
+    let store_dir = U.realpath absolute in
+    let destination = Filename.concat store_dir t.identity in
+    let objects = Filename.concat store_dir ".objects" in
+    (* Validate the private parent even on reuse, if present. *)
+    (match publication_stat objects with
+     | None -> ()
+     | Some _ -> publication_ancestors objects);
+    match publication_stat destination with
+    | Some _ ->
+      verify_destination t ~store_dir destination;
+      { Publication.directory = destination; reused = true }
+    | None ->
+      publication_ancestors objects;
+      let rec allocate attempt =
+        if attempt = 100 then failwith "unable to allocate private bundle object";
+        let name = Printf.sprintf "%s.%d.%08x" t.identity (U.getpid ()) (Random.bits ()) in
+        let stage = Filename.concat objects name in
+        try U.mkdir stage 0o755; name, stage
+        with U.Unix_error (U.EEXIST, _, _) -> allocate (attempt + 1)
+      in
+      let name, stage = allocate 0 in
+      let published = ref false in
+      Exn.protect
+        ~f:(fun () ->
+          write t ~output_dir:stage |> Or_error.ok_exn;
+          verify_publication t stage;
+          let reused =
+            try
+              U.symlink (Filename.concat ".objects" name) destination;
+              published := true;
+              false
+            with U.Unix_error (U.EEXIST, _, _) ->
+              verify_destination t ~store_dir destination;
+              true
+          in
+          { Publication.directory = destination; reused })
+        ~finally:(fun () -> if not !published then remove_unpublished stage))
+  |> Or_error.tag ~tag:"bundle publication failed"
+;;
+
 [@@@ocamlformat "enable"]

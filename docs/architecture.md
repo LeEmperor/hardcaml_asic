@@ -1,9 +1,9 @@
 # hardcaml_asic architecture
 
-Consolidated 2026-10-12; runtime-policy boundaries reviewed 2026-10-13.
+Consolidated 2026-10-12; runtime-policy/result-store boundaries reviewed 2026-10-13.
 This document owns system boundaries; the [phase plan](phase_plan.md) owns
-status and sequencing. Provider storage details and the refactoring sequence
-below are **proposals for discussion**, not implemented interfaces.
+status and sequencing. Default bundle/run/preflight storage is implemented;
+the live observation contract and refactoring sequence below remain proposals.
 The [historical architecture](archive/architecture-2026-09.md) preserves the
 original rationale; the [memory contract](reference/program-memory-contract.md)
 remains normative for `Single_port_ram`.
@@ -19,7 +19,9 @@ implementation. A successful process is not a signoff verdict.
 Implemented: project declaration inspection and shared emission entry point,
 project elaboration, target/constraint resolution, immutable bundles,
 installed Python dispatcher, separate execution IDs, `run.json`, `results.json`,
-postcheck attempts, operation-aware acceptance and integrity-checked archives.
+postcheck attempts, operation-aware acceptance and integrity-checked archives;
+default result stores, standalone preflight receipts, human/explicit-JSON CLI 2,
+and project preflight/implementation-run routing.
 Missing: public catalog, early request correlation, durable operation/step updates
 and incremental result snapshots. Source-artifact stamping remains ASIC P6.5a.
 The provisional synthetic [observation fixtures](../test/fixtures/provider_observation/v1/README.md)
@@ -134,7 +136,8 @@ The consumer owns `Fifo_asic.project ()` (in the FIFO specimen) and its declarat
 wrapper and source inventory. `Project.create ?source_inputs` defaults to `[]`;
 the getter retains the declared list. `Project.describe` returns local declaration
 facts as a S-expression without design construction, resolution or I/O. It is not
-a Workbench observation protocol. Root/output paths are execution arguments, not
+a Workbench observation protocol; the example's JSON description is a local wrapper
+around those facts. Root/output paths are execution arguments, not
 declaration fields.
 
 `Project.emit_bundle ?inputs ?include_simulation t ~source_root ~output_dir` owns
@@ -143,6 +146,18 @@ elaborate/resolve implementation, optionally elaborate Simulation, render, write
 Simulation defaults to true; false skips its construction and reuses synthesis
 sources for simulation. No output is written before render succeeds; writing
 retains Bundle's new/empty-directory requirement and non-atomic failure behavior.
+`Project.emit_bundle_to_store` composes the same rendering with `Bundle.publish`:
+verified complete private `.objects` data precedes exclusive public identity-symlink
+publication, and reuse validates exact tree/bytes without changing metadata.
+The library requires an explicit store. The project CLI selects
+`ROOT/_flow_results/{bundles,runs,operations}`; the generic installed CLI defaults
+to caller cwd `_flow_results` for runs/operations. `_flow_tools` remains separate.
+Preflight pending/report/receipt and run records precede tool probes; failed or
+interrupted readiness is saved where storage permits. These bounded diagnostics
+are not a live journal, fsync guarantee or crash-recovery protocol. Required stage
+validation precedes project work; project run is implementation only. Subsequent
+collect/report select an explicit existing run, never newest or arbitrary resume.
+See the [CLI 2 migration and command matrix](guides/flow.md#default-result-store-and-cli-contract-2).
 Dependencies remain acyclic: Project composes Bundle and Resolved_flow, which use
 Elaborated_project rather than calling back into Project. Private construction
 boundaries remain intact. See the [entrypoint guide](guides/bundle-emission.md#project-centered-entry-point).
@@ -220,10 +235,13 @@ checkout. Its checksum is local bookkeeping, not an embedded source stamp.
 The emitter copies the dependency record as a source expectation, not proof of
 linked-library identity. See the [workflow](development/consumer-dependency-workflow.md).
 
-Bundle writing currently requires an empty destination and is not atomic. Preserve
-the input-publication boundary: an incomplete bundle must not be advertised as
-ready. Atomic bundle-directory publication is a possible later hardening slice,
-not a reason to discard the current manifest or rewrite elaboration.
+Explicit `Bundle.write` requires a new/empty destination and is not atomic.
+`Bundle.publish` now supplies atomic visibility via exclusive identity symlinks,
+verified immutable reuse and no-clobber concurrent publication on local POSIX
+filesystems. Published objects must be retained; no GC, mutable current pointer,
+NFS or power-loss durability is promised. This preserves the manifest/identity
+and does not advertise partial input as ready; see
+[publication details](guides/bundle-emission.md#identity-addressed-publication).
 
 ## 8. Provider observation direction
 
@@ -249,7 +267,7 @@ or reader disconnect never supplies interruption/completion facts.
 
 The prior LibreLane observation probe is historically **BLOCKED**; a compatible
 verified scratch runtime is now available, but official cases have not yet been
-rerun. Project run routing still requires separate agreement. Live
+rerun. Project implementation-run routing is delivered, independently of live
 catalog, early correlation, step updates and incremental result publication remain
 undelivered.
 
@@ -259,7 +277,8 @@ Proposed contract: describe capabilities/versions; list/inspect explicit stores;
 correlate a request with an early allocated operation/run; inspect step occurrences;
 replay recorded updates; read versioned snapshots and evidence references.
 Events describe allocation, lifecycle, publication and operation outcomes, never
-UI refresh actions. CLI final-JSON stdout stays compatible; read/watch is separate.
+UI refresh actions. CLI 2 requires explicit `--json` to retain machine payloads;
+human output is now the default. A future read/watch interface is separate.
 
 One build may have two runs. Each run has identified operation attempts and step
 occurrences; display names or numbered directories are not identities. Collecting
@@ -355,9 +374,10 @@ changes and new observation behavior into one unreviewable rewrite.
 The owner-created [sibling development specimen](../../hardcaml_asic_example/README.md)
 now implements a fixed single-clock 16 × 8 controlled FIFO with explicit register
 storage, a pure list-based scoreboard, directed/seeded regressions, a consumer-owned
-TT wrapper/declaration and a project-centered `describe|emit` CLI. Its public facade
+TT wrapper/declaration and a project-centered `describe|emit|preflight|run` CLI. Its public facade
 exposes `project ()` plus `Tt_wrapper`; shared emission belongs to the provider.
-No runtime project `run`/`inspect` command exists yet. Its source root is explicit,
+Project run requires a stage and invokes implementation only; no project execute
+or live inspect interface is delivered. Its source root is discovered or explicit,
 not a required hardcoded sibling path. Owner initial ref
 `8e4577f6c72cc689cbc92daeb5f8ae083cf970e0` now exists; it alone does not establish
 a clean tree or a dependency pin. The specimen now has a recorded ASIC baseline
@@ -382,5 +402,5 @@ actual revision/dirty-input provenance and RTL replay; see the
 Synthetic committed fixtures remain separate provenance tests. This does not
 establish full environment locking, embedded source identity, source-access-denied
 P6.6 acceptance or physical acceptance. The separate provisional observation fixture
-slice is accepted; run routing needs separate agreement and LibreLane feasibility awaits the bounded rerun above. FIFO delivery does
+slice is accepted; LibreLane feasibility awaits the bounded rerun above. FIFO delivery does
 not implement live provider observation or close ASIC P6 gates.

@@ -8,7 +8,8 @@ declaration. It does not run synthesis or hardening.
 The consumer owns a project constructor: the FIFO specimen exposes
 `Fifo_asic.project () : Hardcaml_asic.Project.t Core.Or_error.t` and `Tt_wrapper`
 through its facade. Its `asic/project.ml` owns the declaration and source inventory;
-`bin/project.ml` supplies one CLI with `describe` and `emit` operations. Shared
+`bin/project.ml` supplies `describe`, `emit`, `preflight` and implementation-only
+`run` operations. Shared
 emission orchestration belongs to `Hardcaml_asic.Project.emit_bundle`.
 
 OCaml consumer code (inside a function with `source_root` and `output_dir` arguments):
@@ -24,16 +25,22 @@ Shell commands, from the example checkout after
 
 ```sh
 dune exec bin/project.exe -- describe
+dune exec bin/project.exe -- emit
+# Machine callers request JSON explicitly; exact destination override:
 dune exec bin/project.exe -- emit \
-  --source-root "$PWD" --output-dir /tmp/fifo-project-bundle
+  --source-root "$PWD" --output-dir /tmp/fifo-project-bundle --json
 ```
 
 `describe` prints a local S-expression of declaration facts, including the top name
 and inventory. It does not construct the design, resolve a flow, read Git/files/PDKs
-or write output. It is not a Workbench observation protocol. `emit` prints JSON
-containing `identity` and `output_dir` after successful writing. This project CLI
-has no runtime `run` or `inspect` command yet; the installed flow CLI remains the
-separate execution interface.
+or write output. `describe --json` wraps the declaration S-expression and actual
+project name; neither format is a Workbench observation protocol. `emit` defaults
+to verified identity-addressed publication and a human created/reused summary;
+`--json` prints `identity` and `output_dir`. Explicit `--output-dir` retains ordinary
+writing. `preflight` and `run` emit/reuse current sources unless given `--bundle`,
+then route to the installed provider. Run requires a stage and performs implementation
+only. See the [command/storage matrix](flow.md#default-result-store-and-cli-contract-2)
+for roots, JSON migration, persistence and separate existing-run operations.
 
 `Project.create ?source_inputs` defaults to `[]`; `Project.source_inputs` returns
 the declaration unchanged, including order and duplicates. Source paths belong to
@@ -50,6 +57,59 @@ The example CLI uses the default. Rendering owns source canonicalization, Git
 provenance and input validation. No output is written before rendering succeeds.
 Writing requires a new/empty destination and is non-atomic: a write failure can
 leave partial output. No external flow tools or PDK reads occur during emission.
+
+### Identity-addressed publication
+
+The library entry for a caller-owned results store is:
+
+```ocaml
+Project.emit_bundle_to_store ?inputs ?include_simulation project
+  ~source_root ~store_dir
+(* (Bundle.t * Bundle.Publication.t) Core.Or_error.t *)
+```
+
+The caller supplies `store_dir`, typically `<results-root>/bundles`; the library
+does not infer a results root or search the working directory. Relative explicit
+roots are accepted, and `Publication.directory` is the absolute public path
+`<store_dir>/<Bundle.identity bundle>`. `Publication.t` is a private record with
+readable `directory : string` and `reused : bool` fields. The project entry owns
+the same implementation/resolution, optional Simulation and render sequence as
+explicit emission, with the same early empty-inventory rejection and defaults.
+Consumers call this entry once rather than duplicating elaboration. Lower-level
+callers with an already rendered bundle can use
+`Bundle.publish bundle ~store_dir : Bundle.Publication.t Core.Or_error.t`.
+The example CLI now defaults to `ROOT/_flow_results/bundles`; the installed
+provider separately defaults to caller cwd for run/operation storage.
+`Project.emit_bundle ~output_dir` and `Bundle.write` retain their explicit
+new/empty-directory semantics.
+
+On local POSIX filesystems the backing layout is:
+
+```text
+<store_dir>/
+  .objects/<identity>.<unique>/   complete bundle, no additional receipt
+  <identity> -> .objects/<identity>.<unique>
+```
+
+An exclusively allocated object is fully written and verified before an exclusive
+symlink creates the public identity name. That operation never replaces an existing
+file, link or directory, even an empty directory. Concurrent publishers of the same
+bundle produce one creation and verified reuse; losers clean up only their own
+unpublished objects. Published objects must be retained. Exceptions during writing
+leave no public partial bundle. There is no store cleanup/GC (including objects left
+by an abruptly killed process), mutable current pointer, physical cache or resume.
+
+Reuse compares the **entire path set and exact bytes**, including `manifest.json`.
+Extra files, extra empty directories, missing/corrupt bytes and symlinked members
+are rejected without changing the existing destination. Exact pre-existing plain
+directories are supported. Existing root links must point directly to a real,
+identity-prefixed child of `.objects`; escaping/dangling links, linked backing
+objects, symlinked store ancestors and file-valued parents fail with diagnostics.
+Store contents must remain stable against external mutation while publishing or
+verifying. This API makes no fsync/power-loss durability or NFS guarantees and adds
+no runtime Python or EDA requirement. Generated bytes, identity and schemas are
+identical to explicit emission. Phase 4 canonicalizes the root link before use;
+the archiver verifies and packages the underlying ordinary bundle files.
 
 ## Lower-level composition and provider examples
 
@@ -220,6 +280,18 @@ builds unrelated consumers against `_build/install/default/lib`.
   low-level oracle; the checker copies its declarations and injects test arguments
   only in a temporary consumer. Its separate `let simulation_project =`
   construction remains intact for the existing lower-level checker.
+- Those same four bundles also compare `emit_bundle_to_store` against explicit
+  emission and manual composition, byte for byte. Publication default/false options
+  retain design call counts, and both public record construction and update are
+  rejected by the external compiler. Explicit roots and source names include spaces.
+- `check_project_api.py` verifies first publication, inode/mtime-preserving repeat
+  reuse, exact plain-directory reuse, preserved corrupt/missing/extra/file/empty-dir
+  and symlink collisions, store/parent corruption, and forced real write failure
+  using POSIX `RLIMIT_FSIZE`. Two independent OCaml processes render before a gate
+  releases them into a real publication race, requiring one created result and one
+  verified reuse with only one retained object. Phase-4 entry canonicalization and
+  archive bundle selection/hash validation/input-tar verification exercise the
+  root-link layout without executing EDA.
 
 The [project-entrypoint evidence](../phase_plan.md#project-centered-entrypoint-acceptance)
 also records FIFO old/new hardware equivalence with independently validated

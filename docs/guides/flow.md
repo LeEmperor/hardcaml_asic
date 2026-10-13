@@ -16,6 +16,85 @@ unique run directory for each attempt, executes LibreLane, and collects results
 from either new or existing run directories. It does not install tools or change
 `manifest.json`.
 
+## Default result store and CLI contract 2
+
+Current source candidate, 2026-10-13: the installed CLI defaults to concise human
+output. **Machine callers must request `--json`**; this intentional presentation
+break is advertised as `cli_contract.version = 2` by `--version --json`, separately
+from package version 0.1.0 and record schema 1. JSON stdout is the command's raw
+payload, with paths, issues and verbose diagnostics on stderr. `--verbose` expands
+stderr diagnostics; it does not change the payload or enable execution.
+
+From the example checkout, with the existing current installation activated:
+
+```sh
+source .dev/asic/current/activate.sh
+dune exec bin/project.exe -- emit
+dune exec bin/project.exe -- preflight
+dune exec bin/project.exe -- preflight --json
+# Future explicit expensive implementation request:
+dune exec bin/project.exe -- run --stage synthesis
+```
+
+The project CLI owns root discovery and emission; the installed provider owns
+readiness and implementation. It checks provider contract 2 before automatic
+emission for preflight/run, then dispatches with `execv`, preserving provider exits
+and signals. Missing/invalid `--stage` is rejected before emission or dispatch.
+Project `run` is **implementation only**: no implicit collect, postcheck, report,
+archive, full acceptance or project `execute` operation.
+
+| Command | Default storage / output | Explicit selection |
+| --- | --- | --- |
+| Project `describe` | Local declaration S-expression, no storage | `--json` wraps the S-expression and project name; not Workbench data |
+| Project `emit` | Verified immutable `ROOT/_flow_results/bundles/<identity>`; human created/reused path and identity | `--output-dir DIR` retains new/empty-directory writing; `--json` prints identity/output_dir |
+| Project `preflight` | Emit/reuse current source bundle, save a separate operation and readiness report | `--bundle DIR` bypasses emission; `--output FILE` writes only that report file, whose parent must exist |
+| Installed `preflight BUNDLE` | `<results-root>/operations/<UTC-timestamp>_<id-prefix>/{operation,preflight}.json` | `--results-root DIR`, `--output FILE`, `--json` |
+| Project/installed `run` | New `<results-root>/runs/<UTC-timestamp>_<id-prefix>` with full random run ID in `run.json` | Required `--stage synthesis\|full`; `--runs DIR` overrides the run store |
+| Installed `collect RUN` | Writes `RUN/results.json`, prints its path | `--output FILE`; `--json` still writes normally; legacy `--stdout` emits read-only JSON |
+| Installed `report RUN` | Read-only acceptance summary | `--json` emits results, verdict/diagnostics on stderr; exit remains acceptance status |
+| Installed `execute BUNDLE` | Existing fixed run → optional full postcheck → collect → report → optional archive | Required stage; `--json` selects the sequence payload; no project counterpart |
+| Installed `archive RUN` | Explicit `--output DIR` creates archive, or human `--list` reads selection | `--json --output DIR` supported; `--json --list` explicitly unsupported |
+
+Installed roots default to `<caller-cwd>/_flow_results`, never a guessed project
+root. The project default is `ROOT/_flow_results`; its tool default is separately
+`ROOT/_flow_tools`, selected by `--toolchain` > nonempty `TOOLCHAIN` > default.
+`--results-root`, `--runs`, `--source-root`/`--project-root`, `--output-dir` and
+explicit tool overrides remain available. Relative overrides mean caller cwd.
+Project discovery walks upward for `dune-project` plus `asic-dependency.json`,
+checks declared inputs, and refuses automatic discovery in `_build`, `_flow_results`
+or `.dev`; use an explicit root there. Explicit paths retain symlink-parent/`..`
+traversal. Description needs no root.
+
+Use an explicit existing `RUN` for later operations:
+
+```sh
+RUN=/absolute/path/to/the-recorded-run-directory
+hardcaml-asic-flow collect "$RUN" --json
+hardcaml-asic-flow report "$RUN" --json
+```
+
+No newest-run guessing, arbitrary resume, GC or command per reader is added.
+Preflight operations are diagnostics, **not implementation runs**. Pending records
+are saved before probes; caught probe exceptions become saved failed readiness
+reports and exit 1, while usage/output-path errors exit 2. Scoped SIGINT/SIGTERM
+save interrupted diagnostics where storage permits. Run records precede readiness
+probes; failed readiness leaves no staged project or implementation commands.
+Run status describes implementation, not report acceptance. Atomic JSON replacement
+does not promise fsync, power-loss recovery or a live event journal.
+
+Bundle public paths are symlinks to verified `.objects/<identity>.<unique>` data.
+Preflight/run canonicalize them, so saved records may name the backing path;
+both refer to the same immutable bundle. Keep published objects. Exact verified
+reuse, exclusive no-clobber publication and race behavior are documented in
+[bundle publication](bundle-emission.md#identity-addressed-publication).
+`provision` retains bootstrap human output and rejects `--json`/`--verbose`.
+`scripts/phase4.py` retains its historical path-only run contract and development
+preflight JSON spelling; it is not the installed CLI presentation contract.
+
+This feature is storage and CLI ergonomics, not live catalog/early correlation,
+internal step observation, incremental results or physical acceptance. See
+[dated acceptance](../phase_plan.md#default-result-store-and-cli-2-closeout).
+
 ## Runtime policy and launch binding
 
 Current source candidate, reviewed 2026-10-13: schema-1 bundles emitted now add
@@ -97,8 +176,9 @@ run at another checkout. Two of them are required rather than defaulted, because
 guessing either is how an expensive run or a misattributed record happens:
 `STAGE` for `run` and `execute`, since there is no default stage, and `RUN` for
 every resumed operation, since the newest directory under `$RUNS` is never
-assumed to be the one you meant — run ids are random hex and do not sort by time,
-and `run`/`execute` print `run_dir` in their JSON. `ALLOW_PYTHON_MISMATCH` is
+assumed to be the one you meant — run identities are independent random hex,
+and installed `run`/`execute --json` print `run_dir` in their payload. New run
+directories include a timestamp prefix, but selection is still explicit. `ALLOW_PYTHON_MISMATCH` is
 gone: nothing waives the bundle's requested Python by default, and the driver
 says so and stops if it is still set.
 `report.py --runs "$RUNS"` selects newest by modification time; use an
@@ -114,12 +194,13 @@ development spelling of the same operations: `phase4.py`, `report.py` and
 installed `hardcaml-asic-flow` command runs, so there is one implementation under
 all of them.
 
-`execute` ends with an account of what it did: one stderr line per step with its
+With `--json`, installed `execute` ends with one stderr line per step with its
 status and duration, the absolute run directory, and the archive path when one
 was published, followed by a single JSON object on stdout carrying the run
 identity, per-step statuses and the final outcome. It prints that on failure and
 on interruption too, so an attempt that stopped still names the run holding its
-diagnostics, and a failed step keeps its own status rather than being flattened
+diagnostics. Without `--json` it prints human summaries and saved paths. A failed
+step keeps its own status rather than being flattened
 into the sequence's. For scale, the reference observable bundle is roughly 24
 minutes to harden and 8 more to postcheck.
 
@@ -197,7 +278,8 @@ compatibility; the installed command exposes no such option. A run prints its `r
 if it fails. Its `execution.log` and partial `project/runs/asic` contents remain
 available, and retries receive distinct IDs.
 
-`preflight` prints its report as JSON on stdout, and `--output` writes the same
+The development `scripts/phase4.py preflight` prints JSON on stdout; installed
+`preflight --json` selects JSON and saves the report by default. `--output` writes the same
 report to a file. Use it: the report is the record of why a run was allowed to
 start — every external file hash, the actual tool and container versions, and
 any version waivers — and scrollback does not survive as evidence. A run no

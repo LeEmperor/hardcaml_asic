@@ -26,3 +26,6 @@ env.sh
 
 # python test bytecode
 __pycache__/
+
+# caller-local flow result store
+/_flow_results/

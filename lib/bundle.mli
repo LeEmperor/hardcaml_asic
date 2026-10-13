@@ -60,6 +60,30 @@ val render
     partial, non-empty directory that must be deleted before writing there again. *)
 val write : t -> output_dir:string -> unit Or_error.t
 
+(** Result of identity-addressed publication. *)
+module Publication : sig
+  type t = private
+    { directory : string (** Absolute public identity path, retaining its root link. *)
+    ; reused : bool (** True only after exact verification of an existing bundle. *)
+    }
+end
+
+(** [publish t ~store_dir] publishes at [store_dir/<identity>]. The explicit store
+    may be relative. Missing real directory parents are created; symlinked store
+    ancestors and non-directory parents fail. No existing destination is overwritten,
+    including an empty directory. Reuse requires exact paths and bytes (manifest
+    included), with no extra files, empty directories, or symlinked members.
+
+    On local POSIX filesystems, a unique private [store_dir/.objects/<identity>.*]
+    directory is written and verified before an exclusive relative symlink publishes
+    it. Existing links must name a direct identity-prefixed object in that layout;
+    exact existing plain directories are also reusable. Competing publishers yield
+    one creation and verified reuse. Only this call's unpublished object is cleaned
+    up; published objects must be preserved. Store contents must not be mutated by
+    other actors while publishing or verifying. No GC, fsync/power-loss durability
+    or NFS guarantees are provided. No EDA or runtime Python is required. *)
+val publish : t -> store_dir:string -> Publication.t Or_error.t
+
 (** [file t "src/config.json"]; the contents at a bundle relative path, if emitted. *)
 val file : t -> string -> string option
 

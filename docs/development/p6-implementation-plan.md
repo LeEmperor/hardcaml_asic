@@ -7,6 +7,9 @@ audit sections describe their original baseline, not the current checkout.
 The [central phase plan](../phase_plan.md) owns priority; this is the detailed
 P6 specification and evidence, not a second active queue. Historical scaf
 inventories do not require that checkout to exist.
+Current 2026-10-13 amendment: [CLI contract 2 and default result storage](../guides/flow.md#default-result-store-and-cli-contract-2)
+supersede the earlier JSON-default/required-`--runs` presentation contract below.
+Historical specification, commands and completion evidence retain their original text.
 The package installs a `hardcaml-asic-flow` command that runs its own modules and
 data from a prefix. Identity stamping, provisioning authority and independent
 acceptance are not implemented.

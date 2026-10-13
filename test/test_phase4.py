@@ -80,12 +80,122 @@ class RunnerTest(unittest.TestCase):
         record = phase4.read_json(outcome.run_record)
         self.assertEqual(phase4.read_json(outcome.run_dir / "preflight.json"), decision)
         self.assertEqual(record["environment"], decision)
+        self.assertRegex(outcome.run_dir.name, r"^\d{8}T\d{12}Z_[0-9a-f]{8}$")
+        self.assertEqual(len(outcome.run_id), 32)
+        self.assertEqual(record["run_id"], outcome.run_id)
+        self.assertNotEqual(outcome.run_id, outcome.run_dir.name)
+
+    def test_run_pending_preflight_exists_before_probe_and_retries_are_unique(self):
+        def probe(*_args):
+            pending = [p for p in self.args.runs.glob("*/preflight.json")
+                       if phase4.read_json(p).get("diagnostic", {}).get("status") == "pending"]
+            self.assertEqual(len(pending), 1)
+            record = phase4.read_json(pending[0].parent / "run.json")
+            self.assertEqual(record["status"], "starting")
+            self.assertEqual(record["commands"], [])
+            self.assertFalse(phase4.read_json(pending[0])["ready"])
+            return self.ready()
+        with mock.patch.object(phase4, "preflight", side_effect=probe), \
+             mock.patch.object(phase4, "run_logged", return_value=0):
+            first, second = phase4.run(self.args), phase4.run(self.args)
+        self.assertNotEqual(first.run_dir, second.run_dir)
+        self.assertNotEqual(first.run_id, second.run_id)
+
+    def test_preflight_failures_and_interruptions_are_durable_and_never_execute(self):
+        cases = ((RuntimeError("probe failed"), "failed", 1),
+                 (phase4.FlowInterrupted(signal.SIGINT), "interrupted", 130),
+                 (phase4.FlowInterrupted(signal.SIGTERM), "interrupted", 143),
+                 (KeyboardInterrupt(), "interrupted", 130))
+        for error, status, code in cases:
+            with self.subTest(code=code), \
+                 mock.patch.object(phase4, "preflight", side_effect=error), \
+                 mock.patch.object(phase4, "run_logged") as execute:
+                outcome = phase4.run(self.args)
+                self.assertEqual((outcome.status, outcome.exit_code), (status, code))
+                report = phase4.read_json(outcome.run_dir / "preflight.json")
+                self.assertFalse(report["ready"])
+                self.assertEqual(report["diagnostic"]["status"], status)
+                self.assertEqual(phase4.read_json(outcome.run_record)["environment"], report)
+                self.assertFalse((outcome.run_dir / "project").exists())
+                execute.assert_not_called()
+
+    def test_readiness_failure_keeps_exact_payload_without_execute(self):
+        decision = {"ready": False, "issues": ["missing tool"], "actual": {}}
+        with mock.patch.object(phase4, "preflight", return_value=decision), \
+             mock.patch.object(phase4, "run_logged") as execute:
+            outcome = phase4.run(self.args)
+        self.assertEqual((outcome.status, outcome.exit_code), ("failed", 1))
+        self.assertEqual(phase4.read_json(outcome.run_dir / "preflight.json"), decision)
+        self.assertEqual(phase4.read_json(outcome.run_record)["environment"], decision)
+        execute.assert_not_called()
+
+    def test_destination_allocation_failure_never_probes(self):
+        self.args.runs.write_text("owner file")
+        with mock.patch.object(phase4, "preflight") as probe, \
+             mock.patch.object(phase4, "run_logged") as execute:
+            with self.assertRaises(OSError):
+                phase4.run(self.args)
+        probe.assert_not_called()
+        execute.assert_not_called()
+        self.assertEqual(self.args.runs.read_text(), "owner file")
+
+    def test_real_preflight_signal_is_scoped_and_durable(self):
+        before = signal.getsignal(signal.SIGTERM)
+        def probe(*_args):
+            os.kill(os.getpid(), signal.SIGTERM)
+        with mock.patch.object(phase4, "preflight", side_effect=probe), \
+             mock.patch.object(phase4, "run_logged") as execute:
+            outcome = phase4.run(self.args)
+        self.assertEqual((outcome.status, outcome.exit_code), ("interrupted", 143))
+        self.assertFalse(phase4.read_json(outcome.run_dir / "preflight.json")["ready"])
+        self.assertEqual(signal.getsignal(signal.SIGTERM), before)
+        execute.assert_not_called()
 
     def test_missing_manifest_fails_before_allocation(self):
         (self.bundle / "manifest.json").unlink()
         with self.assertRaises(FileNotFoundError):
             phase4.run(self.args)
         self.assertFalse(self.args.runs.exists())
+
+    def test_interrupted_manifest_read_does_not_invent_run(self):
+        with mock.patch.object(phase4, "read_json", side_effect=phase4.FlowInterrupted(signal.SIGINT)), \
+             mock.patch.object(phase4, "preflight") as probe:
+            with self.assertRaises(phase4.FlowInterrupted):
+                phase4.run(self.args)
+        self.assertFalse(self.args.runs.exists())
+        probe.assert_not_called()
+
+    def test_pending_publication_failure_keeps_failed_run_without_probes(self):
+        original_save = phase4.save
+        def save(path, value):
+            if path.name == "preflight.json":
+                raise PermissionError("report unavailable")
+            original_save(path, value)
+        with mock.patch.object(phase4, "save", side_effect=save), \
+             mock.patch.object(phase4, "preflight") as probe, \
+             mock.patch.object(phase4, "run_logged") as execute:
+            outcome = phase4.run(self.args)
+        self.assertEqual((outcome.status, outcome.exit_code), ("failed", 1))
+        self.assertIn("report unavailable", phase4.read_json(outcome.run_record)["error"])
+        probe.assert_not_called()
+        execute.assert_not_called()
+
+    def test_terminal_publication_failure_keeps_prior_diagnostic_and_failed_run(self):
+        original_save = phase4.save
+        def save(path, value):
+            if path.name == "preflight.json" and value.get("ready"):
+                with mock.patch.object(phase4.os, "replace", side_effect=OSError("disk full")):
+                    original_save(path, value)
+            else:
+                original_save(path, value)
+        with mock.patch.object(phase4, "save", side_effect=save), \
+             mock.patch.object(phase4, "preflight", return_value=self.ready()), \
+             mock.patch.object(phase4, "run_logged") as execute:
+            outcome = phase4.run(self.args)
+        self.assertEqual((outcome.status, outcome.exit_code), ("failed", 1))
+        self.assertEqual(phase4.read_json(outcome.run_dir / "preflight.json")["diagnostic"]["status"], "pending")
+        self.assertIn("disk full", phase4.read_json(outcome.run_record)["error"])
+        execute.assert_not_called()
 
     def test_preflight_preserves_real_collateral_indexes_and_directory_metadata(self):
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}

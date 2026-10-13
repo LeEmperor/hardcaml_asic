@@ -1,7 +1,7 @@
 """The `hardcaml-asic-flow` command: parsing, dispatch and the fixed sequence.
 
-The P6.3 contract dispatcher, moved here unchanged apart from how it reaches its
-operations. It owns argument parsing, path and tool-location precedence, exit
+The dispatcher owns human/explicit-JSON presentation, result-store defaults,
+argument parsing, path and tool-location precedence, exit
 status mapping and the fixed `execute` composition; it owns no operation policy.
 Every operation below delegates to the runner/collector, the P6.1 reporter, the
 P6.2 archiver or the generic shell provisioner, all of which are siblings in this
@@ -22,7 +22,7 @@ import subprocess
 import sys
 import time
 
-from . import MINIMUM_PYTHON, archive as archiver, identity, paths, phase4
+from . import MINIMUM_PYTHON, archive as archiver, identity, paths, phase4, result_store
 from . import report as reporter
 
 
@@ -87,13 +87,26 @@ class Operations:
 
     def preflight(self, args):
         self.require_p6_5(args)
-        result = self.phase4.preflight(
-            args.bundle, args.support_tools, args.pdk_root, args.python,
-            False, args.native)
-        print(json.dumps(result, indent=2, sort_keys=True))
-        if args.output:
-            self.phase4.save(args.output, result)
-        return 0 if result["ready"] else 1
+        outcome = result_store.preflight_operation(
+            args.bundle, results_root=args.results_root, output=args.output,
+            probe=lambda: self.phase4.preflight(
+                args.bundle, args.support_tools, args.pdk_root, args.python,
+                False, args.native))
+        if args.json:
+            print(json.dumps(outcome.result, indent=2, sort_keys=True))
+            print(f"preflight: report {outcome.report_path}", file=sys.stderr)
+        else:
+            print(f"preflight: {outcome.status}")
+            if outcome.receipt_path:
+                print(f"operation: {outcome.receipt_path}")
+            print(f"report: {outcome.report_path}")
+        for issue in outcome.result["issues"]:
+            print(f"preflight: {issue}", file=sys.stderr)
+        if args.verbose:
+            for name, value in outcome.result.items():
+                if name not in ("ready", "issues"):
+                    print(f"preflight {name}: {value}", file=sys.stderr)
+        return outcome.exit_code
 
     def run(self, args):
         self.require_p6_5(args)
@@ -115,19 +128,33 @@ class Operations:
 
     def collect(self, args):
         result = self.phase4.collect(args.run_dir)
-        if args.stdout:
-            print(json.dumps(result, indent=2, sort_keys=True))
-        else:
+        if not args.stdout:
             self.phase4.save(args.output, result)
+        if args.stdout or getattr(args, "json", False):
+            print(json.dumps(result, indent=2, sort_keys=True))
+        elif not getattr(args, "quiet", False):
+            print(f"collect: results {args.output}")
+        if getattr(args, "verbose", False):
+            for name, value in result.items():
+                print(f"collect {name}: {value}", file=sys.stderr)
         return 0
 
     def report(self, args):
         results, source = self.reporter.results_for(args.run_dir)
         output = print
         diagnostics_only = getattr(args, "diagnostics_only", False)
+        diagnostics = []
         if args.json or diagnostics_only:
             output = lambda *values: print(*values, file=sys.stderr)
+        if diagnostics_only:
+            output = lambda *values: diagnostics.append(" ".join(map(str, values)))
         status = self.reporter.report(args.run_dir, results, source, output=output)
+        if diagnostics_only and (status or getattr(args, "verbose", False)):
+            for line in diagnostics:
+                print(line, file=sys.stderr)
+        if getattr(args, "verbose", False):
+            print(f"report: run {args.run_dir}; result source {source}; acceptance exit {status}",
+                  file=sys.stderr)
         if args.json and not diagnostics_only:
             print(json.dumps(results, indent=2, sort_keys=True))
         return status
@@ -144,8 +171,14 @@ class Operations:
         for name in omitted:
             print(f"archive: absent, not included: {name}", file=sys.stderr)
         if not getattr(args, "quiet", False):
-            print(json.dumps({"archive": str(args.output), "reports": str(tarball)},
-                             sort_keys=True))
+            if getattr(args, "json", False):
+                print(json.dumps({"archive": str(args.output), "reports": str(tarball)},
+                                 sort_keys=True))
+            else:
+                print(f"archive: created {args.output}")
+                print(f"reports: {tarball}")
+        if getattr(args, "verbose", False):
+            print(f"archive: reports {tarball}; omitted {len(omitted)} files", file=sys.stderr)
         return 0
 
 
@@ -170,6 +203,19 @@ def nonempty_path(value):
     return Path(value)
 
 
+def add_presentation(parser):
+    # SUPPRESS preserves a global flag when the command-local spelling is absent.
+    parser.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
+                        help="print the machine-readable payload (default: human summary)")
+    parser.add_argument("--verbose", action="store_true", default=argparse.SUPPRESS,
+                        help="expanded diagnostics on stderr")
+
+
+def add_results_root(parser):
+    parser.add_argument("--results-root", type=nonempty_path,
+                        help="result store root (default: caller cwd/_flow_results)")
+
+
 def build_parser():
     # The program name is fixed rather than taken from argv[0]: the launcher
     # invokes this module through `python3 -I -c`, where argv[0] is "-c", and a
@@ -181,7 +227,9 @@ def build_parser():
     parser.add_argument("--version", action="store_true",
                         help="package version and source-identity state")
     parser.add_argument("--json", action="store_true",
-                        help="machine-readable form of --version")
+                        help="machine-readable --version or command payload")
+    parser.add_argument("--verbose", action="store_true",
+                        help="expanded diagnostics on stderr")
     sub = parser.add_subparsers(dest="command")
 
     provision = sub.add_parser("provision")
@@ -193,21 +241,28 @@ def build_parser():
     provision.add_argument("--no-container", action="store_true")
 
     preflight = sub.add_parser("preflight")
-    preflight.add_argument("bundle", type=Path)
+    add_presentation(preflight)
+    add_results_root(preflight)
+    preflight.add_argument("bundle", type=nonempty_path)
     add_toolchain(preflight, flow_python=True)
     add_identity_seam(preflight)
     preflight.add_argument("--native", action="store_true")
-    preflight.add_argument("--output", type=Path)
+    preflight.add_argument("--output", type=nonempty_path,
+                           help="exact report file; parent must exist (no operation directory)")
 
     run = sub.add_parser("run")
-    run.add_argument("bundle", type=Path)
-    run.add_argument("--runs", required=True, type=Path)
+    add_presentation(run)
+    add_results_root(run)
+    run.add_argument("bundle", type=nonempty_path)
+    run.add_argument("--runs", type=nonempty_path,
+                     help="override implementation store (default: results-root/runs)")
     run.add_argument("--stage", required=True, choices=("synthesis", "full"))
     add_toolchain(run, flow_python=True)
     add_identity_seam(run)
     run.add_argument("--native", action="store_true")
 
     postcheck = sub.add_parser("postcheck")
+    add_presentation(postcheck)
     postcheck.add_argument("run_dir", type=Path)
     postcheck.add_argument("--testbench", required=True, type=Path)
     postcheck.add_argument("--testbench-top", required=True)
@@ -215,16 +270,19 @@ def build_parser():
     add_identity_seam(postcheck)
 
     collect = sub.add_parser("collect")
+    add_presentation(collect)
     collect.add_argument("run_dir", type=Path)
     destination = collect.add_mutually_exclusive_group()
     destination.add_argument("--output", type=Path)
-    destination.add_argument("--stdout", action="store_true")
+    destination.add_argument("--stdout", action="store_true",
+                             help="legacy read-only JSON output; does not write results.json")
 
     report = sub.add_parser("report")
+    add_presentation(report)
     report.add_argument("run_dir", type=Path)
-    report.add_argument("--json", action="store_true")
 
     archive = sub.add_parser("archive")
+    add_presentation(archive)
     archive.add_argument("run_dir", type=Path)
     destination = archive.add_mutually_exclusive_group(required=True)
     destination.add_argument("--output", type=Path)
@@ -232,8 +290,11 @@ def build_parser():
     archive.add_argument("--force", action="store_true")
 
     execute = sub.add_parser("execute")
-    execute.add_argument("bundle", type=Path)
-    execute.add_argument("--runs", required=True, type=Path)
+    add_presentation(execute)
+    add_results_root(execute)
+    execute.add_argument("bundle", type=nonempty_path)
+    execute.add_argument("--runs", type=nonempty_path,
+                         help="override implementation store (default: results-root/runs)")
     execute.add_argument("--stage", required=True, choices=("synthesis", "full"))
     add_toolchain(execute, flow_python=True, precheck_python=True)
     add_identity_seam(execute)
@@ -270,7 +331,7 @@ def validate_waivers(parser, args):
 
 
 def resolve_paths(parser, args, environ, cwd):
-    for name in ("bundle", "run_dir", "runs", "output", "archive",
+    for name in ("bundle", "run_dir", "runs", "results_root", "output", "archive",
                  "testbench", "dependency_lock", "toolchain",
                   "support_tools", "pdk_root"):
         if hasattr(args, name):
@@ -283,6 +344,11 @@ def resolve_paths(parser, args, environ, cwd):
         root = args.toolchain or absolute(Path(environ.get("TOOLCHAIN", ".toolchain")), cwd)
         args.toolchain = root
         return
+
+    if args.command in ("preflight", "run", "execute"):
+        args.results_root = args.results_root or absolute(Path("_flow_results"), cwd)
+        if args.command in ("run", "execute"):
+            args.runs = args.runs or args.results_root / "runs"
 
     required = {
         "preflight": ("support_tools", "pdk_root", "python"),
@@ -317,6 +383,10 @@ def resolve_paths(parser, args, environ, cwd):
 
 def validate_contract(parser, args):
     validate_waivers(parser, args)
+    if args.command == "provision" and (args.json or args.verbose):
+        parser.error("provision uses bootstrap human output; --json/--verbose are unsupported")
+    if args.command == "archive" and args.list and args.json:
+        parser.error("--json with archive --list is unsupported; use human --list")
     if args.command in ("run", "execute"):
         args.allow_python_mismatch = False
     if getattr(args, "force", False) and not (
@@ -345,13 +415,22 @@ def execute_sequence(args, operations):
 
     def finish(status, exit_code):
         result.update(status=status, exit_code=exit_code)
+        output = lambda text: print(text, file=sys.stderr if args.json else sys.stdout)
         for step in steps:
-            print(f"execute: {step['operation']} {step['status']} "
-                  f"({step.get('duration_seconds', 0):.3f}s)", file=sys.stderr)
-        print(f"execute: run {outcome.run_dir}", file=sys.stderr)
+            output(f"execute: {step['operation']} {step['status']} "
+                   f"({step.get('duration_seconds', 0):.3f}s)")
+            if step.get("error"):
+                print(f"execute: {step['operation']}: {step['error']}", file=sys.stderr)
+        output(f"execute: {status}")
+        if args.json:
+            output(f"execute: run {outcome.run_dir}")
+        else:
+            summarize_outcome(outcome, "run", verbose=args.verbose)
         if result.get("archive"):
-            print(f"execute: archive {result['archive']}", file=sys.stderr)
-        print(json.dumps(result, sort_keys=True))
+            output(f"execute: archive {result['archive']}")
+        if args.json:
+            outcome_diagnostics(outcome, "run", args.verbose)
+            print(json.dumps(result, sort_keys=True))
         return exit_code
 
     def best_effort_collect():
@@ -359,7 +438,8 @@ def execute_sequence(args, operations):
         try:
             collect_args = argparse.Namespace(run_dir=outcome.run_dir,
                                               output=outcome.run_dir / "results.json",
-                                              stdout=False)
+                                              stdout=False, quiet=True, json=False,
+                                              verbose=args.verbose)
             collect_code = operations.collect(collect_args)
             steps.append({"operation": "collect", "status": "completed",
                           "exit_code": collect_code, "best_effort": True,
@@ -393,14 +473,19 @@ def execute_sequence(args, operations):
             best_effort_collect()
             return finish("failed", 2)
         steps.append({"operation": "postcheck", "status": check.status,
-                      "exit_code": check.exit_code,
-                      "duration_seconds": round(time.monotonic() - check_started, 6)})
+                       "exit_code": check.exit_code,
+                       "duration_seconds": round(time.monotonic() - check_started, 6)})
+        if args.json:
+            outcome_diagnostics(check, "postcheck", args.verbose)
+        else:
+            summarize_outcome(check, "postcheck", args.verbose)
         if check.exit_code:
             best_effort_collect()
             return finish(check.status, check.exit_code)
 
     collect_args = argparse.Namespace(run_dir=outcome.run_dir,
-                                      output=outcome.run_dir / "results.json", stdout=False)
+                                      output=outcome.run_dir / "results.json", stdout=False,
+                                      quiet=True, json=False, verbose=args.verbose)
     collect_started = time.monotonic()
     try:
         code = operations.collect(collect_args)
@@ -420,7 +505,7 @@ def execute_sequence(args, operations):
         return finish("failed", code)
 
     report_args = argparse.Namespace(run_dir=outcome.run_dir, json=False,
-                                     diagnostics_only=True)
+                                     diagnostics_only=True, verbose=args.verbose)
     report_started = time.monotonic()
     try:
         code = operations.report(report_args)
@@ -474,6 +559,38 @@ def unsupported_python():
             f"modules; this interpreter is {running} ({sys.executable})")
 
 
+def outcome_diagnostics(outcome, operation, verbose=False):
+    record = outcome.run_record if operation == "run" else outcome.check_record
+    if Path(record).is_file():
+        payload = phase4.read_json(record)
+        if payload.get("error"):
+            print(f"{operation}: {payload['error']}", file=sys.stderr)
+        if verbose:
+            for name, value in payload.items():
+                if name != "error":
+                    print(f"{operation} {name}: {value}", file=sys.stderr)
+
+
+def summarize_outcome(outcome, operation, verbose=False):
+    print(f"{operation}: {outcome.status} (exit {outcome.exit_code})")
+    if operation == "run":
+        print(f"run id: {outcome.run_id}")
+        print(f"run: {outcome.run_dir}")
+        print(f"record: {outcome.run_record}")
+        for name in ("preflight.json", "results.json", "execution.log"):
+            path = outcome.run_dir / name
+            if path.is_file():
+                print(f"{name}: {path}")
+    else:
+        print(f"check id: {outcome.check_id}")
+        print(f"check: {outcome.check_dir}")
+        print(f"record: {outcome.check_record}")
+        log = outcome.check_dir / "postcheck.log"
+        if log.is_file():
+            print(f"log: {log}")
+    outcome_diagnostics(outcome, operation, verbose)
+
+
 def main(argv=None, operations=None, environ=None, cwd=None):
     unsupported = unsupported_python()
     if unsupported is not None:
@@ -505,7 +622,11 @@ def main(argv=None, operations=None, environ=None, cwd=None):
             return execute_sequence(args, operations)
         result = getattr(operations, args.command)(args)
         if args.command in ("run", "postcheck"):
-            print(json.dumps(result.as_dict(), sort_keys=True))
+            if args.json:
+                print(json.dumps(result.as_dict(), sort_keys=True))
+                outcome_diagnostics(result, args.command, args.verbose)
+            else:
+                summarize_outcome(result, args.command, args.verbose)
             return result.exit_code
         return result
     except (ContractError, OSError, ValueError, KeyError, TypeError,

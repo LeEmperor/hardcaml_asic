@@ -1,7 +1,7 @@
 # hardcaml_asic phase plan
 
-Current checkpoint: 2026-10-13 host/container runtime-policy review and docs
-closeout; 2026-10-12 final acceptance passed. New bundles declare role-specific
+Current checkpoint: 2026-10-13 default result store, CLI contract 2 and project
+workflow review/docs closeout; acceptance passed. New bundles declare role-specific
 runtime policy and attempts bind to observed local image/engine identity.
 Managed Python/Tcl, interpreter paths and thin bootstrap are delivered;
 ASIC P6.5c is partially addressed and remains open.
@@ -27,17 +27,58 @@ and exact delivery evidence. Proposed new work below awaits design discussion.
    Read the [source-breaking migration and rename evidence](#public-api-rename-migration-and-evidence)
     before adopting this provider. The [project-centered entrypoint](#project-centered-entrypoint-acceptance)
     is delivered: consumer `Fifo_asic.project ()`, shared `Project.emit_bundle`, and
-    project `describe|emit`. Current recorded refresh rejects the old API;
+     project `describe|emit|preflight|run`; run is implementation only and requires
+     a stage. Current recorded refresh rejects the old API;
     development refresh works pending owner adoption of a committed candidate.
 3. The provisional provider observation fixtures/model are accepted with
     [evidence below](#provider-observation-fixture-acceptance). The authorized
     [LibreLane probe review](#librelane-feasibility-probe-review) retains its historical
     blocker; next rerun boundedly using the verified scratch LibreLane venv.
-    Full collateral provisioning is separate. Project run routing needs
-    separate agreement. Follow the dependencies below for P6 identity/installation.
+     Full collateral provisioning is separate. Project run routing is delivered;
+     execution still requires an explicit stage. Follow the dependencies below for P6 identity/installation.
 
 This queue records future ordering, not authorization to proceed beyond the
 completed bounded tool-environment slices.
+
+### Default result store and CLI 2 closeout
+
+2026-10-13, completed implementation acceptance; final independent review:
+
+- Delivered default `_flow_results/{bundles,runs,operations}`, verified immutable
+  identity publication/reuse, durable bounded readiness diagnostics, human defaults,
+  explicit `--json` raw payload and stderr `--verbose`. CLI contract **2** deliberately
+  breaks JSON-default presentation; package 0.1.0 and record schema 1 stay separate.
+- Project `describe|emit|preflight|run` owns discovery/emission and routes to the
+  installed provider. Run requires a stage and performs implementation only;
+  collect/report require an explicit existing run. No newest guess or project execute.
+  See the [detailed command/storage matrix](guides/flow.md#default-result-store-and-cli-contract-2).
+- Accepted provider checker: **325 Python tests**, OCaml, external public/private
+  checks and high-/lower-level bundle equivalences. Installed-prefix **47**;
+  example **11 bootstrap + 8 routing + 17 dependency = 36 Python**, core/wrapper
+  and strict synthesis/simulation RTL **11,429 edges each**, plus corrupt oracle.
+- Actual selected generation `f74ce0f369fd41b5b99811e0769dc756`; recorded
+  `1714764859274f80a9f5ad207421a04601824e99` pin unchanged. Real no-flag emit created
+  then reused bundle `4839450af746fca149271e20f79e57843ae32ad4bc21ab093dcc2f40275dec2f`,
+  **21 files**, bytes/metadata unchanged on reuse. Its declared inputs are the
+  stored acceptance snapshot, preceding this final routing fix/docs update.
+- Two default preflights saved `ready=true` operations
+  `20261013T024836762190Z_e4132285` / `20261013T024837648561Z_c2112d53`, human
+  three-line summaries, no default implementation runs. Provider JSON matched its
+  saved report byte-for-byte; explicit output made only that file, missing parent
+  exited 2 before probes. Saved bundle paths canonicalize the public symlink to
+  `.objects`; both name the same immutable data.
+- Private-root nonexistent-Python run exited 1: full ID
+  `6e18d1076b0f45e89e69c10fee0cb3bc`, failed run/readiness, empty commands, no completed
+  stage or staged project. Collect JSON wrote results without another run; report
+  JSON rejected read-only, legacy collect stdout stayed read-only. No ASIC tools ran.
+- [Local ignored evidence](../../hardcaml_asic_example/.dev/results-workflow-checks/20261013T024610Z-8c0ac8c3/)
+  retains logs, path inventory and preservation snapshots. Final review corrected
+  directory symlink-parent/`..` misrouting; focused example build and **9 routing
+  tests** passed. Accepted full suites were not repeated for this closeout.
+
+This is storage/CLI ergonomics, not live event catalog/internal step observation,
+autoexecution, full postcheck or signoff. P6 identity/installation and live
+observation gates remain open; older acceptance below is dated history.
 
 ### Host/container runtime-policy closeout
 
@@ -50,7 +91,7 @@ Final 2026-10-12 acceptance (reviewed 2026-10-13; not rerun here):
   oracles passed. No real ASIC flow executed; source/probe readiness is not
   physical compatibility. Earlier tiny transport help, RW/RO mount and sleep
   cleanup smoke passed, separately from flow execution.
-- Current installed generation is `caa4d18002274defb5eebb15e35a9042`; CLI remains
+- Installed generation at that acceptance was `caa4d18002274defb5eebb15e35a9042`; CLI remains
   unstamped and recorded consumer pin `1714764859274f80a9f5ad207421a04601824e99`
   is unchanged. This source candidate awaits owner adoption; no pin was advanced.
 - [Local acceptance summary](../../hardcaml_asic_example/.dev/runtime-contract-checks/acceptance-20261012-01/acceptance-summary.json)
@@ -223,7 +264,7 @@ recorded below; live observation remains unimplemented.
 | Provider observation | Provisional synthetic fixtures/model accepted; live observation unimplemented; historical probe BLOCKED, zero official cases; verified scratch runtime available for rerun | [Probe review](#librelane-feasibility-probe-review), [fixture acceptance](#provider-observation-fixture-acceptance), [architecture](architecture.md#8-provider-observation-direction) |
 | Resolved-build boundary hardening | Implemented; full runtest passes | [Evidence below](#resolved-build-boundary-hardening-evidence) |
 | Public API rename | Implemented; provider and FIFO acceptance passed, active documentation migrated | [Migration and evidence below](#public-api-rename-migration-and-evidence) |
-| Project-centered entrypoint | Delivered: declaration inventory/description, shared emission, FIFO facade and `describe|emit`; no runtime project run/inspect | [Acceptance below](#project-centered-entrypoint-acceptance) |
+| Project-centered entrypoint | Delivered: declaration/inventory, immutable emission, `describe|emit|preflight|run`; run is implementation only, explicit stage; CLI contract 2 | [Current closeout](#default-result-store-and-cli-2-closeout), [original acceptance](#project-centered-entrypoint-acceptance) |
 | Controlled-FIFO development specimen | Contract/core, scoreboard, TT wrapper/declaration and emitter delivered; PDK-free acceptance | [Original evidence](#controlled-fifo-development-specimen-evidence), [consumer README](../../hardcaml_asic_example/README.md) |
 | Consumer dependency refresh / emitter | Delivered: isolated library/CLI, activation and real-checkout acceptance; development works, old recorded API refused pending owner candidate adoption | [Original closeout](#consumer-refresh-and-real-checkout-emitter-closeout), [current acceptance](#project-centered-entrypoint-acceptance), [commands](development/consumer-dependency-workflow.md#implemented-commands) |
 

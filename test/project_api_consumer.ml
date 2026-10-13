@@ -1,8 +1,38 @@
 (* Compiled by check_project_api.py as an unrelated public API consumer. *)
+module U = Unix
 open! Core
 open! Hardcaml_asic
 
+(* Separate executable invocations exercise the actual public publisher. A gate
+   releases two independently rendered bundles into a real filesystem race. *)
+let publish_command () =
+  let source_root = Stdlib.Sys.argv.(2) in
+  let store_dir = Stdlib.Sys.argv.(3) in
+  let inventory = "dune-project" :: List.rev (Oracle.source_inputs source_root) in
+  let p = Oracle.project ~source_inputs:inventory "observable" in
+  let result =
+    if Array.length Stdlib.Sys.argv = 6 then (
+      let resolved = Project.elaborate_for_flow p |> Or_error.ok_exn in
+      let simulation_project = Project.elaborate p ~mode:Simulation |> Or_error.ok_exn in
+      let bundle = Bundle.render ~simulation_project ~source_root ~input_paths:inventory
+          resolved |> Or_error.ok_exn in
+      Out_channel.write_all Stdlib.Sys.argv.(5) ~data:"ready";
+      while not (Stdlib.Sys.file_exists Stdlib.Sys.argv.(4)) do U.sleepf 0.01 done;
+      Or_error.map (Bundle.publish bundle ~store_dir) ~f:(fun publication -> bundle, publication))
+    else Project.emit_bundle_to_store p ~source_root ~store_dir
+  in
+  match result with
+  | Error e -> prerr_endline (Error.to_string_hum e); Stdlib.exit 1
+  | Ok (bundle, publication) ->
+    print_endline (Yojson.Safe.to_string
+      (`Assoc [ "identity", `String (Bundle.identity bundle)
+              ; "directory", `String publication.directory
+              ; "reused", `Bool publication.reused ]));
+    Stdlib.exit 0
+;;
+
 let () =
+  if String.equal Stdlib.Sys.argv.(1) "publish" then publish_command ();
   let source_root = Stdlib.Sys.argv.(1) in
   let output_root = Stdlib.Sys.argv.(2) in
   let output name = Filename.concat output_root name in
@@ -40,6 +70,11 @@ let () =
     assert (not (Stdlib.Sys.file_exists output_dir))
   in
   expect_failure "empty" "source_inputs" (project ~source_inputs:[] ()) ();
+  let failed_store = output "failed store" in
+  assert (Or_error.is_error
+            (Project.emit_bundle_to_store (project ~source_inputs:[] ())
+               ~source_root ~store_dir:failed_store));
+  assert (not (Stdlib.Sys.file_exists failed_store));
   assert (List.is_empty !calls);
   reject_implementation := true;
   expect_failure "design" "implementation rejected" p ();
@@ -61,12 +96,22 @@ let () =
   assert (List.equal Elaboration_mode.equal !calls [ Implementation ]);
   let open Yojson.Safe.Util in
   assert (Yojson.Safe.equal (member "simulation_sources" (Bundle.manifest fallback))
-          (member "synthesis_sources" (Bundle.manifest fallback)));
+           (member "synthesis_sources" (Bundle.manifest fallback)));
+  calls := [];
+  let stored_fallback, _ = Project.emit_bundle_to_store ~include_simulation:false p
+      ~source_root ~store_dir:(output "fallback store") |> Or_error.ok_exn in
+  assert (List.equal Elaboration_mode.equal !calls [ Implementation ]);
+  assert (String.equal (Bundle.identity stored_fallback) (Bundle.identity fallback));
   reject_simulation := false;
   calls := [];
   let default_bundle = Project.emit_bundle p ~source_root
       ~output_dir:(output "default") |> Or_error.ok_exn in
   assert (List.equal Elaboration_mode.equal !calls [ Simulation; Implementation ]);
+  calls := [];
+  let stored_default, _ = Project.emit_bundle_to_store p ~source_root
+      ~store_dir:(output "default store") |> Or_error.ok_exn in
+  assert (List.equal Elaboration_mode.equal !calls [ Simulation; Implementation ]);
+  assert (String.equal (Bundle.identity stored_default) (Bundle.identity default_bundle));
   let explicit_bundle = Project.emit_bundle ~include_simulation:true p ~source_root
       ~output_dir:(output "explicit") |> Or_error.ok_exn in
   assert (String.equal (Bundle.identity default_bundle) (Bundle.identity explicit_bundle));
@@ -75,6 +120,10 @@ let () =
               (Bundle.file default_bundle path) (Bundle.file explicit_bundle path)));
   expect_failure "missing" "source input is missing"
     (project ~source_inputs:[ "absent.ml" ] ()) ();
+  assert (Or_error.is_error
+            (Project.emit_bundle_to_store (project ~source_inputs:[ "absent.ml" ] ())
+               ~source_root ~store_dir:failed_store));
+  assert (not (Stdlib.Sys.file_exists failed_store));
   let reference = Target.Inputs.reference_cmos5l_6x4 in
   let inputs =
     { reference with
@@ -103,6 +152,14 @@ let () =
       let expected = Bundle.render ?simulation_project ~source_root
           ~input_paths:inventory resolved |> Or_error.ok_exn in
       Bundle.write expected ~output_dir:(output ("manual-" ^ suffix)) |> Or_error.ok_exn;
+      let stored, publication = Project.emit_bundle_to_store ~inputs ~include_simulation p
+          ~source_root ~store_dir:(output ("store-" ^ suffix)) |> Or_error.ok_exn in
+      assert (not publication.reused);
+      assert (String.equal (Filename.basename publication.directory) (Bundle.identity stored));
+      assert (String.equal (Bundle.identity stored) (Bundle.identity expected));
+      let again = Bundle.publish stored ~store_dir:(output ("store-" ^ suffix))
+          |> Or_error.ok_exn in
+      assert (again.reused && String.equal again.directory publication.directory);
       assert (String.equal (Bundle.identity actual) (Bundle.identity expected));
       assert (List.equal String.equal (Bundle.paths actual) (Bundle.paths expected));
       List.iter (Bundle.paths expected) ~f:(fun path ->

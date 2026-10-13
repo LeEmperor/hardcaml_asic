@@ -26,14 +26,14 @@ sys.dont_write_bytecode = True
 REPO = Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = REPO / "flow"
 sys.path.insert(0, str(PACKAGE_ROOT))
-from hardcaml_asic_flow import archive, cli, identity, managed_python, paths, phase4, probe, report, runtime_contract, runtime_observation, execution_transport  # noqa: E402
+from hardcaml_asic_flow import archive, cli, identity, managed_python, paths, phase4, probe, report, runtime_contract, runtime_observation, execution_transport, result_store  # noqa: E402
 
 
 class LayoutTest(unittest.TestCase):
     def test_every_installed_module_resolves_inside_the_package(self):
         # A module that still loaded itself from `scripts/` would pass its own
         # unit tests in a checkout and then be missing from a prefix.
-        for module in (archive, cli, identity, managed_python, paths, phase4, probe, report, runtime_contract, runtime_observation, execution_transport):
+        for module in (archive, cli, identity, managed_python, paths, phase4, probe, report, runtime_contract, runtime_observation, execution_transport, result_store):
             with self.subTest(module=module.__name__):
                 self.assertEqual(
                     Path(module.__file__).resolve().parent, paths.PACKAGE_DIR)
@@ -44,7 +44,7 @@ class LayoutTest(unittest.TestCase):
         # exactly what P6.4 removes. `paths` is the single place allowed to turn
         # a location into paths, and it derives every one of them from this
         # package's own __file__ -- so there is one thing to audit, not six.
-        for module in (archive, cli, identity, managed_python, phase4, report, runtime_contract, runtime_observation, execution_transport):
+        for module in (archive, cli, identity, managed_python, phase4, report, runtime_contract, runtime_observation, execution_transport, result_store):
             source = Path(module.__file__).read_text()
             for construct in ("__file__", "spec_from_file_location",
                               "module_from_spec", "parents["):
@@ -177,6 +177,14 @@ class IdentityTest(unittest.TestCase):
         described = json.loads(stdout.getvalue())
         self.assertEqual(described["tool"], "hardcaml-asic-flow")
         self.assertEqual(described["supported_record_schemas"], [1])
+        contract = described["cli_contract"]
+        self.assertEqual(contract["version"], 2)
+        self.assertEqual(contract["default_output"], "human")
+        self.assertEqual(contract["json_option"], "--json")
+        self.assertEqual(contract["results_defaults"]["root"], "<caller-cwd>/_flow_results")
+        self.assertTrue(contract["capabilities"]["collect_json_writes_results"])
+        self.assertFalse(contract["capabilities"]["provision_json"])
+        self.assertFalse(contract["capabilities"]["archive_json_list"])
         self.assertEqual(described["module_dir"], str(paths.PACKAGE_DIR))
 
     def test_version_and_help_dispatch_no_operation(self):

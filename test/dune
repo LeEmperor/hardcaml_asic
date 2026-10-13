@@ -42,6 +42,15 @@
  (action (run python3 %{dep:test_phase4.py})))
 
 (rule
+ (alias result-store)
+ (deps test_result_store.py (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:test_result_store.py})))
+
+(alias
+ (name runtest)
+ (deps (alias result-store)))
+
+(rule
  (alias runtest)
  (deps test_report.py (source_tree ../flow) ../toolchain.lock)
  (action (run python3 %{dep:test_report.py})))

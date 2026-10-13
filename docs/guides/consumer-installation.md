@@ -15,8 +15,9 @@ field `build` â†’ `elaborated_project`, and `Bundle.render ?simulation_build` â†
 This checkpoint publishes no new release or dependency pin.
 
 The project-centered API adds constructor `?source_inputs`, the inventory getter,
-declaration-only `Project.describe`, and shared `Project.emit_bundle`. The migrated
-FIFO owns `Fifo_asic.project ()` and a `project describe|emit` CLI; see the
+declaration-only `Project.describe`, shared `Project.emit_bundle` and
+`emit_bundle_to_store` / `Bundle.publish`. The migrated FIFO owns
+`Fifo_asic.project ()` and `project describe|emit|preflight|run`; see the
 [entrypoint guide](bundle-emission.md#project-centered-entry-point).
 Its recorded `1714764859274f80a9f5ad207421a04601824e99` baseline cannot supply this
 API. Recorded refresh now rejects it without replacing the current selection.
@@ -91,6 +92,21 @@ Two things are not yet true of `--version`, and will not be until P6.5: it does
 not report a source revision or checkout state, and it does not verify that the
 linked OCaml library was built from the same artifact as the command. It says so
 in both its human and `--json` output rather than implying otherwise.
+
+### CLI contract 2 migration
+
+The current candidate advertises `cli_contract.version = 2` in `--version --json`.
+This is distinct from package 0.1.0, record schema 1 and unstamped source identity.
+Human summaries are now the default: active machine calls must explicitly pass
+`--json`. `--verbose` writes diagnostics only to stderr. Run/execute no longer
+require `--runs`: the default is `<caller-cwd>/_flow_results/runs`, with explicit
+`--results-root` and `--runs` overrides. Standalone preflight saves an operation
+and report by default; `--output FILE` writes only that file, requiring its parent.
+`collect --json` still writes normal results; legacy `collect --stdout` and report
+remain read-only. Archive JSON list is unsupported. The example validates contract
+2 before dispatch and selects project-relative defaults. See the
+[full command/storage matrix](flow.md#default-result-store-and-cli-contract-2).
+`scripts/phase4.py` retains its historical development path-only run spelling.
 
 ## Resolve TT/LibreLane collateral
 

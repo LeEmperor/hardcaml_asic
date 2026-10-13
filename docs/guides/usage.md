@@ -141,10 +141,13 @@ checkout as the consumer source root. Optional `?inputs` supplies target inputs.
 Emission defaults to a separate Simulation elaboration; `~include_simulation:false`
 skips it and uses synthesis sources for simulation. Shared orchestration resolves,
 renders, then writes; lower-level `Bundle.render`/`Bundle.write` remain available.
-Writing is non-atomic, but starts only after rendering succeeds. Tool execution is
-separate. The FIFO exposes `Fifo_asic.project ()` and a `bin/project.exe` CLI with
-`describe` (local declaration S-expression, no elaboration or I/O) and `emit`.
-It has no runtime `run`/`inspect` operation. See the concrete OCaml and shell
+Explicit writing is non-atomic, but starts only after rendering succeeds. For a
+store, `Project.emit_bundle_to_store` publishes/reuses verified immutable inputs.
+Tool execution is separate. The FIFO exposes `Fifo_asic.project ()` and
+`bin/project.exe describe|emit|preflight|run`: default emit uses
+`ROOT/_flow_results/bundles`, preflight saves operations, and run requires a stage
+and performs implementation only. Description is local S-expression or a JSON
+wrapper, with no elaboration or I/O. See the concrete OCaml and shell
 [entrypoint examples](bundle-emission.md#project-centered-entry-point) and the
 [dependency transition](consumer-installation.md).
 
@@ -190,7 +193,14 @@ still ASIC P6.5/P6.6 work; these instructions do not close those gates.
 
 These development examples use scripts from `$ASIC_SOURCE`. They delegate to the
 installed package's source implementation but retain some historical output and
-option spellings. In particular, the installed `run` returns final JSON, whereas
+option spellings. Installed CLI contract **2** defaults to human summaries;
+machine callers must request `--json` (raw payload, diagnostics on stderr).
+Its run/execute store defaults to `<caller-cwd>/_flow_results/runs`;
+`--runs` remains an override. The project CLI
+defaults to the discovered/explicit project's `_flow_results` instead. The
+[current command matrix](flow.md#default-result-store-and-cli-contract-2) covers
+activation, simple emit/preflight commands and roots. The installed `run --json`
+returns final JSON, whereas
 the development adapter below prints a path. See the installed command's `--help`
 and [installation guide](consumer-installation.md) for the public boundary:
 
@@ -321,7 +331,8 @@ documents the earlier manual procedure and remains historical evidence.
   target constraints, and `MACROS` are protected. Change their typed owner, not
   a raw LibreLane override.
 - Bundle input errors: declared `source_inputs` (lower-level `input_paths`) must be nonempty, relative, present files
-  inside a committed Git source root. Output must be new or empty.
+   inside a committed Git source root. Explicit output must be new or empty;
+   identity-addressed stores allow only complete verified exact reuse.
 - Environment errors: preflight reports missing/mismatched tools, revisions,
   hashes, PDK views, support tools, Python, and container image without installing
   or silently substituting them.
