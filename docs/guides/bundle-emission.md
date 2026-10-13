@@ -92,6 +92,13 @@ to `clk`.
 
 ## Bundle layout
 
+Current schema-1 manifests add `requested_tools.runtime_policy` to the hashed
+payload: host exact-minor 3.11, native host runtime, official LibreLane 3.1.0.dev3
+Docker image with supported Python 3.10..3.14 / `Requires-Python >=3.10`.
+Old bundles without it retain strict 3.11 for both roles. **Fresh emission into a
+new directory is required** for the new semantics; do not edit preserved bundles.
+See [runtime checks and consumer commands](flow.md#runtime-policy-and-launch-binding).
+
 ```text
 OUTPUT/
   info.yaml                 TT metadata, pinout, top, clock and source list

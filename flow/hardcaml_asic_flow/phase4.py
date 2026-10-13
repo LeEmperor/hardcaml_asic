@@ -23,6 +23,8 @@ import sys
 import tempfile
 import uuid
 
+from . import runtime_contract, runtime_observation, execution_transport
+
 
 class PrerequisiteError(Exception):
     pass
@@ -158,8 +160,23 @@ def preflight(bundle, support_tools, pdk_root, python, allow_python_mismatch=Fal
               native=False):
     issues = []
     waivers = []
+    # Status is a read-only readiness probe: do not refresh collateral indexes.
+    git_env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
     manifest = read_json(bundle / "manifest.json")
     requested = manifest["requested_tools"]
+    runtime = {"authority": "bundle.requested_tools", "normalized_policy": None,
+               "execution_mode": "native" if native else "dockerized",
+               "observations": {}, "comparisons": []}
+    report = {"ready": False, "issues": issues, "waivers": waivers, "references": [],
+              "requested": requested, "actual": {}, "runtime_contract": runtime,
+              "support_tools": str(support_tools.resolve()),
+              "pdk_root": str(pdk_root.resolve()), "python": str(python.absolute())}
+    try:
+        contract = runtime_contract.policy_from_requested(requested)
+        runtime["normalized_policy"] = contract
+    except runtime_contract.ContractError as exc:
+        issues.append(f"runtime policy: {exc}")
+        return report
     if manifest.get("schema_version") != 1 or manifest.get("adapter") != "LibreLane":
         issues.append("unsupported bundle schema or adapter")
     for entry in manifest["files"]:
@@ -174,7 +191,7 @@ def preflight(bundle, support_tools, pdk_root, python, allow_python_mismatch=Fal
         (pdk_root, requested["pdk_revision"], "PDK"),
     ):
         try:
-            actual = command_output(["git", "-C", str(root), "rev-parse", "HEAD"])
+            actual = command_output(["git", "-C", str(root), "rev-parse", "HEAD"], env=git_env)
             if actual != expected:
                 issues.append(f"{label} revision {actual}; requested {expected}")
         except PrerequisiteError as exc:
@@ -194,62 +211,104 @@ def preflight(bundle, support_tools, pdk_root, python, allow_python_mismatch=Fal
                 if ref.get("sha256") and actual_hash != ref["sha256"]:
                     issues.append(f"changed {ref['role']}: {path}")
                 status = command_output(["git", "-C", str(repo), "status",
-                                         "--porcelain", "--", str(path)])
+                                         "--porcelain", "--", str(path)], env=git_env)
                 if status:
                     issues.append(f"modified {ref['role']}: {path}")
         except (KeyError, PrerequisiteError) as exc:
             issues.append(str(exc))
-    versions = {}
+    versions = report["actual"]
+    host = {}
+    container = {}
     try:
-        versions["python"] = command_output([str(python), "-c", "import sys; print('.'.join(map(str, sys.version_info[:3])))"])
-        versions["librelane"] = command_output([str(python), "-c", "from importlib.metadata import version; print(version('librelane'))"])
-        if versions["librelane"] != requested["librelane"]:
-            issues.append(f"LibreLane {versions['librelane']}; requested {requested['librelane']}")
-        if not versions["python"].startswith(requested["python"] + "."):
-            mismatch = f"Python {versions['python']}; requested {requested['python']}"
-            (waivers if allow_python_mismatch else issues).append(mismatch)
-    except PrerequisiteError as exc:
+        host = runtime_observation.observe_host(python)
+        versions.update(python=host["python_version"], librelane=host["librelane_version"])
+    except runtime_observation.ObservationError as exc:
         issues.append(str(exc))
+    runtime["observations"]["host"] = host
     if not native:
         try:
-            versions["docker_server"] = command_output(
-                ["docker", "info", "--format", "{{.ServerVersion}}"])
-            image = f"ghcr.io/librelane/librelane:{requested['librelane']}"
-            versions["librelane_image"] = command_output(
-                ["docker", "image", "inspect", "--format", "{{.Id}}", image])
-            versions["container_python"] = command_output(
-                ["docker", "run", "--rm", "--pull=never", "--entrypoint", "python",
-                 image, "--version"]).removeprefix("Python ")
-            if not versions["container_python"].startswith(requested["python"] + "."):
-                mismatch = (f"container Python {versions['container_python']}; "
-                            f"requested {requested['python']}")
-                (waivers if allow_python_mismatch else issues).append(mismatch)
-        except PrerequisiteError as exc:
+            container = runtime_observation.observe_container(
+                contract["implementation"]["dockerized"]["image_ref"])
+            versions.update(docker_server=container["engine_identity"]["server_version"],
+                            librelane_image=container["image_identity"]["image_id"],
+                            container_python=container["python_version"],
+                            container_librelane=container["librelane_version"],
+                            container_requires_python=container["requires_python"])
+        except runtime_observation.ObservationError as exc:
             issues.append(str(exc))
-    return {"ready": not issues, "issues": issues, "waivers": waivers,
-            "references": references,
-            "requested": requested,
-            "actual": versions, "support_tools": str(support_tools.resolve()),
-            "pdk_root": str(pdk_root.resolve()), "python": str(python.absolute())}
+        runtime["observations"]["container"] = container
+    evaluation = runtime_observation.evaluate_observations(
+        contract, host, container, native=native, allow_python_mismatch=allow_python_mismatch)
+    runtime["comparisons"] = evaluation["comparisons"]
+    for key, destination in (("issues", issues), ("waivers", waivers)):
+        for row in evaluation[key]:
+            destination.append(f"{row['role']} {row['field']} {row['actual']!r}; requested {row['expected']!r}")
+    try:
+        report["execution_binding"] = execution_transport.from_preflight(report, native=native)
+    except execution_transport.BindingError as exc:
+        issues.append(f"execution binding: {exc}")
+    report.update(ready=not issues, references=references)
+    return report
 
 
-def run_logged(argv, cwd, env, log, record, record_path):
+def run_logged(argv, cwd, env, log, record, record_path, cleanup=None, timeout=None):
     record["commands"].append(argv)
     save(record_path, record)
     with log.open("a") as stream:
         stream.write(f"\n$ {shlex.join(argv)}\n")
         stream.flush()
-        with subprocess.Popen(argv, cwd=cwd, env=env, stdout=stream,
-                              stderr=subprocess.STDOUT, start_new_session=True) as process:
-            try:
-                return process.wait()
-            except (FlowInterrupted, KeyboardInterrupt):
+        process = None
+        failed = False
+        try:
+            process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=stream,
+                                       stderr=subprocess.STDOUT, start_new_session=True)
+            return process.wait() if timeout is None else process.wait(timeout=timeout)
+        except BaseException:
+            failed = True
+            raise
+        finally:
+            def remove_owned_container():
+                if cleanup is None:
+                    return None
+                try:
+                    cleanup()
+                    record.setdefault("container_cleanup", []).append({"status": "removed-or-absent"})
+                except Exception as exc:
+                    record.setdefault("container_cleanup", []).append({"status": "failed", "error": str(exc)})
+                    return exc
+                finally:
+                    save(record_path, record)
+                return None
+
+            if failed and process is not None:
                 try:
                     os.killpg(process.pid, signal.SIGTERM)
                 except ProcessLookupError:
                     pass
-                process.wait()
-                raise
+            cleanup_error = remove_owned_container()
+            if failed and process is not None:
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        record["client_termination"] = "failed: process did not exit after SIGKILL"
+                        save(record_path, record)
+                # A reaped client does not prove its descendants exited.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                # Retry after the client is stopped: an in-flight launch may have
+                # raced the first rm. Neither client exit nor TERM proves removal.
+                remove_owned_container()
+            if cleanup_error is not None and not failed:
+                raise RuntimeError(f"owned container cleanup failed: {cleanup_error}")
 
 
 def run(args):
@@ -260,6 +319,7 @@ def run(args):
     run_dir.mkdir(parents=True, exist_ok=False)
     record_path = run_dir / "run.json"
     record = {"schema_version": 1, "run_id": run_id,
+              "execution_binding_required": True,
               "build_identity": manifest["identity"], "bundle": str(bundle),
               "manifest_sha256": digest(bundle / "manifest.json"),
               "started_at": now(), "ended_at": None,
@@ -275,6 +335,10 @@ def run(args):
         save(run_dir / "preflight.json", check)
         if not check["ready"]:
             raise PrerequisiteError("; ".join(check["issues"]))
+        binding = execution_transport.validate(check.get("execution_binding"))
+        if binding != execution_transport.from_preflight(check, native=args.native):
+            raise PrerequisiteError("execution binding differs from preflight observations")
+        record["execution_binding"] = binding
         project = run_dir / "project"
         shutil.copytree(bundle, project)
         for ref in manifest["target"]["external_references"]:
@@ -286,7 +350,7 @@ def run(args):
         (project / "runs/asic").mkdir(parents=True)
         if digest(project / "manifest.json") != record["manifest_sha256"]:
             raise PrerequisiteError("staged manifest differs from original bundle")
-        env = os.environ.copy()
+        env = execution_transport.environment()
         env["PATH"] = str(args.python.parent) + os.pathsep + env.get("PATH", "")
         env["PDK_ROOT"] = str(args.pdk_root.resolve())
         env["PDK"] = manifest["target"]["technology"]
@@ -295,9 +359,19 @@ def run(args):
         # P3 already emitted the complete, resolved config. Calling TT's
         # create_user_config here would rewrite it and its WASM Yosys port probe
         # cannot read an absolute staged path. Run the exact emitted config.
-        flow = [str(args.python), "-m", "librelane"]
-        if not args.native:
-            flow += ["--docker-no-tty", "--dockerized"]
+        cleanup = None
+        if args.native:
+            flow = [binding["interpreter"], *binding["interpreter_flags"], "-m", "librelane"]
+        else:
+            record["execution_engine"] = execution_transport.verify_engine(binding)
+            execution_transport.verify_image(binding)
+            name = execution_transport.owned_name()
+            record["container_name"] = name
+            flow = execution_transport.docker_command(
+                binding, project, args.pdk_root.resolve(), name=name,
+                pdk=manifest["target"]["technology"])
+            flow += [*binding["interpreter_flags"], "-m", "librelane"]
+            cleanup = lambda: execution_transport.cleanup(binding, name)
         flow += ["--pdk-root", str(args.pdk_root.resolve()),
                 "--pdk", manifest["target"]["technology"], "--manual-pdk",
                 "--run-tag", "asic", "--force-run-dir", "runs/asic"]
@@ -305,7 +379,7 @@ def run(args):
         if args.stage == "synthesis":
             flow += ["--to", "Yosys.Synthesis"]
         flow += ["src/config.json"]
-        if run_logged(flow, project, env, log, record, record_path):
+        if run_logged(flow, project, env, log, record, record_path, cleanup=cleanup):
             raise RuntimeError("LibreLane failed; see execution.log and project/runs/asic")
         if (digest(project / "manifest.json") != record["manifest_sha256"]
                 or digest(bundle / "manifest.json") != record["manifest_sha256"]):
@@ -367,7 +441,7 @@ def check(args):
               "logs": ["postcheck.log"], "tools": {}}
     save(record_path, record)
     log = check_dir / "postcheck.log"
-    env = os.environ.copy()
+    env = execution_transport.environment()
     env["PDK_ROOT"] = str(args.pdk_root.resolve())
     env["PDK"] = "ihp-sg13cmos5l"
     work = check_dir / "tt"
@@ -398,14 +472,55 @@ def check(args):
         # LibreLane image, with the run and PDK mounted at their host paths.
         image = f"ghcr.io/librelane/librelane:{run['environment']['requested']['librelane']}"
         pdk_root = args.pdk_root.resolve()
-        simulator = ["docker", "run", "--rm", "--pull=never",
+        binding = run.get("execution_binding")
+        simulator_cleanup = None
+        if (run.get("execution_binding_required")
+                or "execution_binding" in run.get("environment", {})) and binding is None:
+            raise PrerequisiteError("new run is missing execution binding")
+        if "execution_binding" in run:
+            execution_transport.validate(binding)
+            if binding["execution_mode"] != "dockerized":
+                raise PrerequisiteError("new native run has no recorded container simulator binding")
+            saved_binding = run["environment"].get("execution_binding")
+            if saved_binding is not None and saved_binding != binding:
+                raise PrerequisiteError("run binding differs from saved preflight binding")
+            record["tools"]["execution_binding"] = binding
+            record["tools"]["execution_engine"] = execution_transport.verify_engine(binding)
+            record["tools"]["simulator_image"] = execution_transport.verify_image(binding)
+            name = execution_transport.owned_name()
+            record["simulator_container_name"] = name
+            simulator = execution_transport.docker_command(
+                binding, run_dir, pdk_root, name=name, workdir=check_dir, entrypoint="env")
+            simulator_cleanup = lambda: execution_transport.cleanup(binding, name)
+        else:
+            name = execution_transport.owned_name()
+            record["simulator_container_name"] = name
+            # Historical records retain tag/engine fallback, but still own and
+            # clean their simulator containers independently of the client.
+            simulator_cleanup = lambda: execution_transport.cleanup(
+                {"engine_identity": {"executable": "docker"}}, name)
+            simulator = ["docker", "run", "--rm", "--pull=never", "--name", name,
                      "--user", f"{os.getuid()}:{os.getgid()}",
                      "-v", f"{run_dir}:{run_dir}", "-v", f"{pdk_root}:{pdk_root}:ro",
                      "-w", str(check_dir), "--entrypoint", "env", image]
-        record["tools"]["simulator_image"] = command_output(
-            ["docker", "image", "inspect", "--format", "{{.Id}}", image])
-        record["tools"]["iverilog"] = command_output(
-            simulator + ["iverilog", "-V"]).splitlines()[0]
+            record["tools"]["simulator_image"] = command_output(
+                ["docker", "image", "inspect", "--format", "{{.Id}}", image])
+        probe_failed = False
+        try:
+            record["tools"]["iverilog"] = (runtime_observation.output(
+                simulator + ["iverilog", "-V"]) if binding else command_output(
+                simulator + ["iverilog", "-V"])).splitlines()[0]
+        except BaseException:
+            probe_failed = True
+            raise
+        finally:
+            if simulator_cleanup:
+                try:
+                    simulator_cleanup()
+                except Exception as exc:
+                    record.setdefault("container_cleanup", []).append({"status": "failed", "error": str(exc)})
+                    if not probe_failed:
+                        raise
         save(record_path, record)
         precheck_command = ("exec env -u PYTHONPATH -u PYTHONHOME "
                             + " ".join(shlex.quote(x) for x in
@@ -426,9 +541,9 @@ def check(args):
         compile_command = simulator + ["iverilog", "-g2012", "-DFUNCTIONAL", "-DSIM",
                             "-s", args.testbench_top, "-o", str(executable),
                            *(str(path) for path in models), str(netlist), str(testbench)]
-        if run_logged(compile_command, check_dir, env, log, record, record_path):
+        if run_logged(compile_command, check_dir, env, log, record, record_path, cleanup=simulator_cleanup):
             record["checks"]["gate_level"] = "fail"
-        elif run_logged(simulator + ["vvp", str(executable)], check_dir, env, log, record, record_path):
+        elif run_logged(simulator + ["vvp", str(executable)], check_dir, env, log, record, record_path, cleanup=simulator_cleanup):
             record["checks"]["gate_level"] = "fail"
         else:
             record["checks"]["gate_level"] = "pass"
@@ -587,6 +702,12 @@ def collect(run_dir):
         run_dir / "project/manifest.json").is_file() else {}
     librelane_tool = {"name": "LibreLane", "version": record.get(
         "environment", {}).get("actual", {}).get("librelane")}
+    container = record.get("environment", {}).get("runtime_contract", {}).get(
+        "observations", {}).get("container", {})
+    mode = record.get("execution_mode", record.get("environment", {}).get(
+        "runtime_contract", {}).get("execution_mode"))
+    if mode == "dockerized" and container.get("librelane_version"):
+        librelane_tool["version"] = container["librelane_version"]
     yosys_tool = {"name": "Yosys", "version": synth_creator}
     for name, item in checks.items():
         item.update({"definition": f"reported {name} violation counts are zero",

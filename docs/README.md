@@ -8,21 +8,28 @@
    proposed provider/refactoring direction. Read this before changing an interface.
 3. **[User workflow](guides/usage.md)** — how to use the existing library and CLI.
 
-Current checkpoint (2026-10-12): ASIC P0–P5/M3 and P6.1–P6.3/P6.4a/b have
+Current checkpoint (2026-10-13): role-specific host/container runtime policy,
+shared readiness checks and observed image/engine launch binding passed final
+2026-10-12 acceptance; see [closeout evidence](phase_plan.md#hostcontainer-runtime-policy-closeout)
+and [fresh-emission requirements](guides/flow.md#runtime-policy-and-launch-binding).
+ASIC P0–P5/M3 and P6.1–P6.3/P6.4a/b have
 evidence. Lexical venv interpreter paths, bounded provisioning readiness,
-`provision --python BASE` and thin example bootstrap are delivered
+managed Python/Tcl default, explicit `provision --python BASE` and thin example bootstrap are delivered
 ([current acceptance](phase_plan.md#tool-environment-closeout-acceptance)); broader
 P6.5c and P6.5/P6.6 gates remain open. The provisional synthetic
 [provider observation fixtures/model](../test/fixtures/provider_observation/v1/README.md)
 are implemented: 50 focused tests and the full provider regression suite pass
 ([evidence](phase_plan.md#provider-observation-fixture-acceptance)). The subsequently
 authorized [LibreLane feasibility probe](../experiments/librelane_observation/README.md)
-is **BLOCKED**: the prior probe found missing Tcl/Tk support in local Python
-3.12.3, and current readiness rejects the Python 3.11 mismatch first. Zero of eleven
-authored cases executed; the synthetic configuration remains unvalidated
-([evidence](../evidence/librelane-observation/blocked-local.json)). Next is
-user-authorized Python/Tcl prerequisite resolution and a bounded rerun; matching
-LibreLane source metadata does not validate the requested Python 3.11 environment.
+was **historically BLOCKED** by missing Tcl/Tk in local Python 3.12.3. Zero of
+eleven official cases executed, and none has yet been rerun; the synthetic
+configuration remains unvalidated ([unchanged evidence](../evidence/librelane-observation/blocked-local.json)).
+The [actual managed-runtime evidence](../evidence/managed-python/actual-runtime.json)
+now proves Python 3.11.17/Tcl 9.0.4 and LibreLane Tcl smoke in a disposable venv.
+Next is the bounded observation rerun with that verified scratch venv, separately
+from synthesis/full-flow execution. The final actual read-only bootstrap check,
+including container metadata, exits 0; the earlier five-gap check remains dated
+historical evidence.
 Project run routing needs separate agreement. Live catalog, early correlation,
 step updates and incremental result publication remain undelivered.
 The owner's [development specimen](../../hardcaml_asic_example/README.md) now has

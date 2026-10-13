@@ -631,8 +631,36 @@ let render
                    | view :: _ -> view.revision
                    | [] -> "") )
             ; "librelane", string "3.1.0.dev3"
-            ; "python", string "3.11"
-            ] )
+             ; "python", string "3.11"
+             ; ( "runtime_policy"
+               , assoc
+                   [ "schema_version", `Int 1
+                   ; ( "host"
+                     , assoc
+                         [ ( "python"
+                           , assoc
+                               [ "policy", string "exact-minor"
+                               ; "version", string "3.11"
+                               ] )
+                         ] )
+                   ; ( "implementation"
+                     , assoc
+                         [ "native", assoc [ "policy", string "host-runtime" ]
+                         ; ( "dockerized"
+                           , assoc
+                               [ "policy", string "official-librelane-image"
+                               ; "image_ref", string "ghcr.io/librelane/librelane:3.1.0.dev3"
+                               ; ( "python"
+                                 , assoc
+                                     [ "policy", string "distribution-supported"
+                                     ; "requires_python", string ">=3.10"
+                                     ; ( "supported_minors"
+                                       , list string [ "3.10"; "3.11"; "3.12"; "3.13"; "3.14" ] )
+                                     ] )
+                               ] )
+                         ] )
+                   ] )
+             ] )
       ]
   in
 

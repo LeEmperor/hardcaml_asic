@@ -36,21 +36,24 @@ In the user's own shell, from `hardcaml_asic_example`:
 
 ```sh
 source .dev/asic/current/activate.sh
-./bootstrap.sh --check --no-container
+./bootstrap.sh --check
 ```
 
 Activation selects the installed library/CLI generation; it does not refresh or
-provision tools. On the observed local host this check exits **2**, as expected
-until host Python 3.11 and its matching Tcl prerequisites are available (managed
-collateral gaps must also be resolved explicitly). It creates no `_flow_tools/`.
+provision tools. Final 2026-10-12 actual check including container exits **0**;
+the earlier five-gap result is historical. The final scoped snapshots show
+`_flow_tools/`, caches, env and collateral indexes unchanged after the optional
+Git-lock fix. Container checks use shared structured metadata observations and
+role-specific policy: host 3.11, official-image Python 3.10..3.14 / >=3.10.
 `--no-container` skips all engine/image queries and does not certify native EDA.
-See [local closeout evidence](../phase_plan.md#tool-environment-closeout-acceptance).
+See [local closeout evidence](../phase_plan.md#hostcontainer-runtime-policy-closeout)
+and [fresh bundle preflight](flow.md#runtime-policy-and-launch-binding).
 
 | Storage | Owner / configuration |
 | --- | --- |
 | Provider library and `hardcaml-asic-flow` CLI | Installation prefix/opam or consumer isolated generation; separate from tool collateral |
-| `tt`, `pdk`, `.venv`, `.venv-precheck`, generated environment | Shared provisioner under `--toolchain PATH` / `TOOLCHAIN` |
-| Host Python/Tcl, OCaml/opam, Git, container runtime | Host/user installation; a venv still depends on its base interpreter and libraries |
+| `python`, `tt`, `pdk`, `.venv`, `.venv-precheck`, generated environment | Shared provisioner under `--toolchain PATH` / `TOOLCHAIN` |
+| Host CLI Python >= 3.9, explicit external Python/Tcl, OCaml/opam, Git, container runtime | Host/user installation; a venv still depends on its base interpreter and libraries |
 | Container images | Docker/Podman-managed image store, not a child selected by `--toolchain` |
 | Nix packages used by precheck | Nix-managed store, normally `/nix/store`, not relocated by `--toolchain` |
 | Bundles, runs and archives | Consumer-selected output/evidence stores; separate from provisioned tools |
@@ -73,25 +76,16 @@ Python 3.12.3 with `/usr/bin` as home. The generated `toolchain-env.sh` still na
 Matching package/source versions do not establish environment acceptance.
 
 The prior [official-API observation probe](../../experiments/librelane_observation/README.md)
-was **BLOCKED**, exit 2 at `Config.load`'s Tcl evaluation: missing `tkinter`
-([record](../../evidence/librelane-observation/blocked-local.json)). Zero of eleven
-authored sequencing cases ran, and synthetic PDK configuration is unvalidated.
-Targeted standard Python 3.12 directories and venv site-packages yielded no
-compatible module; the literal venv resolves neither `tkinter` nor `_tkinter`.
-The minimum prerequisite is working `tkinter`, its matching `_tkinter` extension
-and Tcl libraries for the selected interpreter. User-authorized environment work
-or an already usable compatible runtime must supply that before a bounded rerun.
-No Python 3.11 extension can substitute for a 3.12 extension; real supported
-runtime acceptance also needs the declared 3.11 environment.
-
-The earlier CLI interpreter canonicalization defect is now fixed: lexical venv
-paths are preserved and real-venv installed-prefix acceptance passed. Current
-provisioning readiness rejects the 3.12-versus-3.11 mismatch before Tcl; it does
-not claim a new Tcl test ran. The default and explicit existing-root checks both
-exited 2 with zero before/after inventory differences; see the
-[closeout record](../phase_plan.md#tool-environment-closeout-acceptance) for local,
-ignored evidence paths. No host repair or provisioning occurred. P6.5c remains
-open; runtime preflight Tcl/native EDA/Podman runner generalization is unimplemented.
+was **historically BLOCKED** by missing `tkinter` in that old 3.12 venv
+([unchanged record](../../evidence/librelane-observation/blocked-local.json)). Zero
+of eleven official sequencing cases ran; they have **not yet been rerun**.
+The old source `.toolchain/` remains unchanged. A verified managed 3.11 runtime
+and disposable LibreLane venv are now available for the next bounded rerun;
+official Tcl evaluation smoke passed, but synthetic Flow configuration remains
+unvalidated. See [managed-runtime evidence and reproduction](consumer-installation.md#managed-python-integrity-and-initial-platform)
+and [current closeout](../phase_plan.md#tool-environment-closeout-acceptance).
+Preflight now checks host Tcl readiness. P6.5c is partially addressed; native EDA,
+Podman runner generalization and physical gates remain open.
 
 ## Quick start
 
@@ -126,6 +120,7 @@ An externally selected root may be shared by several consumers.
 
 | Path | What | Size |
 | --- | --- | --- |
+| `.toolchain/python/` | retained pinned Python/Tcl generation and verified archive cache | ~31 MB archive plus extracted runtime |
 | `.toolchain/tt` | tt-support-tools, detached at `support_tools_revision` | ~9 MB |
 | `.toolchain/pdk` | IHP-Open-PDK, detached at `pdk_revision`; this is `PDK_ROOT` | ~1.3 GB |
 | `.toolchain/.venv` | `librelane` at `librelane_version` | ~200 MB |
@@ -158,7 +153,7 @@ refuses an unadvertised object.
 ./bootstrap.sh --install-deps   # also install missing packages into the opam switch
 ./bootstrap.sh --offline        # reuse what is installed; fetch nothing
 ./bootstrap.sh --no-container   # skip the Docker/Podman prerequisite and the image
-./bootstrap.sh --python /path/to/python3.11 # base Python for new flow/precheck venvs
+./bootstrap.sh --python /path/to/python3.11 # explicit external base override
 ./bootstrap.sh --help
 ```
 
@@ -257,13 +252,13 @@ it until it restarts.
 ### Python 3.11 missing or an existing venv has the wrong minor
 
 The bundle requests the minor version in `toolchain.lock`; provisioning and
-preflight reject a mismatch. Select a compatible base with `--python BASE`, or
-make `python3.11` available. Discovery accepts `python3` only when its actual
-version matches. Nothing waives it for you:
+preflight reject a mismatch. Normal provisioning acquires the pinned managed
+Python/Tcl base when needed; `--python BASE` explicitly selects an external base.
+There is no host-discovery fallback. Nothing waives a mismatch for you:
 the shared command has no `--allow-python-mismatch`, and a recorded
 `--waiver python-version=REASON` is P6.5's. `scripts/phase4.py` keeps the flag as
-an explicit development opt-in. New venvs require a matching host interpreter;
-installing that interpreter alone does not change an existing venv's Python.
+an explicit development opt-in. New venvs require a matching managed or external
+base; acquiring that base alone does not change an existing venv's Python.
 Existing mismatched environments need explicitly authorized repair and validation.
 
 ### `<checkout> is at <hash>, not <hash>, and is dirty`

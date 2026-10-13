@@ -1,8 +1,12 @@
 # hardcaml_asic phase plan
 
-Current checkpoint: 2026-10-12 interpreter paths, provisioning readiness and thin
-consumer bootstrap delivered with narrow acceptance; ASIC P6.5c remains open.
-Authorized LibreLane probe remains BLOCKED, zero cases executed;
+Current checkpoint: 2026-10-13 host/container runtime-policy review and docs
+closeout; 2026-10-12 final acceptance passed. New bundles declare role-specific
+runtime policy and attempts bind to observed local image/engine identity.
+Managed Python/Tcl, interpreter paths and thin bootstrap are delivered;
+ASIC P6.5c is partially addressed and remains open.
+The prior LibreLane probe is historically BLOCKED, zero official cases executed;
+verified compatible scratch LibreLane is now available for the next bounded rerun.
 project-centered entrypoint delivered and reviewed,
 following provisional provider observation fixture/model acceptance, consumer
 refresh/activation, real-checkout emission, API rename, hardening and the FIFO specimen.
@@ -27,20 +31,60 @@ and exact delivery evidence. Proposed new work below awaits design discussion.
     development refresh works pending owner adoption of a committed candidate.
 3. The provisional provider observation fixtures/model are accepted with
     [evidence below](#provider-observation-fixture-acceptance). The authorized
-    [LibreLane probe is blocked](#librelane-feasibility-probe-review); next resolve
-    its Python/Tcl prerequisite through user-authorized environment work or an
-    available compatible runtime, then rerun boundedly. Project run routing needs
+    [LibreLane probe review](#librelane-feasibility-probe-review) retains its historical
+    blocker; next rerun boundedly using the verified scratch LibreLane venv.
+    Full collateral provisioning is separate. Project run routing needs
     separate agreement. Follow the dependencies below for P6 identity/installation.
 
 This queue records future ordering, not authorization to proceed beyond the
 completed bounded tool-environment slices.
 
+### Host/container runtime-policy closeout
+
+Final 2026-10-12 acceptance (reviewed 2026-10-13; not rerun here):
+
+- Provider `check_project_api.py --provider-checks`: **278 Python tests**, OCaml,
+  RTL, **8** external private-boundary and **4** high-level manual checks passed.
+  Installed-prefix **44**, consumer **27 Python tests**, build/strict/describe and
+  FIFO/wrapper **7,330 + 20,017 edges each**, RTL **11,429 each** plus negative
+  oracles passed. No real ASIC flow executed; source/probe readiness is not
+  physical compatibility. Earlier tiny transport help, RW/RO mount and sleep
+  cleanup smoke passed, separately from flow execution.
+- Current installed generation is `caa4d18002274defb5eebb15e35a9042`; CLI remains
+  unstamped and recorded consumer pin `1714764859274f80a9f5ad207421a04601824e99`
+  is unchanged. This source candidate awaits owner adoption; no pin was advanced.
+- [Local acceptance summary](../../hardcaml_asic_example/.dev/runtime-contract-checks/acceptance-20261012-01/acceptance-summary.json)
+  records fresh bundle identity
+  `95510e3e0e8b2883c901de43e5e53c4ae2ca907ce81f7dfcbbde05bb0030537b`:
+  installed preflight **exit 0**, `ready=true`, no issues/waivers, six passing
+  comparisons. Host **3.11.17**, container **3.13.13**, both LibreLane
+  **3.1.0.dev3**, container `Requires-Python >=3.10`, host Tcl ready.
+- Docker **29.8.1**, Linux/amd64, flags `-I -B`; observed local image ID
+  `sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a`.
+  RepoDigests are recorded separately even though their hash happens to coincide.
+  The official tag is mutable across machines, not a new registry digest pin.
+- Old `/tmp/fifo-project-bundle-01` identity
+  `c2e4d438aaa7c803c711712e22d278f293accb82cfe0f4160d7a3bda650144a9` retains
+  all **21 files / 29 entries**, bytes/modes/mtimes; installed preflight exits **1**
+  solely for container 3.13.13 versus legacy requested 3.11. New semantics require
+  fresh emission, never editing that bundle. The fresh bundle honestly records
+  dirty README input; it remains the recorded snapshot before this docs closeout.
+- Actual `./bootstrap.sh --check` including container exits **0**. Final scoped
+  source/tool-root/cache/env/index snapshots are unchanged by preflight/bootstrap.
+  This applies **after** the narrow `GIT_OPTIONAL_LOCKS=0` collateral-probe fix,
+  verified with a real temporary-repository regression; the initial failing
+  attempt is not claimed read-only.
+
+See [runtime policy and launch binding](guides/flow.md#runtime-policy-and-launch-binding).
+Next bounded task: separately authorize the observation-probe rerun or synthesis;
+neither was run for this closeout. Historical acceptance below remains dated.
+
 ### Tool-environment ownership: first slice
 
 Settled scope: installed OCaml library/stdlib Python CLI independent of source
 checkout; consumer-owned configurable `_flow_tools/` default for LibreLane and
-precheck venvs plus PDK/support collateral; host Python/Tcl and Docker/Nix stores
-separate. Thin consumer bootstrap delegates to the installed provider without
+precheck venvs plus PDK/support collateral and managed Python/Tcl; host CLI Python,
+external overrides and Docker/Nix stores remain separate. Thin consumer bootstrap delegates to the installed provider without
 copied pins, source fallback or automatic refresh. Provider refresh is separate
 from tool provisioning. Readiness, example default-root/bootstrap and
 `provision --python BASE` are now implemented; broader P6.5c gates remain open.
@@ -76,8 +120,47 @@ availability, full live provider acceptance and P6.5c closure are not establishe
 
 ### Tool-environment closeout acceptance
 
-2026-10-12 follow-up, recorded from the stopped review and narrow acceptance;
-these checks were not rerun by the documentation-only closeout:
+Latest 2026-10-12 managed-runtime closeout (completed acceptance, not rerun by
+this documentation review):
+
+- Provider `check_project_api.py --provider-checks`: **220 Python tests**, OCaml,
+  Icarus, eight external private-boundary checks and four bundle equivalences
+  passed. Installed-prefix **40**, example bootstrap **11** and dependency **16**
+  give **287 reported unit tests**, excluding consumer RTL. The earlier disposable
+  read-only Dune-copy permission failure was fixed by chmod of only that copy;
+  **23 toolchain regression tests** and the final full suite passed.
+- Current installed generation `fd7a5326ca7647a7a4f8803740e570be` contains the helper
+  and pin/assets; installed-path checks prove no source-checkout search. Exact
+  actual-runtime inspection passed with network audit guards. CLI remains 0.1.0
+  unstamped; recorded provider `1714764859274f80a9f5ad207421a04601824e99` remains
+  unchanged and needs development mode until owner adoption of a committed candidate.
+- Activated example build/runtest/strict/describe passed: core/wrapper each
+  **7,330 + 20,017 edges**; synthesis/simulation RTL each **11,429**, plus negative
+  oracles. No new FIFO rerun is needed for this documentation closeout.
+- [Actual acquisition evidence](../evidence/managed-python/actual-runtime.json):
+  CPython **3.11.17 / PBS 20261009**, Tcl **9.0.4**, Tk **9.0**, OpenSSL **3.5.9**;
+  two disposable pip venvs, wheel-only LibreLane **3.1.0.dev3**, official Tcl
+  evaluation returned **42**. Main-root `.venv`, precheck, TT and PDK were not
+  created; old source `.toolchain/` is unchanged. No official Flow case or physical
+  signoff is claimed. See [integrity/platform and opt-in reproduction](guides/consumer-installation.md#managed-python-integrity-and-initial-platform).
+- Actual `./bootstrap.sh --check --no-container` exits **2**, exactly **five gaps**:
+  TT, PDK, flow venv, precheck requirements and env file. No host-Python mismatch
+  or managed-runtime gap. All **5,166 tool-root entries** retain mode/size/mtime/link
+  and receipt/cache hashes (atime ignored). Fresh missing-root check and invalid
+  external `/usr/bin/python3` provision control both failed without root creation,
+  download or fallback.
+- Preserved local ignored [logs and result files](../../hardcaml_asic_example/.dev/managed-bootstrap-checks/acceptance-20261012-a/),
+  including [read-only comparisons](../../hardcaml_asic_example/.dev/managed-bootstrap-checks/acceptance-20261012-a/readonly-comparisons.json)
+  and [five-gap log](../../hardcaml_asic_example/.dev/managed-bootstrap-checks/acceptance-20261012-a/bootstrap-real-check.log).
+
+P6.5c is partially addressed. Identity/waivers, source-denial installation,
+runtime preflight Tcl/native/container and physical gates stay open. Next bounded
+task is the official observation rerun with the verified scratch LL venv; explicit
+full bootstrap is a separate owner action that provisions collateral/network.
+The consumer README is bundle-declared source: these doc edits legitimately change
+future bundle identity; preserved earlier snapshots remain historical evidence.
+
+Earlier readiness-only acceptance follows as historical evidence:
 
 - Provider `check_project_api.py --provider-checks`: **160 Python tests**, OCaml,
   eight private-boundary external failures, four high-level/manual whole-bundle
@@ -103,7 +186,7 @@ these checks were not rerun by the documentation-only closeout:
   and `*comparison.json` alongside them. These are environment-specific paths,
   not permanent published evidence.
 
-Provisioning now requires the requested Python minor (3.11), probes host
+That earlier slice required the requested Python minor (3.11), probed host
 venv/ensurepip/headless Tcl before writes, checks existing flow/precheck metadata,
 and safely quotes/data-checks generated env files. `--check` is bounded with no
 writes, bytecode, index changes or env rewrite; `--no-container` makes no engine
@@ -112,8 +195,8 @@ establish a new Tcl test beyond the prior missing-Tk probe. No host repair or
 tool provisioning occurred; source/destination tool stores are unchanged.
 Runtime preflight Tcl policy, native EDA readiness and Podman runner generalization
 remain unimplemented. P6.5c and live observation remain open, with zero probe cases.
-The user's own shell must [activate then check](guides/bootstrap.md#consumer-check);
-nonzero is expected until host Python 3.11 and Tcl prerequisites are available.
+The current user's workflow is [activate then check](guides/bootstrap.md#consumer-check);
+the latest five-gap result above supersedes that earlier prerequisite diagnosis.
 
 The earlier blanket "finish P6, then migrate scaf" queue is superseded. Do not
 execute archived handoff prompts. No feature, source stamp, specimen, observation
@@ -131,13 +214,13 @@ recorded below; live observation remains unimplemented.
 | ASIC P6.4a/P6.4b | Complete: packaging, shared routing and installed-operation coverage | [P6.4a](development/p6-implementation-plan.md#12-p64a-completion-evidence), [P6.4b](development/p6-implementation-plan.md#13-p64b-completion-evidence) |
 | ASIC P6.4 parent | Open only for source-access-denied installation evidence | ASIC P6.6a supplies it; do not redo packaging |
 | ASIC P6.5a/b/c, P6.6a/b | Open | Scope and dependencies below |
-| Tool-environment first slices | Delivered: lexical interpreter paths, bounded readiness, base-Python selection and thin example bootstrap; broader P6.5c open | [Current acceptance](#tool-environment-closeout-acceptance), [bootstrap guide](guides/bootstrap.md) |
+| Tool-environment first slices | Delivered: managed Python/Tcl default, lexical paths, bounded readiness, external base override and thin bootstrap; P6.5c partially addressed/open | [Current acceptance](#tool-environment-closeout-acceptance), [bootstrap guide](guides/bootstrap.md) |
 | ASIC P7.1–P7.6 / M4 | Open historical migration; deferred from current queue | [Original tasks](archive/phase-plan-through-p6.4b.md#12-p7--consumer-migration-and-legacy-retirement), [backlog](backlog/README.md) |
 | ASIC S.1/S.3 | Complete, with qualified S.3 interpretation | [SRAM index](sram/README.md) |
 | ASIC S.2 | Open; S.2a complete, S.2b research partially resolved | [SRAM checkpoint](sram/sram-status.md) |
 | ASIC S.4 | Gated, unimplemented | Requires S.2 capability gates |
 | ASIC T.1 | Open, independent toolchain follow-up | Scope below |
-| Provider observation | Provisional synthetic fixtures/model accepted; live observation unimplemented; authorized LibreLane probe BLOCKED, zero cases executed | [Probe review](#librelane-feasibility-probe-review), [fixture acceptance](#provider-observation-fixture-acceptance), [architecture](architecture.md#8-provider-observation-direction) |
+| Provider observation | Provisional synthetic fixtures/model accepted; live observation unimplemented; historical probe BLOCKED, zero official cases; verified scratch runtime available for rerun | [Probe review](#librelane-feasibility-probe-review), [fixture acceptance](#provider-observation-fixture-acceptance), [architecture](architecture.md#8-provider-observation-direction) |
 | Resolved-build boundary hardening | Implemented; full runtest passes | [Evidence below](#resolved-build-boundary-hardening-evidence) |
 | Public API rename | Implemented; provider and FIFO acceptance passed, active documentation migrated | [Migration and evidence below](#public-api-rename-migration-and-evidence) |
 | Project-centered entrypoint | Delivered: declaration inventory/description, shared emission, FIFO facade and `describe|emit`; no runtime project run/inspect | [Acceptance below](#project-centered-entrypoint-acceptance) |
@@ -597,7 +680,7 @@ another planning document. Every provider slice must work without Workbench.
 
 | Slice | ASIC deliverable and acceptance | Other repository ownership |
 | --- | --- | --- |
-| Contract and feasibility | Provisional two-run fixtures/model accepted; authorized probe BLOCKED on Python/Tcl prerequisite, no demonstrated LibreLane observation seam | Workbench decoder/reducer fixtures; example design/constraint selection |
+| Contract and feasibility | Provisional two-run fixtures/model accepted; historical probe BLOCKED, verified scratch runtime ready for rerun, no demonstrated LibreLane observation seam | Workbench decoder/reducer fixtures; example design/constraint selection |
 | Durable catalog and outer observation | Explicit stores, list/inspect, early request correlation, stored operation outcomes, consistent snapshot/cursor and replay; late independent readers observe two runs | Workbench P1 adapter/P2 derived catalog and early run display |
 | Internal step lifecycle | Actual starts/completions/failures/skips/interruption and repeated occurrences, including deferred errors; earlier steps visible while a later one runs | Workbench execution feature/views |
 | Incremental results | Synthesis resources, then one intermediate timing result, then checks; origin/constraints/corner/units preserved and data complete before publication | Workbench timing/resources/check projections |
@@ -708,11 +791,12 @@ read-only runtime/source review. [Experiment and eleven authored cases](../exper
   are outside it. No live observation interface, durable publication, container
   visibility or real descendant cancellation has been demonstrated.
 
-**Next bounded action:** resolve the selected Python's Tcl prerequisite through
-user-authorized environment work (working `tkinter`, ABI-compatible `_tkinter`
-and Tcl libraries), or identify an already usable compatible runtime, then rerun
-the same official constructor/probe under its bounds. Python 3.12 success alone
-would not accept the declared 3.11 runtime. Do not bypass configuration validation.
+**Current next bounded action:** the later [managed-runtime closeout](#tool-environment-closeout-acceptance)
+supplies compatible Python/Tcl and a scratch LibreLane venv. Rerun the same
+official constructor/probe under its bounds using
+`hardcaml_asic_example/.dev/managed-python-acceptance/real-av_wxhlt/librelane-smoke/bin/python`.
+The historical record above remains unchanged; no official case has yet run.
+Do not bypass configuration validation. Full collateral provisioning is separate.
 
 **Separate installed-launch fix delivered:** CLI interpreter paths formerly used
 `Path.resolve`, losing venv selection to `/usr/bin/python3.12`. The

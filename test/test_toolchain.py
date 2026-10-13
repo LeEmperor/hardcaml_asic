@@ -1,6 +1,7 @@
 """Bounded provider checks: synthetic collateral, no network or real provisioning."""
 
 import os
+import json
 from pathlib import Path
 import shlex
 import shutil
@@ -53,9 +54,38 @@ esac
         for key in ("support_tools_revision", "pdk_revision"):
             lock = lock.replace(values[key], "0" * 40)
         lock = lock.replace("python=" + values["python"], "python=" + MINOR)
+        lock = lock.replace("runtime_host_python_version=" + values["python"], "runtime_host_python_version=" + MINOR)
         self.lock = self.work / "fixture.lock"
         self.lock.write_text(lock)
         self.env = dict(os.environ, PATH=str(self.bin), TOOLCHAIN=str(self.root), MUTATIONS=str(self.log))
+        # A relocated installed-package fixture. The orchestration interpreter is
+        # the running test Python, regardless of the target runtime's version.
+        self.package = self.work / "prefix/flow/hardcaml_asic_flow"
+        shutil.copytree(SCRIPT.parent.parent, self.package, ignore=shutil.ignore_patterns("__pycache__"))
+        self.script = self.package / "data/toolchain.sh"
+        self.helper_log = self.work / "helper-calls"
+        self.env.update(HELPER_LOG=str(self.helper_log), HELPER_STATUS="3")
+        # copytree preserves Dune's read-only mode; only this disposable stub changes.
+        helper = self.package / "managed_python.py"
+        helper.chmod(helper.stat().st_mode | 0o200)
+        (self.package / "managed_python.py").write_text('''import json, os, sys
+class Error(Exception):
+    def __init__(self, message, status=2):
+        super().__init__(message)
+        self.status = status
+def describe():
+    return {"version": os.environ["FIXTURE_MINOR"] + ".17"}
+def main(argv):
+    with open(os.environ["HELPER_LOG"], "a") as out:
+        out.write(json.dumps(argv) + "\\n")
+    status = int(os.environ["HELPER_STATUS"])
+    if status:
+        print(os.environ.get("HELPER_ERROR", "fixture managed receipt missing"), file=sys.stderr)
+        return status
+    print(os.environ.get("HELPER_JSON", json.dumps({"interpreter": os.environ.get("HELPER_BASE")})))
+    return 0
+''')
+        self.env["FIXTURE_MINOR"] = MINOR
 
     def executable(self, name, body):
         path = self.bin / name
@@ -96,10 +126,12 @@ esac
             f': "${{{key}:={value}}}"' for key, value in values.items()) +
             "\nexport " + " ".join(values) + "\n")
 
-    def run_check(self, *args, check=True):
+    def run_check(self, *args, check=True, no_container=True):
         before = snapshot(self.root) if self.root.exists() else None
-        completed = subprocess.run(["/bin/bash", str(SCRIPT), "--lock-file", str(self.lock),
-                                    "--no-container", *(["--check"] if check else []), *args],
+        completed = subprocess.run(["/bin/bash", str(self.script), "--lock-file", str(self.lock),
+                                    "--host-python", sys.executable,
+                                    *(["--no-container"] if no_container else []),
+                                    *(["--check"] if check else []), *args],
                                    env=self.env, text=True, capture_output=True, timeout=30)
         self.assertFalse(self.log.exists(), self.log.read_text() if self.log.exists() else "")
         if check:
@@ -115,6 +147,7 @@ esac
         code, output = self.run_check(check=False)
         self.assertEqual(code, 0, output)
         self.assertEqual(snapshot(self.root), before)
+        self.assertFalse(self.helper_log.exists())
 
     def test_readiness_failures(self):
         self.ready()
@@ -138,11 +171,12 @@ esac
 
     def test_absent_root_missing_and_wrong_base_stop_before_mutators(self):
         for check in (True, False):
-            for args in ((), ("--python", "/missing/python")):
+            for args in (("--python", "/missing/python"),):
                 code, output = self.run_check(*args, check=check)
                 self.assertEqual(code, 2, output)
                 self.assertFalse(self.root.exists())
-        self.lock.write_text(self.lock.read_text().replace("python=" + MINOR, "python=0.1"))
+                self.assertFalse(self.helper_log.exists())
+        self.wrong_minor()
         for check in (True, False):
             code, output = self.run_check("--python", sys.executable, check=check)
             self.assertEqual(code, 2, output)
@@ -151,7 +185,7 @@ esac
 
     def test_existing_wrong_python_never_recreated(self):
         self.ready()
-        self.lock.write_text(self.lock.read_text().replace("python=" + MINOR, "python=0.1"))
+        self.wrong_minor()
         for check in (True, False):
             before = snapshot(self.root)
             code, output = self.run_check(check=check)
@@ -168,17 +202,206 @@ esac
         code, output = self.run_check("--python", "/absent/explicit")
         self.assertEqual(code, 2, output)
         self.assertIn("/absent/explicit", output)
-        # Force creation to be needed; python3 is acceptable only after its real version probe.
+        # A host interpreter on PATH is never the managed default.
         shutil.rmtree(self.root / ".venv-precheck")
         (self.bin / ("python" + MINOR)).unlink()
         self.executable("python3", f'exec {shlex.quote(str(base))} "$@"\n')
         code, output = self.run_check()
         self.assertEqual(code, 2, output)
-        self.assertNotIn("base readiness:", output)
-        self.lock.write_text(self.lock.read_text().replace("python=" + MINOR, "python=0.1"))
+        self.assertIn("managed runtime not installed", output)
+        self.assertEqual(json.loads(self.helper_log.read_text()), ["--root", str(self.root), "--check"])
+        self.wrong_minor()
         code, output = self.run_check()
         self.assertEqual(code, 2, output)
-        self.assertIn("base readiness: Python", output)
+        self.assertIn("explicitly repair", output)
+
+    def test_managed_check_without_root_is_read_only(self):
+        code, output = self.run_check()
+        self.assertEqual(code, 2, output)
+        self.assertIn("managed runtime not installed", output)
+        self.assertNotIn("base readiness: Python", output)
+        self.assertFalse(self.root.exists())
+        self.assertEqual(json.loads(self.helper_log.read_text()), ["--root", str(self.root), "--check"])
+
+    def wrong_minor(self):
+        self.lock.write_text(self.lock.read_text().replace("python=" + MINOR, "python=0.1")
+                             .replace("runtime_host_python_version=" + MINOR,
+                                      "runtime_host_python_version=0.1"))
+
+    def test_managed_acquisition_and_offline_forwarding(self):
+        for offline in (False, True):
+            self.env["HELPER_STATUS"] = "4"
+            code, output = self.run_check(*(["--offline"] if offline else []), check=False)
+            self.assertEqual(code, 4, output)
+            args = json.loads(self.helper_log.read_text().splitlines()[-1])
+            self.assertEqual(args, ["--root", str(self.root), *(["--offline"] if offline else [])])
+            self.assertFalse(self.root.exists())
+
+    def test_managed_json_path_with_spaces_used_after_offline_cache_acquire(self):
+        self.ready()
+        shutil.rmtree(self.root / ".venv-precheck")
+        self.env.update(HELPER_STATUS="0", HELPER_BASE=str(self.root / ".venv/bin/python"))
+        before = snapshot(self.root)
+        code, output = self.run_check("--offline", check=False)
+        self.assertEqual(code, 4, output)  # Package policy still disallows offline pip.
+        self.assertIn("no precheck environment", output)
+        self.assertEqual(snapshot(self.root), before)
+        self.assertEqual(json.loads(self.helper_log.read_text()), ["--root", str(self.root), "--offline"])
+
+    def test_managed_errors_preserve_public_categories(self):
+        for status, expected in ((2, 2), (3, 5), (4, 4), (5, 7), (6, 2), (124, 7)):
+            with self.subTest(status=status):
+                self.env.update(HELPER_STATUS=str(status), HELPER_ERROR="corrupt managed/missing asset/deadline fixture")
+                code, output = self.run_check(check=False)
+                self.assertEqual(code, expected, output)
+                self.assertIn(self.env["HELPER_ERROR"], output)
+                self.assertFalse(self.root.exists())
+
+    def test_invalid_helper_json_never_becomes_a_base_or_host_fallback(self):
+        self.env["HELPER_STATUS"] = "0"
+        for payload in ("not JSON", "{}", '{"interpreter": 3}', '{"interpreter": "relative/python"}'):
+            with self.subTest(payload=payload):
+                self.env["HELPER_JSON"] = payload
+                code, output = self.run_check(check=False)
+                self.assertEqual(code, 7, output)
+                self.assertIn("invalid managed Python helper JSON", output)
+                self.assertFalse(self.root.exists())
+
+    def test_known_broken_environment_blocks_acquisition(self):
+        self.ready()
+        shutil.rmtree(self.root / ".venv")
+        (self.pre_site / "klayout.py").write_text("raise ImportError('known broken klayout')\n")
+        code, output = self.run_check(check=False)
+        self.assertEqual(code, 2, output)
+        self.assertIn("known broken klayout", output)
+        self.assertFalse(self.helper_log.exists())
+
+    def test_python_children_sanitized_without_changing_caller(self):
+        self.ready()
+        (self.flow_site / "tkinter.py").write_text(
+            "import os\nassert not any(k in os.environ for k in "
+            "('PYTHONHOME','PYTHONPATH','TCL_LIBRARY','TK_LIBRARY','TCLLIBPATH','LD_LIBRARY_PATH'))\n"
+            "class Tcl:\n    def eval(self, expression): return '42'\n")
+        self.env.update({k: "/bad inherited path" for k in
+                         ("PYTHONHOME", "PYTHONPATH", "TCL_LIBRARY", "TK_LIBRARY", "TCLLIBPATH", "LD_LIBRARY_PATH")})
+        before = self.env.copy()
+        code, output = self.run_check()
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.env, before)
+        self.assertFalse(self.helper_log.exists())
+
+    def test_engine_prevalidation_before_managed_acquisition(self):
+        self.executable("docker", "exit 99\n")
+        code, output = self.run_check(check=False, no_container=False)
+        self.assertEqual(code, 2, output)
+        self.assertIn("daemon is not reachable", output)
+        self.assertFalse(self.helper_log.exists())
+        self.assertFalse(self.root.exists())
+
+    def test_container_check_shared_metadata_policy_no_pull_and_skip(self):
+        self.ready()
+        calls = self.work / "container-probes"
+        self.env.update(CONTAINER_CALLS=str(calls), CONTAINER_LL=self.ll,
+                        CONTAINER_PY="3.13.13", CONTAINER_REQ=">=3.10")
+        self.executable("docker", r'''
+printf '%s\n' "$1 $2" >> "$CONTAINER_CALLS"
+case "$1 $2" in
+    "info ") exit 0 ;;
+    "info --format") printf '{"ServerVersion":"fixture","SecurityOptions":[]}\n' ;;
+    "image inspect") printf '[{"Id":"sha256:1111111111111111111111111111111111111111111111111111111111111111","Os":"linux","Architecture":"amd64","RepoDigests":[]}]\n' ;;
+    "run --rm") printf '{"python_version":"%s","librelane_version":"%s","requires_python":"%s","metadata_error":null}\n' "$CONTAINER_PY" "$CONTAINER_LL" "$CONTAINER_REQ" ;;
+    "rm -f") exit 0 ;;
+    *) printf 'unexpected Docker %s\n' "$*" >> "$MUTATIONS"; exit 99 ;;
+esac
+''')
+        code, output = self.run_check(no_container=False)
+        self.assertEqual(code, 0, output)
+        self.assertIn("container runtime metadata matches", output)
+        self.assertIn("run --rm", calls.read_text())
+        for key, value in (("CONTAINER_LL", "9.9.9"), ("CONTAINER_PY", "3.15.1"),
+                           ("CONTAINER_REQ", ">=3.11")):
+            old = self.env[key]
+            self.env[key] = value
+            code, output = self.run_check(no_container=False)
+            self.assertEqual(code, 2, output)
+            self.assertIn("container runtime", output)
+            self.env[key] = old
+        calls.unlink()
+        code, output = self.run_check(no_container=True)
+        self.assertEqual(code, 0, output)
+        self.assertFalse(calls.exists())
+
+    def test_unknown_policy_stops_before_probes_or_acquisition(self):
+        self.lock.write_text(self.lock.read_text().replace("runtime_policy_schema_version=1", "runtime_policy_schema_version=99"))
+        code, output = self.run_check(no_container=False)
+        self.assertEqual(code, 3, output)
+        self.assertIn("runtime policy", output)
+        self.assertFalse(self.helper_log.exists())
+
+    def test_existing_requirements_validated_before_new_base(self):
+        self.ready()
+        shutil.rmtree(self.root / ".venv-precheck")
+        self.requirements.write_text("klayout>=0.28\n")
+        code, output = self.run_check(check=False)
+        self.assertEqual(code, 2, output)
+        self.assertIn("unsupported requirement", output)
+        self.assertFalse(self.helper_log.exists())
+
+    def mocked_python_installs(self):
+        self.ready()
+        shutil.rmtree(self.root / ".venv")
+        shutil.rmtree(self.root / ".venv-precheck")
+        log = self.work / "python-processes"
+        self.env["PYTHON_PROCESS_LOG"] = str(log)
+        self.env["FIXTURE_LL"] = self.ll
+        base = self.executable("managed base python", r'''
+[[ -z ${PYTHONHOME+x}${PYTHONPATH+x}${TCL_LIBRARY+x}${TK_LIBRARY+x}${TCLLIBPATH+x}${LD_LIBRARY_PATH+x} ]] || exit 91
+[[ ${PYTHONDONTWRITEBYTECODE:-} == 1 ]] || exit 92
+[[ $1 == -I && $2 == -B ]] || exit 93
+printf '%s\n' "$*" >> "$PYTHON_PROCESS_LOG"
+case "$*" in
+    "-I -B -m venv "*)
+        target=${@: -1}
+        /bin/mkdir -p "$target/bin"
+        /bin/cp "$0" "$target/bin/python" ;;
+    "-I -B -m pip "*)
+        [[ $5 == --cache-dir && $6 == "$TOOLCHAIN/cache/pip" ]] || exit 94 ;;
+    *probe.py*) exit 0 ;;
+    *importlib.metadata*)
+        if [[ ${@: -1} == librelane ]]; then printf '%s\n' "$FIXTURE_LL"; else printf '0.28.0\n'; fi ;;
+    *) exit 95 ;;
+esac
+''')
+        self.env.update({k: "inherited bad path" for k in
+                         ("PYTHONHOME", "PYTHONPATH", "TCL_LIBRARY", "TK_LIBRARY", "TCLLIBPATH", "LD_LIBRARY_PATH")})
+        return base, log
+
+    def test_managed_default_creates_venvs_with_isolated_python_and_local_pip_cache(self):
+        base, log = self.mocked_python_installs()
+        self.env.update(HELPER_STATUS="0", HELPER_BASE=str(base))
+        code, output = self.run_check(check=False)
+        self.assertEqual(code, 0, output)
+        calls = log.read_text().splitlines()
+        self.assertEqual(sum("-m venv " in call for call in calls), 2)
+        self.assertEqual(sum("-m pip " in call for call in calls), 4)
+        self.assertTrue(all(call.startswith("-I -B ") for call in calls))
+        self.assertEqual(json.loads(self.helper_log.read_text()), ["--root", str(self.root)])
+
+    def test_explicit_external_creates_venvs_without_managed_fallback(self):
+        base, log = self.mocked_python_installs()
+        code, output = self.run_check("--python", str(base), check=False)
+        self.assertEqual(code, 0, output)
+        self.assertFalse(self.helper_log.exists())
+        self.assertEqual(sum("-m venv " in call for call in log.read_text().splitlines()), 2)
+
+    def test_bad_external_with_ready_existing_environments_still_fails_without_writes(self):
+        self.ready()
+        before = snapshot(self.root)
+        code, output = self.run_check("--python", "/missing explicit/python", check=False)
+        self.assertEqual(code, 2, output)
+        self.assertIn("/missing explicit/python", output)
+        self.assertEqual(snapshot(self.root), before)
+        self.assertFalse(self.helper_log.exists())
 
     def test_missing_metadata_is_not_ready(self):
         self.ready()

@@ -253,8 +253,15 @@ settled by P6.3 and do not change its architecture:
    of advertising an end-to-end native path. Historical records remain readable.
    `provision --no-container` describes this limited preparation explicitly.
 3. Requested Python is a **major.minor** value today, not an exact patch pin.
-   Require that requested minor by default for host flow and container probes;
-   record patch versions. No new patch pin and no default waiver.
+    Require that requested minor by default for host flow and container probes;
+    record patch versions. No new patch pin and no default waiver.
+    **2026-10-13 current amendment:** the above records the settled original
+    both-role decision and remains the rule for bundles without runtime policy.
+    Newly emitted schema-1 bundles explicitly separate host exact-minor 3.11
+    from official-image distribution-supported Python 3.10..3.14 / >=3.10;
+    native uses host runtime. This requires fresh emission, not editing history
+    or a waiver. See [policy](../guides/flow.md#runtime-policy-and-launch-binding)
+    and [final acceptance](../phase_plan.md#hostcontainer-runtime-policy-closeout).
 4. New public `report --json` must not bypass acceptance. `collect --stdout`
    provides raw inspection without an acceptance promise. This deliberately
    tightens the old script behavior, while preserving stored JSON shape.

@@ -33,14 +33,16 @@ done
 bindir=$(CDPATH= cd -- "$(dirname -- "$target")" && pwd -P) || exit 2
 
 package_root=$bindir/../lib/hardcaml_asic/flow
-if [ ! -f "$package_root/hardcaml_asic_flow/cli.py" ]; then
+for module in cli runtime_contract runtime_observation execution_transport; do
+if [ ! -f "$package_root/hardcaml_asic_flow/$module.py" ]; then
     # Deliberately no search for a source checkout to fall back on: an
     # incomplete installation is reported as one.
     printf '%s: installed flow modules are missing: expected %s\n' \
-        "$0" "$package_root/hardcaml_asic_flow/cli.py" >&2
+        "$0" "$package_root/hardcaml_asic_flow/$module.py" >&2
     printf 'Reinstall the hardcaml_asic package; no source checkout is searched.\n' >&2
     exit 2
 fi
+done
 package_root=$(CDPATH= cd -- "$package_root" && pwd -P) || exit 2
 
 command -v python3 >/dev/null 2>&1 || {

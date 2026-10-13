@@ -29,15 +29,20 @@
   (hardcaml_asic_flow/archive.py as flow/hardcaml_asic_flow/archive.py)
   (hardcaml_asic_flow/cli.py as flow/hardcaml_asic_flow/cli.py)
   (hardcaml_asic_flow/identity.py as flow/hardcaml_asic_flow/identity.py)
+  (hardcaml_asic_flow/execution_transport.py as flow/hardcaml_asic_flow/execution_transport.py)
+  (hardcaml_asic_flow/managed_python.py as flow/hardcaml_asic_flow/managed_python.py)
   (hardcaml_asic_flow/paths.py as flow/hardcaml_asic_flow/paths.py)
   (hardcaml_asic_flow/phase4.py as flow/hardcaml_asic_flow/phase4.py)
   (hardcaml_asic_flow/probe.py as flow/hardcaml_asic_flow/probe.py)
   (hardcaml_asic_flow/report.py as flow/hardcaml_asic_flow/report.py)
+  (hardcaml_asic_flow/runtime_contract.py as flow/hardcaml_asic_flow/runtime_contract.py)
+  (hardcaml_asic_flow/runtime_observation.py as flow/hardcaml_asic_flow/runtime_observation.py)
   ; Same file as the repository root toolchain.lock, which stays the one place a
   ; pin is edited and the one test/check_bundle.py asserts against the emitted
   ; manifest. data/toolchain.lock is a symlink to it in the source tree; Dune
   ; installs the contents, so the prefix holds no second handwritten copy.
   (hardcaml_asic_flow/data/toolchain.lock as flow/hardcaml_asic_flow/data/toolchain.lock)
+  (hardcaml_asic_flow/data/managed-python.json as flow/hardcaml_asic_flow/data/managed-python.json)
   (version.txt as flow/hardcaml_asic_flow/data/version.txt)))
 
 (install

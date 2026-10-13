@@ -39,3 +39,15 @@ pdk_revision=2bbec755dc67ca3db0261c3d6163e15735d66710
 
 librelane_version=3.1.0.dev3
 python=3.11
+
+# Provisioning defaults mirroring requested_tools.runtime_policy, not new pins.
+# The official tag is mutable; observers will record the actual image ID later.
+runtime_policy_schema_version=1
+runtime_host_python_policy=exact-minor
+runtime_host_python_version=3.11
+runtime_native_policy=host-runtime
+runtime_dockerized_policy=official-librelane-image
+runtime_dockerized_image_ref=ghcr.io/librelane/librelane:3.1.0.dev3
+runtime_dockerized_python_policy=distribution-supported
+runtime_dockerized_requires_python=>=3.10
+runtime_dockerized_supported_minors=3.10,3.11,3.12,3.13,3.14

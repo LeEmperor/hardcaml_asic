@@ -9,6 +9,10 @@ import subprocess
 import sys
 import tempfile
 
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "flow"))
+from hardcaml_asic_flow import runtime_contract
+
 
 def run(*args, cwd=None):
     return subprocess.run(args, cwd=cwd, check=True, capture_output=True, text=True)
@@ -64,6 +68,12 @@ def toolchain_lock(source_root, requested):
             "toolchain.lock %s=%s, manifest requested_tools %s=%s; the lockfile is a copy "
             "of lib/, update it" %
             (lock_key, pins[lock_key], manifest_key, requested[manifest_key]))
+    declared = runtime_contract.policy_from_requested(requested)
+    mirrored = runtime_contract.policy_from_lock(pins)
+    assert declared == mirrored, ("toolchain.lock runtime policy differs", declared, mirrored)
+    assert declared["source"] == "runtime-policy"
+    assert requested["runtime_policy"]["implementation"]["dockerized"]["python"][
+        "supported_minors"] == ["3.10", "3.11", "3.12", "3.13", "3.14"]
     return pins
 
 

@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "version": "3.11.17",
+  "build": "20261009",
+  "target": "x86_64-unknown-linux-gnu",
+  "flavor": "install_only_stripped",
+  "size": 30808475,
+  "sha256": "89db7607ebadb77a64709d159b86555d995368ec385a2ab33b00477790c543b0",
+  "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261009/cpython-3.11.17%2B20261009-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+  "provenance": {
+    "release": "https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/20261009",
+    "asset_id": 625538076,
+    "verification": "Release asset digest and release SHA256SUMS independently matched",
+    "compatibility": "Source/documentation indicates Tcl/Tk 9 and Python 3.11 backports; runtime validation is mandatory for every acquisition"
+  }
+}

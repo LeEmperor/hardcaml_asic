@@ -25,7 +25,7 @@
 # so this is the command after a pull that changes toolchain.lock as well as the command
 # on a new machine.
 #
-# Host Python/Tcl, container storage and Nix stores remain external to $TOOLCHAIN;
+# Managed Python/Tcl is project-local; explicit external Python, container storage and Nix stores remain external to $TOOLCHAIN;
 # an image pull uses the container engine's storage. The opam switch is the other
 # script's business (scripts/ocaml-deps.sh in a checkout). The PDK is fetched but
 # never written to by the flow.
@@ -82,6 +82,7 @@ check=0
 offline=0
 no_container=0
 base_python=""
+host_python=""
 
 usage() {
     sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -94,6 +95,7 @@ while [[ $# -gt 0 ]]; do
         --no-container) no_container=1 ;;
         --python) shift; [[ $# -gt 0 && -n $1 && $1 != --* ]] || { echo "toolchain: --python needs a path" >&2; exit 1; }; base_python=$1 ;;
         --lock-file) shift; [[ $# -gt 0 ]] || { echo "toolchain: --lock-file needs a path" >&2; exit 1; }; lock_file=$1 ;;
+        --host-python) shift; [[ $# -gt 0 && -n $1 ]] || { echo "toolchain: --host-python needs a path" >&2; exit 1; }; host_python=$1 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "toolchain: unknown option: $1 (try --help)" >&2; exit 1 ;;
     esac
@@ -123,9 +125,30 @@ mutating() { [[ $check -eq 0 ]]; }
 
 # Bound read-only subprocesses, including Git's optional index refreshes.
 export GIT_OPTIONAL_LOCKS=0
-export PYTHONDONTWRITEBYTECODE=1
 read_probe() { timeout --kill-after=2s 20s "$@"; }
-python_probe() { local python=$1; shift; read_probe "$python" -I -B "$data_dir/../probe.py" "$@"; }
+# Sanitize only children; ensurepip inherits the bytecode prohibition too.
+python_child() (
+    local name
+    for name in $(compgen -e); do
+        case $name in
+            PYTHONHOME|PYTHONPATH|TCL_LIBRARY|TK_LIBRARY|TCLLIBPATH|LD_*|DYLD_*|GCONV_PATH|GLIBC_TUNABLES) unset "$name" ;;
+        esac
+    done
+    export PYTHONDONTWRITEBYTECODE=1
+    "$@"
+)
+python_probe() { local python=$1; shift; python_child read_probe "$python" -I -B "$data_dir/../probe.py" "$@"; }
+# Installed package entry, using the CLI's internal orchestration interpreter.
+# The observer owns its per-command deadlines and named-container cleanup; do
+# not wrap it in a shorter timeout that could kill cleanup midway.
+runtime_probe() {
+    python_child "$host_python" -I -B -c '
+import sys
+sys.path.insert(0, sys.argv.pop(1))
+from hardcaml_asic_flow.runtime_observation import main
+sys.exit(main(sys.argv[1:]))
+' "$data_dir/../.." "$@" --lock "$lock_file"
+}
 prereq_gap() {
     if [[ $check -eq 1 ]]; then gap "$*"; else die "$EX_PREREQ" "$*"; fi
 }
@@ -166,6 +189,11 @@ read_lockfile() {
     librelane_version=$(lock librelane_version)
     python_version=$(lock python)
     [[ $python_version =~ ^[0-9]+\.[0-9]+$ ]] || die "$EX_LOCKFILE" "invalid Python minor: $python_version"
+    [[ -x $host_python ]] || die "$EX_PREREQ" "missing orchestration interpreter"
+    local policy_detail
+    if ! policy_detail=$(runtime_probe policy 2>&1); then
+        die "$EX_LOCKFILE" "runtime policy: $policy_detail"
+    fi
 
     # The image name is derived exactly as scripts/phase4.py derives it, rather than
     # pinned separately, so the two cannot disagree about which image a run uses.
@@ -250,16 +278,39 @@ check_prerequisites() {
         if ! detail=$(python_probe "$venv_dir/bin/python" tcl "$python_version" 2>&1); then
             prereq_gap "$venv_dir: ${detail:-Tcl probe failed or timed out}"
         fi
+        if [[ $(installed_version "$venv_dir/bin/python" librelane || true) == "$librelane_version" ]]; then
+            if ! detail=$(python_probe "$venv_dir/bin/python" flow "$python_version" "$librelane_version" 2>&1); then
+                prereq_gap "$venv_dir: ${detail:-flow probe failed or timed out}; explicitly repair the environment"
+            fi
+        fi
     fi
     venv_python=$base_python
-    if [[ -n $base_python || ! -x $venv_dir/bin/python || ! -x $precheck_venv_dir/bin/python ]]; then
-        if [[ -z $venv_python ]]; then
-            venv_python=$(command -v "python$python_version" || command -v python3 || true)
-        fi
-        if [[ -z $venv_python ]]; then
-            prereq_gap "no base Python $python_version; select --python PATH"
-        elif ! detail=$(python_probe "$venv_python" base "$python_version" 2>&1); then
+    if [[ -n $base_python ]]; then
+        if ! detail=$(python_probe "$venv_python" base "$python_version" 2>&1); then
             prereq_gap "base $venv_python: ${detail:-probe failed or timed out}; select --python PATH with Python $python_version and host Tcl/venv/ensurepip"
+        fi
+    fi
+    if [[ -f $tt_dir/precheck/requirements.txt && -x $precheck_venv_dir/bin/python ]]; then
+        if ! detail=$(python_probe "$precheck_venv_dir/bin/python" requirements "$python_version" "$tt_dir/precheck/requirements.txt" 2>&1); then
+            prereq_gap "precheck requirements: $detail; no pip resolution attempted"
+        fi
+        if [[ -n $(installed_version "$precheck_venv_dir/bin/python" klayout || true) ]]; then
+            if ! detail=$(python_child read_probe "$precheck_venv_dir/bin/python" -I -B -c 'import klayout' 2>&1); then
+                prereq_gap "$precheck_venv_dir: ${detail:-klayout import failed}; explicitly repair the environment"
+            fi
+        fi
+    fi
+    # Parse already-present requirements before acquisition, even when the new
+    # target interpreter is absent or the host runs a different Python minor.
+    if [[ -f $tt_dir/precheck/requirements.txt ]]; then
+        [[ -x $host_python ]] || die "$EX_PREREQ" "missing orchestration interpreter"
+        if ! detail=$(python_child read_probe "$host_python" -I -B -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+from hardcaml_asic_flow.probe import exact_requirements
+exact_requirements(sys.argv[2])
+' "$data_dir/../.." "$tt_dir/precheck/requirements.txt" 2>&1); then
+            prereq_gap "precheck requirements: $detail; no pip resolution attempted"
         fi
     fi
     check_precheck_nix
@@ -319,7 +370,58 @@ check_prerequisites() {
         die "$EX_PREREQ" "$container is installed but its daemon is not reachable" \
             "${advice[@]}"
     fi
-    info "$container daemon reachable"
+    info "$container daemon reachable (engine readiness only; the flow runner requires Docker)"
+}
+
+# The host interpreter comes from Operations.provision, never PATH or a checkout.
+# Import from the installed package parent explicitly under isolation. The helper
+# owns all artifact pins, verification and acquisition deadlines.
+select_python() {
+    [[ -z $base_python ]] || return 0
+    [[ ! -x $venv_dir/bin/python || ! -x $precheck_venv_dir/bin/python ]] || return 0
+    step "Resolving managed Python"
+    [[ -x $host_python ]] || die "$EX_PREREQ" "missing orchestration interpreter (--host-python internal plumbing)"
+    local mode=() result status
+    if [[ $check -eq 1 ]]; then mode=(--check)
+    elif [[ $offline -eq 1 ]]; then mode=(--offline); fi
+    if result=$(python_child "$host_python" -I -B -c '
+import sys
+sys.path.insert(0, sys.argv.pop(1))
+minor = sys.argv.pop(1)
+from hardcaml_asic_flow import managed_python as helper
+try:
+    if ".".join(helper.describe()["version"].split(".")[:2]) != minor:
+        raise helper.Error("managed Python pin does not match toolchain.lock minor")
+except helper.Error as exc:
+    print(str(exc), file=sys.stderr)
+    sys.exit(exc.status)
+sys.exit(helper.main(sys.argv[1:]))
+' "$data_dir/../.." "$python_version" --root "$TOOLCHAIN" "${mode[@]}"); then
+        if ! venv_python=$(python_child "$host_python" -I -B -c '
+import json, sys
+from pathlib import Path
+value = json.loads(sys.argv[1])["interpreter"]
+if not isinstance(value, str) or not Path(value).is_absolute() or any(c in value for c in "\n\r\0"):
+    raise ValueError("invalid helper interpreter")
+print(value)
+' "$result"); then
+            die "$EX_TOOL" "invalid managed Python helper JSON"
+        fi
+    else
+        status=$?
+        if [[ $check -eq 1 ]]; then
+            gap "managed runtime not installed or not ready (helper status $status)"
+            return 0
+        fi
+        case $status in
+            2) status=$EX_PREREQ ;;
+            3) status=$EX_MISMATCH ;;
+            4) status=$EX_NETWORK ;;
+            6) status=$EX_PREREQ ;;
+            *) status=$EX_TOOL ;;
+        esac
+        die "$status" "managed Python acquisition failed; see helper diagnostic above"
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -469,7 +571,7 @@ fetch_pdk() {
 # The installed version of a package inside a venv, empty when it is not installed.
 installed_version() {
     local python=$1 package=$2
-    read_probe "$python" -I -B -c 'import importlib.metadata, sys; print(importlib.metadata.version(sys.argv[1]))' "$package" 2>/dev/null
+    python_child read_probe "$python" -I -B -c 'import importlib.metadata, sys; print(importlib.metadata.version(sys.argv[1]))' "$package" 2>/dev/null
 }
 
 install_flow_environment() {
@@ -502,15 +604,15 @@ install_flow_environment() {
         "librelane ${have:-is not installed} and --offline was given"
 
     if [[ ! -x $python ]]; then
-        "$venv_python" -m venv "$venv_dir" || { rm -rf "$venv_dir"; \
+        python_child "$venv_python" -I -B -m venv "$venv_dir" || { rm -rf "$venv_dir"; \
             die "$EX_TOOL" "failed to create $venv_dir"; }
         info "created $venv_dir"
     fi
 
     net "installing librelane==$librelane_version"
-    "$python" -m pip install --quiet --upgrade pip >/dev/null || die "$EX_NETWORK" \
+    python_child "$python" -I -B -m pip --cache-dir "$TOOLCHAIN/cache/pip" install --quiet --upgrade pip >/dev/null || die "$EX_NETWORK" \
         "could not upgrade pip inside $venv_dir"
-    "$python" -m pip install --quiet "librelane==$librelane_version" || die "$EX_NETWORK" \
+    python_child "$python" -I -B -m pip --cache-dir "$TOOLCHAIN/cache/pip" install --quiet "librelane==$librelane_version" || die "$EX_NETWORK" \
         "failed to install librelane==$librelane_version"
 
     have=$(installed_version "$python" librelane)
@@ -558,15 +660,15 @@ install_precheck_environment() {
         "precheck requirements cannot be checked as exact pins; no pip resolution attempted"
 
     if [[ ! -x $python ]]; then
-        "$venv_python" -m venv "$precheck_venv_dir" || { rm -rf "$precheck_venv_dir"; \
+        python_child "$venv_python" -I -B -m venv "$precheck_venv_dir" || { rm -rf "$precheck_venv_dir"; \
             die "$EX_TOOL" "failed to create $precheck_venv_dir"; }
         info "created $precheck_venv_dir"
     fi
 
     net "installing precheck requirements"
-    "$python" -m pip install --quiet --upgrade pip >/dev/null || die "$EX_NETWORK" \
+    python_child "$python" -I -B -m pip --cache-dir "$TOOLCHAIN/cache/pip" install --quiet --upgrade pip >/dev/null || die "$EX_NETWORK" \
         "could not upgrade pip inside $precheck_venv_dir"
-    "$python" -m pip install --quiet -r "$requirements" || die "$EX_NETWORK" \
+    python_child "$python" -I -B -m pip --cache-dir "$TOOLCHAIN/cache/pip" install --quiet -r "$requirements" || die "$EX_NETWORK" \
         "failed to install $requirements"
 
     python_probe "$python" precheck "$python_version" "$requirements" || die "$EX_TOOL" \
@@ -620,6 +722,7 @@ pull_container_image() {
 
     if read_probe "$container" image inspect "$librelane_image" >/dev/null 2>&1; then
         info "$librelane_image (present)"
+        validate_container_image
         return 0
     fi
 
@@ -635,6 +738,21 @@ pull_container_image() {
     "$container" pull "$librelane_image" || die "$EX_NETWORK" \
         "failed to pull $librelane_image"
     info "$librelane_image"
+    validate_container_image
+}
+
+validate_container_image() {
+    local detail status
+    if detail=$(runtime_probe container --engine "$container" 2>&1); then
+        info "container runtime metadata matches the provisioning policy"
+    else
+        status=$?
+        if [[ $check -eq 1 ]]; then
+            gap "container runtime: $detail"
+        else
+            die "$status" "container runtime: $detail"
+        fi
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -691,6 +809,7 @@ write_env_file() {
 # ---------------------------------------------------------------------------
 read_lockfile
 check_prerequisites
+select_python
 fetch_support_tools
 fetch_pdk
 install_flow_environment

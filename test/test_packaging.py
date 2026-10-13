@@ -26,14 +26,14 @@ sys.dont_write_bytecode = True
 REPO = Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = REPO / "flow"
 sys.path.insert(0, str(PACKAGE_ROOT))
-from hardcaml_asic_flow import archive, cli, identity, paths, phase4, probe, report  # noqa: E402
+from hardcaml_asic_flow import archive, cli, identity, managed_python, paths, phase4, probe, report, runtime_contract, runtime_observation, execution_transport  # noqa: E402
 
 
 class LayoutTest(unittest.TestCase):
     def test_every_installed_module_resolves_inside_the_package(self):
         # A module that still loaded itself from `scripts/` would pass its own
         # unit tests in a checkout and then be missing from a prefix.
-        for module in (archive, cli, identity, paths, phase4, probe, report):
+        for module in (archive, cli, identity, managed_python, paths, phase4, probe, report, runtime_contract, runtime_observation, execution_transport):
             with self.subTest(module=module.__name__):
                 self.assertEqual(
                     Path(module.__file__).resolve().parent, paths.PACKAGE_DIR)
@@ -44,7 +44,7 @@ class LayoutTest(unittest.TestCase):
         # exactly what P6.4 removes. `paths` is the single place allowed to turn
         # a location into paths, and it derives every one of them from this
         # package's own __file__ -- so there is one thing to audit, not six.
-        for module in (archive, cli, identity, phase4, report):
+        for module in (archive, cli, identity, managed_python, phase4, report, runtime_contract, runtime_observation, execution_transport):
             source = Path(module.__file__).read_text()
             for construct in ("__file__", "spec_from_file_location",
                               "module_from_spec", "parents["):
@@ -62,6 +62,8 @@ class LayoutTest(unittest.TestCase):
                 self.assertIn(f"({relative} as flow/{relative})", stanzas)
         self.assertIn("(section bin)", stanzas)
         self.assertIn("hardcaml-asic-flow", stanzas)
+        self.assertIn("(hardcaml_asic_flow/data/managed-python.json as "
+                      "flow/hardcaml_asic_flow/data/managed-python.json)", stanzas)
 
 
 class RuntimeDataTest(unittest.TestCase):
@@ -110,7 +112,7 @@ class RuntimeDataTest(unittest.TestCase):
         self.assertEqual(Path(command[1]), paths.PROVISIONER)
         self.assertEqual(command[2], "--lock-file")
         self.assertEqual(Path(command[3]), paths.TOOLCHAIN_LOCK)
-        self.assertEqual(command[4:], ["--check", "--no-container"])
+        self.assertEqual(command[4:], ["--host-python", sys.executable, "--check", "--no-container"])
         self.assertEqual(captured["env"]["TOOLCHAIN"], "/scratch/toolchain")
 
     def test_provision_exposes_no_public_way_to_swap_the_pins(self):
@@ -120,6 +122,10 @@ class RuntimeDataTest(unittest.TestCase):
         with mock.patch.object(sys, "stderr", io.StringIO()):
             with self.assertRaises(SystemExit) as raised:
                 parser.parse_args(["provision", "--lock-file", "/tmp/other.lock"])
+        self.assertEqual(raised.exception.code, 2)
+        with mock.patch.object(sys, "stderr", io.StringIO()):
+            with self.assertRaises(SystemExit) as raised:
+                parser.parse_args(["provision", "--host-python", sys.executable])
         self.assertEqual(raised.exception.code, 2)
 
     def test_the_provisioner_reads_the_lock_beside_it_by_default(self):

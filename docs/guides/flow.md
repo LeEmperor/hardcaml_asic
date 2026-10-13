@@ -16,6 +16,51 @@ unique run directory for each attempt, executes LibreLane, and collects results
 from either new or existing run directories. It does not install tools or change
 `manifest.json`.
 
+## Runtime policy and launch binding
+
+Current source candidate, reviewed 2026-10-13: schema-1 bundles emitted now add
+`requested_tools.runtime_policy`. The scalar `python=3.11` continues to request
+the **host flow venv** minor, distinct from host CLI Python >=3.9. Native execution
+uses that host runtime. Dockerized implementation requests the official
+`ghcr.io/librelane/librelane:3.1.0.dev3` image, exact LibreLane version, and
+distribution-supported Python **3.10..3.14** with `Requires-Python >=3.10`.
+Host 3.11.17 / container 3.13.13 is therefore valid without a uniform pin bump
+or waiver. Host LibreLane and headless Tcl must also be ready.
+
+Absent policy means legacy exact-minor checks for **both** host and container.
+Malformed/contradictory explicit policy fails closed; installed defaults cannot
+replace bundle authority. The development adapter's `--allow-python-mismatch`
+only applies to valid legacy Python mismatches. It cannot waive new policy,
+malformed versions, LibreLane or metadata failures.
+
+**Emit a fresh bundle to obtain new semantics; never edit an old manifest.** From
+`hardcaml_asic_example`, with the current candidate already installed:
+
+```sh
+source .dev/asic/current/activate.sh
+BUNDLE="$PWD/.dev/runtime-contract-checks/bundle-20261013-01" # new destination
+dune exec bin/project.exe -- emit --source-root "$PWD" --output-dir "$BUNDLE"
+hardcaml-asic-flow preflight "$BUNDLE" --toolchain "$PWD/_flow_tools"
+```
+
+Choose another new destination if that one exists. Provider adoption still awaits
+the owner; the recorded `171476...` pin has not advanced. Activation selects the
+existing installation, not a refresh. [Acceptance](../phase_plan.md#hostcontainer-runtime-policy-closeout)
+names the accepted generation and dated bundle snapshot.
+
+Preflight preserves flat `actual` keys and adds structured `runtime_contract`
+policy, role observations and comparisons. New `run.json` adds
+`execution_binding`: observed local image ID, engine and interpreter flags.
+RepoDigests are separate evidence, not interchangeable with image IDs; the
+official tag remains mutable across machines. Direct Docker transport launches
+that ID with the same flags, staged project RW / PDK RO, rootless-aware UID,
+ambient image overrides removed and owned cleanup with a separate deadline.
+This changes transport only, not LibreLane's flow engine. New postcheck verifies
+the recorded image/engine and records simulator identity separately. Historical
+records retain tag/engine fallback. Readiness and tiny transport smoke do not
+establish synthesis or physical compatibility; no real ASIC flow was run in this
+closeout.
+
 ## Running it
 
 `scripts/flow.sh` fills in this repository's example, testbench and reference
@@ -145,12 +190,10 @@ python3 scripts/phase4.py collect "$RUNS/<printed-run-id>" \
 
 Use `--stage full` for place and route and LibreLane physical checks. The
 `--native` run option uses locally installed EDA executables, when their versions
-and interfaces are compatible. Preflight rejects a Python minor-version mismatch
-with the bundle's requested version. `scripts/phase4.py` keeps an explicit
-`--allow-python-mismatch` for a development compatibility run, and it records the
-actual version rather than changing the requested one in the build manifest;
-nothing passes it for you, and the shared command has no such option at all —
-a recorded `--waiver python-version=REASON` replaces it in P6.5. A run prints its `run.json` path even
+and interfaces are compatible. Preflight enforces the bundle's
+[role-specific runtime policy](#runtime-policy-and-launch-binding).
+`scripts/phase4.py` retains `--allow-python-mismatch` for legacy-only development
+compatibility; the installed command exposes no such option. A run prints its `run.json` path even
 if it fails. Its `execution.log` and partial `project/runs/asic` contents remain
 available, and retries receive distinct IDs.
 

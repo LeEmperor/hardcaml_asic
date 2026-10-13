@@ -61,6 +61,10 @@ class RunnerTest(unittest.TestCase):
             "waivers": [],
             "requested": self.manifest["requested_tools"],
             "actual": {"python": "3.11.9", "librelane": "1.2.3"},
+            "execution_binding": {"schema_version": 1, "execution_mode": "native",
+                "interpreter": str(self.args.python), "interpreter_flags": ["-I", "-B"]},
+            "runtime_contract": {"execution_mode": "native", "observations": {
+                "host": {"interpreter": str(self.args.python), "interpreter_flags": ["-I", "-B"]}}},
         }
 
     def test_structured_outcome_and_actual_preflight_are_persisted(self):
@@ -82,6 +86,49 @@ class RunnerTest(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             phase4.run(self.args)
         self.assertFalse(self.args.runs.exists())
+
+    def test_preflight_preserves_real_collateral_indexes_and_directory_metadata(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
+                   GIT_AUTHOR_NAME="Bundle test", GIT_COMMITTER_NAME="Bundle test",
+                   GIT_AUTHOR_EMAIL="bundle@test.invalid", GIT_COMMITTER_EMAIL="bundle@test.invalid",
+                   GIT_CONFIG_COUNT="3", GIT_CONFIG_KEY_0="commit.gpgSign",
+                   GIT_CONFIG_VALUE_0="false", GIT_CONFIG_KEY_1="core.hooksPath",
+                   GIT_CONFIG_VALUE_1=os.devnull, GIT_CONFIG_KEY_2="init.templateDir",
+                   GIT_CONFIG_VALUE_2="")
+        repo = self.root / "collateral"
+        repo.mkdir()
+        reference = repo / "reference.txt"
+        reference.write_text("fixture collateral\n")
+        for args in (("init", "-q"), ("add", "."), ("commit", "-qm", "baseline")):
+            subprocess.run(["git", *args], cwd=repo, env=env, check=True)
+        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo,
+                                           env=env, text=True).strip()
+        # Unchanged content with stale index stat data forces ordinary status to
+        # refresh its index, making this a real write-regression test.
+        info = reference.stat()
+        os.utime(reference, ns=(info.st_atime_ns, info.st_mtime_ns + 1_000_000_000))
+        self.manifest["requested_tools"].update(support_tools_revision=revision,
+                                                pdk_revision=revision)
+        self.manifest["target"]["external_references"] = [
+            {"source": "Support_tools", "path": "reference.txt", "role": "fixture"}]
+        (self.bundle / "manifest.json").write_text(json.dumps(self.manifest))
+
+        def state():
+            index = repo / ".git/index"
+            return (index.read_bytes(), index.stat().st_mode, index.stat().st_mtime_ns,
+                    (repo / ".git").stat().st_mtime_ns)
+
+        before = state()
+        host = {"python_version": "3.11.9", "librelane_version": "1.2.3",
+                "interpreter": str(self.args.python), "interpreter_flags": ["-I", "-B"],
+                "tcl": {"ready": True}}
+        with mock.patch.dict(os.environ, {**env, "GIT_OPTIONAL_LOCKS": "1"}), \
+             mock.patch.object(phase4.runtime_observation, "observe_host", return_value=host):
+            report = phase4.preflight(self.bundle, repo, repo, self.args.python, native=True)
+        self.assertEqual(report["issues"], [])
+        self.assertTrue(report["ready"])
+        self.assertEqual(state(), before)
 
     def test_failed_and_interrupted_attempts_keep_machine_readable_identity(self):
         cases = (
@@ -123,7 +170,8 @@ class RunnerTest(unittest.TestCase):
             with self.assertRaises(phase4.FlowInterrupted):
                 phase4.run_logged(["tool"], self.root, os.environ.copy(),
                                   self.root / "log", record, record_path)
-        killpg.assert_called_once_with(4321, signal.SIGTERM)
+        self.assertEqual(killpg.call_args_list, [mock.call(4321, signal.SIGTERM),
+                                               mock.call(4321, signal.SIGKILL)])
         self.assertEqual(process.wait.call_count, 2)
 
     def test_atomic_save_preserves_existing_record_on_publication_failure(self):
@@ -138,6 +186,9 @@ class RunnerTest(unittest.TestCase):
 
 class PostcheckTest(unittest.TestCase):
     def setUp(self):
+        cleanup = mock.patch.object(phase4.execution_transport, "cleanup")
+        cleanup.start()
+        self.addCleanup(cleanup.stop)
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
@@ -205,6 +256,10 @@ class PostcheckTest(unittest.TestCase):
         self.assertEqual(outcome.exit_code, 0)
         compile_command = run_logged.call_args_list[1].args[0]
         self.assertEqual(compile_command[compile_command.index("-s") + 1], "memory_tb")
+        self.assertEqual(compile_command[0], "docker")
+        self.assertIn("ghcr.io/librelane/librelane:1.2.3", compile_command)
+        self.assertIn("--pull=never", compile_command)
+        self.assertIsNotNone(run_logged.call_args_list[1].kwargs["cleanup"])
         record_path = next((self.run_dir / "checks").glob("*/postcheck.json"))
         self.assertEqual(phase4.read_json(record_path)["inputs"]["testbench_top"],
                          "memory_tb")

@@ -149,7 +149,8 @@ class FlowCliTest(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertEqual(self.operations.called("provision")[-1].python, base)
         self.operations.calls.clear()
-        for options in (["--python"], ["--python", "--check"], ["--python", ""], ["--unknown"]):
+        for options in (["--python"], ["--python", "--check"], ["--python", ""], ["--unknown"],
+                        ["--host-python", sys.executable]):
             code, _, _ = self.invoke(["provision", *options])
             self.assertEqual(code, 2)
         self.assertEqual(self.operations.calls, [])

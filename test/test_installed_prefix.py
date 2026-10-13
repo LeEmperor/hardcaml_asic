@@ -82,10 +82,18 @@ exit 0
 """
 
 DOCKER_STUB = r"""#!/bin/sh
+if [ -n "${STUB_DOCKER_LOG:-}" ]; then printf '%s\n' "$*" >> "$STUB_DOCKER_LOG"; fi
 case "$*" in
-    "info --format"*) echo "27.0.0-fixture"; exit 0 ;;
-    "image inspect"*) echo "sha256:fixture-image"; exit 0 ;;
-    *"--entrypoint python"*) echo "Python ${STUB_PYTHON_VERSION:-3.11.9}"; exit 0 ;;
+    "rm -f hardcaml-asic-execution-"*)
+        if [ "${STUB_CLEANUP_FAIL:-0}" = 1 ]; then echo 'fixture cleanup failure' >&2; exit 1; fi
+        exit 0 ;;
+    "info --format {{json .}}") echo '{"ServerVersion":"27.0.0-fixture","SecurityOptions":["name=rootless"]}'; exit 0 ;;
+    "image inspect --format"*) echo "sha256:1111111111111111111111111111111111111111111111111111111111111111"; exit 0 ;;
+    "image inspect"*) echo '[{"Id":"sha256:1111111111111111111111111111111111111111111111111111111111111111","RepoDigests":["fixture@sha256:2222222222222222222222222222222222222222222222222222222222222222"],"Os":"linux","Architecture":"amd64"}]'; exit 0 ;;
+    *"--entrypoint python3"*" -c "*) printf '{"python_version":"%s","librelane_version":"%s","requires_python":">=3.10","metadata_error":null}\n' "${STUB_CONTAINER_PYTHON:-${STUB_PYTHON_VERSION:-3.11.9}}" "${STUB_CONTAINER_LL:-1.2.3}"; exit 0 ;;
+    *"--entrypoint python3"*" -m librelane"*)
+        while [ "$1" != -m ]; do shift; done
+        exec "$(dirname "$0")/../flow-python" -I -B "$@" ;;
     *"iverilog -V"*) echo "Icarus Verilog version 12.0 (fixture)"; exit 0 ;;
 esac
 output=
@@ -128,6 +136,13 @@ esac
 FLOW_PYTHON_STUB = r"""#!/bin/sh
 # The venv interpreter named by --python: version probes, and LibreLane itself.
 if [ -n "${STUB_LOG:-}" ]; then printf '%s\n' "$*" >> "$STUB_LOG"; fi
+if [ "$1" = -I ] && [ "$2" = -B ]; then
+    if [ "$3" = -c ]; then
+    printf '{"python_version":"%s","librelane_version":"%s","requires_python":">=3.10","metadata_error":null,"tcl":{"ready":true,"version":"8.6.16","error":null}}\n' "${STUB_PYTHON_VERSION:-3.11.9}" "${STUB_LIBRELANE:-1.2.3}"
+    exit 0
+    fi
+    shift 2
+fi
 case "$1" in
     -c)
         case "$2" in
@@ -300,6 +315,20 @@ class InstalledPrefixTest(unittest.TestCase):
                               text=True, capture_output=True, check=False)
 
     # -- discovery -------------------------------------------------------
+
+    def test_managed_python_assets_and_isolated_internal_entry(self):
+        self.assertTrue((self.package / "managed_python.py").is_file())
+        pin = json.loads((self.package / "data/managed-python.json").read_text())
+        entry = ("import sys; sys.path.insert(0, sys.argv.pop(1)); "
+                 "from hardcaml_asic_flow.managed_python import main; sys.exit(main())")
+        completed = subprocess.run(
+            [sys.executable, "-I", "-B", "-c", entry, str(self.package.parent), "--describe"],
+            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(REPO / "flow")},
+            text=True, capture_output=True, check=False)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout), pin)
+        self.assertEqual(pin["version"], "3.11.17")
+        self.assertFalse(list(self.package.rglob("*.pyc")))
 
     def test_no_argument_invocation_prints_help_and_does_nothing(self):
         before = sorted(path.name for path in self.elsewhere.iterdir())
@@ -525,6 +554,8 @@ class InstalledPrefixTest(unittest.TestCase):
             metadata.mkdir()
             (metadata / "METADATA").write_text(f"Name: {package}\nVersion: {version}\n")
             if package == "librelane":
+                (site / "tkinter.py").write_text("class Tcl:\n    def eval(self, expr): return '42' if expr.startswith('expr') else '8.6.16'\n")
+                (site / "_tkinter.py").write_text("# synthetic extension\n")
                 (site / "librelane.py").write_text(probe +
                     "import subprocess\n"
                     f"sys.exit(subprocess.call([{str(fixture.tools.flow_python)!r}, "
@@ -561,9 +592,21 @@ class InstalledPrefixTest(unittest.TestCase):
                 record = json.loads(Path(result["run_record"]).read_text())
                 python = root / ".venv/bin/python"
                 self.assertEqual(record["environment"]["python"], str(python))
-                self.assertEqual(record["commands"][0][0], str(python))
+                self.assertEqual(record["environment"]["runtime_contract"]["observations"]["host"]["interpreter"], str(python))
+                self.assertEqual(record["commands"][0][0], str(fixture.tools.bin / "docker"))
                 run = Path(result["run_dir"])
-                for child, evidence in ((".venv", run / "project/python-selection.json"),
+                native_locations = locations.copy()
+                if "--precheck-python" in native_locations:
+                    at = native_locations.index("--precheck-python")
+                    del native_locations[at:at + 2]
+                native = self.flow(fixture, "execute", str(fixture.bundle),
+                    "--runs", str(fixture.runs), "--stage", "synthesis", "--native", *native_locations,
+                    env=env, cwd=fixture.root)
+                self.assertEqual(native.returncode, 0, native.stderr)
+                native_run = Path(json.loads(native.stdout)["run_dir"])
+                native_record = json.loads((native_run / "run.json").read_text())
+                self.assertEqual(native_record["commands"][0][:3], [str(python), "-I", "-B"])
+                for child, evidence in ((".venv", native_run / "project/python-selection.json"),
                     (".venv-precheck", next(run.glob("checks/*/tt/precheck/python-selection.json")))):
                     actual = json.loads(evidence.read_text())
                     self.assertEqual(actual["prefix"], str(root / child))
@@ -609,7 +652,7 @@ class InstalledPrefixTest(unittest.TestCase):
                              *self.locations(other),
                              env={"STUB_LIBRELANE": "9.9.9"})
         self.assertEqual(versions.returncode, 1)
-        self.assertTrue(any("LibreLane 9.9.9" in issue
+        self.assertTrue(any("librelane_version '9.9.9'" in issue
                             for issue in json.loads(versions.stdout)["issues"]))
 
     def test_installed_preflight_probes_the_container_unless_native(self):
@@ -625,6 +668,45 @@ class InstalledPrefixTest(unittest.TestCase):
                            *self.locations(fixture))
         self.assertNotIn("docker_server", json.loads(native.stdout)["actual"])
 
+    def test_installed_shared_runtime_policy_record_and_legacy_mismatch(self):
+        fixture = self.stubbed(librelane="3.1.0.dev3")
+        env = {"STUB_LIBRELANE": "3.1.0.dev3", "STUB_CONTAINER_LL": "3.1.0.dev3",
+               "STUB_CONTAINER_PYTHON": "3.13.13"}
+        legacy = self.flow(fixture, "preflight", str(fixture.bundle),
+                           *self.locations(fixture), env=env)
+        self.assertEqual(legacy.returncode, 1, legacy.stderr)
+        manifest = json.loads((fixture.bundle / "manifest.json").read_text())
+        entry = ("import sys; sys.path.insert(0, sys.argv.pop(1)); "
+                 "from hardcaml_asic_flow.runtime_observation import main; sys.exit(main())")
+        observed = subprocess.run([sys.executable, "-I", "-B", "-c", entry,
+            str(self.package.parent), "policy", "--lock", str(self.package / "data/toolchain.lock")],
+            text=True, capture_output=True, check=True, timeout=30)
+        policy = json.loads(observed.stdout)["normalized_policy"]
+        manifest["requested_tools"]["runtime_policy"] = {k: policy[k] for k in
+            ("schema_version", "host", "implementation")}
+        (fixture.bundle / "manifest.json").write_text(json.dumps(manifest))
+        explicit = self.flow(fixture, "preflight", str(fixture.bundle),
+                             *self.locations(fixture), env=env)
+        self.assertEqual(explicit.returncode, 0, explicit.stderr)
+        report = json.loads(explicit.stdout)
+        runtime = report["runtime_contract"]
+        self.assertEqual(runtime["authority"], "bundle.requested_tools")
+        self.assertEqual(runtime["observations"]["host"]["interpreter_flags"], ["-I", "-B"])
+        container = runtime["observations"]["container"]
+        self.assertEqual(container["image_identity"]["image_id"], "sha256:" + "1" * 64)
+        self.assertNotEqual(container["image_identity"]["repo_digests"][0], container["image_identity"]["image_id"])
+        self.assertEqual(report["actual"]["container_requires_python"], ">=3.10")
+        launched = self.flow(fixture, "run", str(fixture.bundle), "--runs", str(fixture.runs),
+                             "--stage", "synthesis", *self.locations(fixture), env=env)
+        self.assertEqual(launched.returncode, 0, launched.stderr)
+        record = json.loads(Path(json.loads(launched.stdout)["run_record"]).read_text())
+        self.assertEqual(record["environment"]["execution_binding"], record["execution_binding"])
+        command = record["commands"][0]
+        self.assertIn(container["image_identity"]["image_id"], command)
+        self.assertEqual(command[-16:], ["-I", "-B", "-m", "librelane", "--pdk-root",
+            str(fixture.tools.pdk), "--pdk", "ihp-sg13cmos5l", "--manual-pdk", "--run-tag",
+            "asic", "--force-run-dir", "runs/asic", "--to", "Yosys.Synthesis", "src/config.json"])
+
     def test_installed_preflight_needs_explicit_tool_locations(self):
         fixture = self.stubbed()
         incomplete = self.flow(fixture, "preflight", str(fixture.bundle), "--native")
@@ -632,6 +714,81 @@ class InstalledPrefixTest(unittest.TestCase):
         self.assertIn("--support-tools", incomplete.stderr)
 
     # -- run -------------------------------------------------------------
+
+    def test_installed_direct_docker_full_stub_flow_is_exact_image_bound(self):
+        fixture = self.stubbed()
+        bench = fixture.root / "tb.v"
+        bench.write_text("module tb; endmodule\n")
+        completed = self.flow(fixture, "execute", str(fixture.bundle),
+            "--runs", str(fixture.runs), "--stage", "full", "--testbench", str(bench),
+            "--testbench-top", "tb", "--precheck-python", str(fixture.tools.precheck_python),
+            *self.locations(fixture), env={
+                "LIBRELANE_IMAGE_OVERRIDE": "evil:tag", "LIBRELANE_CONTAINER_ENGINE": "evil",
+                "OPENLANE_CONTAINER_ENGINE": "evil", "_MOUNT_HOST_LIBRELANE": "/evil"})
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = json.loads(completed.stdout)
+        run = Path(result["run_dir"])
+        record = json.loads((run / "run.json").read_text())
+        command = record["commands"][0]
+        self.assertEqual(command[0], str(fixture.tools.bin / "docker"))
+        self.assertIn("sha256:" + "1" * 64, command)
+        self.assertIn("--pull=never", command)
+        self.assertNotIn("--dockerized", command)
+        self.assertNotIn("--user", command)
+        self.assertEqual(record["execution_binding"]["interpreter_flags"], ["-I", "-B"])
+        check = json.loads(next(run.glob("checks/*/postcheck.json")).read_text())
+        self.assertEqual(check["tools"]["execution_binding"], record["execution_binding"])
+        self.assertEqual(command[command.index("--entrypoint") + 1], "python3")
+        self.assertEqual(record["environment"], json.loads((run / "preflight.json").read_text()))
+
+    def test_installed_required_transport_module_absence_fails_closed(self):
+        scratch = Path(self.temporary.name) / "incomplete-transport-prefix"
+        shutil.copytree(self.prefix, scratch)
+        for module in ("execution_transport", "runtime_contract", "runtime_observation"):
+            path = scratch / "lib/hardcaml_asic/flow/hardcaml_asic_flow" / f"{module}.py"
+            saved = path.read_bytes()
+            path.unlink()
+            completed = self.invoke("--version", command=scratch / "bin/hardcaml-asic-flow")
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn(f"{module}.py", completed.stderr)
+            path.write_bytes(saved)
+
+    def test_installed_docker_interruption_cleans_owned_name_and_prints_one_json(self):
+        for signum, cleanup_failure in ((signal.SIGINT, False), (signal.SIGTERM, True)):
+            with self.subTest(signal=signum, cleanup_failure=cleanup_failure):
+                fixture = self.stubbed()
+                docker_log = fixture.root / "docker.log"
+                environment = {"HOME": str(self.elsewhere), "PATH": f"{fixture.tools.bin}:/usr/bin:/bin",
+                    "STUB_LOG": str(fixture.log), "STUB_DOCKER_LOG": str(docker_log),
+                    "STUB_FLOW_SLEEP": "60", "STUB_CLEANUP_FAIL": "1" if cleanup_failure else "0"}
+                process = subprocess.Popen([str(self.command), "run", str(fixture.bundle),
+                    "--runs", str(fixture.runs), "--stage", "synthesis", *self.locations(fixture)],
+                    cwd=self.elsewhere, env=environment, text=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE)
+                try:
+                    deadline = time.monotonic() + 10
+                    while time.monotonic() < deadline:
+                        if fixture.log.exists() and "-I -B -m librelane" in fixture.log.read_text():
+                            break
+                        self.assertIsNone(process.poll())
+                        time.sleep(0.025)
+                    else:
+                        self.fail("fixture flow launch never reached")
+                    process.send_signal(signum)
+                    stdout, stderr = process.communicate(timeout=15)
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                        process.communicate(timeout=5)
+                self.assertEqual(process.returncode, 128 + signum, stderr)
+                identity = json.loads(stdout)  # Rejects a second final JSON or log noise.
+                record = json.loads(Path(identity["run_record"]).read_text())
+                self.assertEqual(record["status"], "interrupted")
+                self.assertEqual(record["interrupted_by"], signal.Signals(signum).name)
+                self.assertEqual(record["container_cleanup"][-1]["status"],
+                                 "failed" if cleanup_failure else "removed-or-absent")
+                self.assertIn("rm -f " + record["container_name"], docker_log.read_text())
 
     def test_installed_run_allocates_records_and_forwards_its_locations(self):
         fixture = self.stubbed()
@@ -656,7 +813,7 @@ class InstalledPrefixTest(unittest.TestCase):
         self.assertTrue((run_dir / "project/manifest.json").is_file())
 
         invocations = fixture.log.read_text().splitlines()
-        flow_command = [line for line in invocations if line.startswith("-m librelane")]
+        flow_command = [line for line in invocations if line.startswith("-I -B -m librelane")]
         self.assertEqual(len(flow_command), 1)
         self.assertIn(f"--pdk-root {fixture.tools.pdk}", flow_command[0])
         self.assertIn("--to Yosys.Synthesis", flow_command[0])
@@ -1045,6 +1202,7 @@ class InstalledPrefixTest(unittest.TestCase):
         self.assertTrue(argv.startswith(
             str(self.package / "data/toolchain.sh") + " "))
         self.assertIn(f"--lock-file {self.package / 'data/toolchain.lock'}", argv)
+        self.assertIn("--host-python /", argv)
         self.assertIn(f"--python {base}", argv)
         self.assertTrue((self.package / "probe.py").is_file())
         for option in ("--check", "--offline", "--no-container"):
@@ -1069,6 +1227,9 @@ class InstalledPrefixTest(unittest.TestCase):
         refused = self.invoke("provision", "--lock-file", str(elsewhere / "other.lock"))
         self.assertEqual(refused.returncode, 2)
         self.assertIn("--lock-file", refused.stderr)
+        refused = self.invoke("provision", "--host-python", sys.executable)
+        self.assertEqual(refused.returncode, 2)
+        self.assertIn("--host-python", refused.stderr)
 
     def test_installed_provider_check_absent_root_is_read_only(self):
         root = Path(tempfile.mkdtemp(dir=self.temporary.name, prefix="readonly-provider."))
@@ -1088,6 +1249,43 @@ class InstalledPrefixTest(unittest.TestCase):
         self.assertFalse(log.exists())
         self.assertEqual(before, {str(p): p.stat().st_mtime_ns for p in self.package.rglob("*")})
         self.assertFalse(list(self.package.rglob("*.pyc")))
+
+    def test_installed_managed_default_check_uses_host_and_creates_nothing(self):
+        root = Path(tempfile.mkdtemp(dir=self.temporary.name, prefix="managed-check space's "))
+        toolchain = root / "absent"
+        log = root / "mutations"
+        for name in ("git", "docker", "podman", "pip", "curl", "wget", "nix-shell", "nix-store"):
+            executable(root / "bin" / name, '#!/bin/sh\nprintf "%s\\n" "$0 $*" >> "$MUTATIONS"\nexit 99\n')
+        executable(root / "bin/nix-store", '#!/bin/sh\n[ "$*" = --version ] && exit 0\nexit 99\n')
+        before = {str(p): p.stat().st_mtime_ns for p in self.package.rglob("*")}
+        completed = self.invoke("provision", "--check", "--no-container", "--toolchain", str(toolchain),
+                                path=f"{root / 'bin'}:/usr/bin:/bin", env={"MUTATIONS": str(log)})
+        self.assertEqual(completed.returncode, 2, completed.stdout + completed.stderr)
+        self.assertIn("managed runtime not installed", completed.stderr)
+        self.assertIn("managed Python receipt missing/invalid", completed.stderr)
+        self.assertNotIn("base readiness: Python", completed.stderr)
+        self.assertFalse(toolchain.exists())
+        self.assertFalse(log.exists())
+        self.assertEqual(before, {str(p): p.stat().st_mtime_ns for p in self.package.rglob("*")})
+        self.assertFalse(list(self.package.rglob("*.pyc")))
+
+    def test_installed_managed_missing_asset_reports_helper_error_without_writes(self):
+        root = Path(tempfile.mkdtemp(dir=self.temporary.name, prefix="managed-missing-asset."))
+        toolchain = root / "absent"
+        executable(root / "bin/git", '#!/bin/sh\nexit 99\n')
+        pin_path = self.package / "data/managed-python.json"
+        original = pin_path.read_bytes()
+        pin_path.unlink()
+        try:
+            completed = self.invoke("provision", "--check", "--no-container", "--toolchain", str(toolchain),
+                                    path=f"{root / 'bin'}:/usr/bin:/bin")
+            self.assertEqual(completed.returncode, 2, completed.stdout + completed.stderr)
+            self.assertIn("managed-python.json", completed.stderr)
+            self.assertIn("managed runtime not installed", completed.stderr)
+            self.assertFalse(toolchain.exists())
+            self.assertFalse(list(self.package.rglob("*.pyc")))
+        finally:
+            pin_path.write_bytes(original)
 
 
 if __name__ == "__main__":

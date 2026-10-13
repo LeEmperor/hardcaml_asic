@@ -27,6 +27,9 @@ PROVISIONER = DATA_DIR / "toolchain.sh"
 #: bundle exists its own `requested_tools` are authoritative; see preflight.
 TOOLCHAIN_LOCK = DATA_DIR / "toolchain.lock"
 
+#: Audited managed interpreter artifact, independent of collateral pins.
+MANAGED_PYTHON = DATA_DIR / "managed-python.json"
+
 
 class MissingRuntimeData(Exception):
     """A shipped data file is absent from the location this package occupies."""

@@ -1,6 +1,6 @@
 # hardcaml_asic architecture
 
-Consolidated 2026-10-12 from the implemented source and prior architecture.
+Consolidated 2026-10-12; runtime-policy boundaries reviewed 2026-10-13.
 This document owns system boundaries; the [phase plan](phase_plan.md) owns
 status and sequencing. Provider storage details and the refactoring sequence
 below are **proposals for discussion**, not implemented interfaces.
@@ -31,12 +31,13 @@ or live provider capability.
 **Settled tool-environment ownership:** the installed provider (OCaml library and
 stdlib Python CLI) operates independently of its source checkout. The consumer
 owns a configurable tool root, with `_flow_tools/` as the adopted default, holding
-LibreLane/precheck venvs and PDK/support collateral. Host Python/Tcl prerequisites
-and Docker/Nix stores remain separate. A thin consumer bootstrap delegates to the
+the pinned managed Python/Tcl runtime, LibreLane/precheck venvs and PDK/support
+collateral. Host CLI Python >= 3.9, explicit external Python overrides, OS
+libraries/certificates and Docker/Nix stores remain separate. A thin consumer bootstrap delegates to the
 installed provider without copying its pins; provider refresh and tool provisioning
 are separate operations. The example's thin bootstrap and bounded provisioning
 readiness checks are implemented; no copied pins, source fallback or automatic
-provider refresh is used. See the [current acceptance](phase_plan.md#tool-environment-closeout-acceptance).
+provider refresh is used. See the [current acceptance](phase_plan.md#hostcontainer-runtime-policy-closeout).
 
 | Layer | Responsibility |
 | --- | --- |
@@ -63,14 +64,37 @@ the configurable collateral root (the example defaults to absolute `_flow_tools/
 provider/development adapters retain their legacy `.toolchain/` fallback), host
 prerequisites and Docker/Podman/Nix stores, and the
 consumer's bundle/run/archive stores. Shared `provision --toolchain PATH` or
-`TOOLCHAIN` selects managed `tt`, `pdk`, `.venv` and `.venv-precheck` children;
-it does not relocate host runtimes. `provision --python BASE` chooses the base for
+`TOOLCHAIN` selects managed `python`, `tt`, `pdk`, `.venv` and `.venv-precheck` children.
+Normal provisioning selects the installed archive pin, verifies its digest before
+extraction/execution, safely stages and probes it, and retains no-replace final
+generations with a receipt after the relocated probe. Initial Linux glibc x86_64
+>= 2.17 support requires kernel/filesystem `renameat2` support; this is not a
+universal platform guarantee or P6.5 source/runtime attestation.
+`provision --python BASE` explicitly overrides the managed base for
 new venvs; execution `--python` chooses the flow venv interpreter, whose lexical
 path is preserved. `--check` is bounded and read-only; normal provisioning may
-write managed collateral. Runtime preflight Tcl policy, native EDA capability
-checks and Podman runner generalization are not implemented by this slice.
+write managed collateral. Preflight now checks host LibreLane and headless Tcl;
+native EDA capability checks and Podman runner generalization remain open.
 See [tool-directory ownership and local observations](guides/bootstrap.md#tool-directory-ownership).
-ASIC P6.5c remains open.
+ASIC P6.5c is partially addressed and remains open.
+
+New schema-1 manifests add `requested_tools.runtime_policy`: host flow Python is
+exact-minor 3.11, native execution uses that host runtime, and Dockerized
+implementation uses the official LibreLane 3.1.0.dev3 image with distribution
+Python 3.10..3.14 / `Requires-Python >=3.10`. Absent policy retains legacy strict
+3.11 for both roles; malformed explicit policy fails closed. The pure contract
+and structured observation modules are shared by provisioning/preflight, but
+installed provisioning defaults never replace bundle authority.
+Flat actual fields remain; structured `runtime_contract` and new run
+`execution_binding` are additive. Docker transport binds the observed engine,
+interpreter flags and immutable local image ID, separately from RepoDigests.
+It mounts staged project RW / PDK RO, applies rootless-aware UID policy, removes
+ambient image overrides and owns bounded cleanup. Direct transport is needed
+because installed LibreLane `image_exists` rejects IDs/digests; the LibreLane
+flow engine is unchanged. Postcheck verifies the saved image/engine and records
+tool identity separately; historical records retain their fallback. This is an
+attempt-local binding, not a cross-machine digest pin or runtime attestation.
+See [policy and limits](guides/flow.md#runtime-policy-and-launch-binding).
 
 The active [Workbench architecture](../../hardcaml_workbench/docs/hardcaml_workbench_architecture.md)
 and [Workbench construction plan](../../hardcaml_workbench/docs/construction_phase_plan.md)
@@ -223,8 +247,9 @@ resumable checkpoint. Runtime locking, fsync/data durability, authentic persiste
 history and producer liveness are unproven; deeper hierarchy is unmodeled. Silence
 or reader disconnect never supplies interruption/completion facts.
 
-The subsequently authorized LibreLane observation probe is **BLOCKED** at the
-runtime prerequisite described below. Project run routing still requires separate agreement. Live
+The prior LibreLane observation probe is historically **BLOCKED**; a compatible
+verified scratch runtime is now available, but official cases have not yet been
+rerun. Project run routing still requires separate agreement. Live
 catalog, early correlation, step updates and incremental result publication remain
 undelivered.
 
@@ -275,11 +300,13 @@ and LibreLane `3.1.0.dev3`; bundles request Python 3.11. The authorized
 ([evidence](../evidence/librelane-observation/blocked-local.json), exit 2).
 **Zero of eleven authored cases executed; synthetic PDK configuration is not
 validated and no observation seam is demonstrated.** Targeted standard-location
-checks found no compatible Python 3.12 Tcl/Tk module. Next: user-authorized
-runtime prerequisite resolution (working `tkinter`, `_tkinter` and Tcl libraries
-for the selected Python), then repeat the bounded official-API probe. Matching
-source versions alone is not environment acceptance; supported-runtime acceptance
-also requires the declared Python 3.11 environment.
+checks found no compatible Python 3.12 Tcl/Tk module. This remains historical
+evidence. The [actual managed-runtime acceptance](../evidence/managed-python/actual-runtime.json)
+now proves Python 3.11.17, Tcl 9.0.4 and official LibreLane Tcl evaluation in a
+disposable venv. Next: repeat the bounded official-API probe using that verified
+scratch LibreLane venv. No official Flow case has yet run; full collateral
+provisioning is a separate owner action. Matching source metadata or Tcl smoke
+does not demonstrate an observation seam.
 
 Source inspection shows `SequentialFlow.run` calls `step.start` directly; `Step.start` is
 final. Overriding `Flow.start_step` is not a demonstrated lifecycle hook.
@@ -355,5 +382,5 @@ actual revision/dirty-input provenance and RTL replay; see the
 Synthetic committed fixtures remain separate provenance tests. This does not
 establish full environment locking, embedded source identity, source-access-denied
 P6.6 acceptance or physical acceptance. The separate provisional observation fixture
-slice is accepted; run routing needs separate agreement and LibreLane feasibility is blocked as above. FIFO delivery does
+slice is accepted; run routing needs separate agreement and LibreLane feasibility awaits the bounded rerun above. FIFO delivery does
 not implement live provider observation or close ASIC P6 gates.

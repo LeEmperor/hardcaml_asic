@@ -17,7 +17,7 @@
 
 (rule
  (alias runtest)
- (deps check_bundle.py tt_bundle_tb.v ../dune-project ../toolchain.lock (source_tree ../lib) (source_tree ../examples))
+  (deps check_bundle.py tt_bundle_tb.v ../dune-project ../toolchain.lock (source_tree ../flow) (source_tree ../lib) (source_tree ../examples))
  (action
   (run python3 %{dep:check_bundle.py} %{exe:../examples/tt_bundle_example.exe} %{workspace_root})))
 
@@ -50,6 +50,15 @@
  (alias runtest)
  (deps test_archive.py (source_tree ../flow) ../toolchain.lock)
  (action (run python3 %{dep:test_archive.py})))
+
+(rule
+ (alias managed-python)
+ (deps test_managed_python.py (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:test_managed_python.py})))
+
+(alias
+ (name runtest)
+ (deps (alias managed-python)))
 
 ; test_flow_cli.py also drives scripts/flow.sh, the repository's example driver,
 ; to check that it routes every operation to this same dispatcher, so it depends
@@ -85,5 +94,32 @@
  (action (run python3 %{dep:test_provider_observation.py})))
 
 (alias
+  (name runtest)
+  (deps (alias provider-observation)))
+
+(rule
+ (alias runtime-contract)
+ (deps test_runtime_contract.py (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:test_runtime_contract.py})))
+
+(alias
  (name runtest)
- (deps (alias provider-observation)))
+ (deps (alias runtime-contract)))
+
+(rule
+ (alias runtime-observation)
+ (deps test_runtime_observation.py (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:test_runtime_observation.py})))
+
+(alias
+ (name runtest)
+ (deps (alias runtime-observation)))
+
+(rule
+ (alias execution-transport)
+ (deps test_execution_transport.py test_phase4.py (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:test_execution_transport.py})))
+
+(alias
+ (name runtest)
+ (deps (alias execution-transport)))

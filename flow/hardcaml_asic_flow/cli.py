@@ -68,13 +68,16 @@ class Operations:
         which Dune install section placed the file. `--lock-file` is internal
         plumbing supplied here from `paths`: the public `provision` command has
         no option for it, so a caller cannot quietly point the flow at different
-        target pins.
+        target pins. Private `--host-python` retains this orchestration
+        interpreter for the installed managed-runtime helper, including when
+        the host runs a different minor from the venv base.
         """
         script = paths.require(paths.PROVISIONER, "the flow provisioner")
         lock = paths.require(paths.TOOLCHAIN_LOCK, "the toolchain lock")
         environment = os.environ.copy()
         environment["TOOLCHAIN"] = str(args.toolchain)
-        command = ["bash", str(script), "--lock-file", str(lock)]
+        command = ["bash", str(script), "--lock-file", str(lock),
+                   "--host-python", sys.executable]
         if args.python is not None:
             command.extend(["--python", str(args.python)])
         for option in ("check", "offline", "no_container"):
@@ -184,7 +187,7 @@ def build_parser():
     provision = sub.add_parser("provision")
     provision.add_argument("--toolchain", type=Path)
     provision.add_argument("--python", type=nonempty_path,
-                           help="base interpreter for new venvs (must match the locked minor and provide venv, ensurepip and Tcl)")
+                           help="external base for new venvs (default: pinned managed Python; must match the locked minor and provide venv, ensurepip and Tcl)")
     provision.add_argument("--check", action="store_true")
     provision.add_argument("--offline", action="store_true")
     provision.add_argument("--no-container", action="store_true")

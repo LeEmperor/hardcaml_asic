@@ -67,7 +67,7 @@ consumer pins one revision for both:
 ```text
 $PREFIX/bin/hardcaml-asic-flow                            the command
 $PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/        its private modules
-$PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/data/   toolchain.sh, toolchain.lock
+$PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/data/   toolchain.sh, toolchain.lock, managed-python.json
 ```
 
 The command works through `PATH` and through a symlink to it. It finds its
@@ -107,14 +107,55 @@ TOOLCHAIN="$TOOLCHAIN" hardcaml-asic-flow provision
 source "$TOOLCHAIN/toolchain-env.sh"
 ```
 
-`provision --python /path/to/python` selects the **base interpreter for new
-venvs**; both provider and example bootstraps forward this option. Its actual major/minor must
-match the shipped lock. Without it, provisioning discovers `python<major.minor>`,
-then accepts `python3` only if its actual version matches. Creation requires
-`venv`, `ensurepip`, `tkinter`, `_tkinter` and a working headless `tkinter.Tcl()`;
-missing system extensions need a suitable host Python, not pip. Existing venvs
-are checked in place and need no separately named base when creation is unnecessary.
+Normal provisioning uses the installed provider's pinned **managed Python** when
+new venvs need a base. It retains the runtime under `$TOOLCHAIN/python/`; the
+LibreLane and precheck venvs remain separate user environments. Existing venvs
+are checked in place and need no base acquisition when both already exist.
 A wrong existing Python version requires explicit repair, never automatic recreation.
+
+`provision --python /path/to/python3.11` is the explicit **external base override**
+for new venvs; both bootstraps forward it. Its actual major/minor must match the
+lock, with `venv`, `ensurepip` and working headless Tcl. An invalid override fails
+before managed acquisition or collateral writes; there is no host-discovery or
+other-minor fallback. No public `--python-only` mode exists.
+
+### Managed Python integrity and initial platform
+
+The installed [archive pin](../../flow/hardcaml_asic_flow/data/managed-python.json)
+selects CPython **3.11.17 / PBS 20261009**, `x86_64-unknown-linux-gnu`,
+`install_only_stripped`: **30,808,475 bytes**, SHA-256
+`89db7607ebadb77a64709d159b86555d995368ec385a2ab33b00477790c543b0`.
+Official release digest and SHA256SUMS matched. Acquisition verifies size/digest
+before extraction or execution, bounds extraction and rejects unsafe paths/links
+and special members. It probes the private stage and relocated final runtime,
+then publishes a receipt. Generation directories are retained and never replaced,
+including failed/unready generations; repair is an explicit owner action.
+
+Initial support is **Linux glibc x86_64 >= 2.17**, not universal portability.
+Atomic no-replace publication uses x86_64 Linux `renameat2` syscall 316 and
+requires kernel/filesystem support; unsupported publication fails explicitly.
+The actual accepted host used glibc **2.39**, kernel **6.8**. This distribution
+supplies Python/Tcl resources without Python 3.11 or Tcl system packages. The host
+CLI still requires Python **>= 3.9**; OS libraries/certificates and Docker/Nix
+remain separate prerequisites/storage.
+
+`--check` only inspects the receipt and probes readiness: no lock/cache creation
+or archive acquisition. `--offline` permits acquisition from the verified archive
+cache, fails on a cache miss and never falls back to another interpreter; it is
+not generally read-only. Archive integrity plus a local receipt is **not P6.5
+source/runtime attestation** or proof of the current extracted tree's every byte.
+
+The [actual runtime evidence](../../evidence/managed-python/actual-runtime.json)
+records Tcl **9.0.4**, Tk **9.0**, OpenSSL **3.5.9**, two disposable pip venvs and
+wheel-only LibreLane **3.1.0.dev3** with official `TclUtils._eval_env` returning 42.
+This is Tcl smoke acceptance, not official Flow-case or physical acceptance.
+To reproduce that experiment from the provider root, explicitly opt in to archive
+acquisition and wheel downloads (this is not a read-only check or Dune test):
+
+```sh
+python3 -I -B experiments/managed_python/accept.py \
+  --example /absolute/path/to/hardcaml_asic_example --acquire-and-install
+```
 
 `provision --check --no-container --toolchain "$TOOLCHAIN"` performs bounded
 read-only checks: no downloads, installation, root creation, env rewrite,
@@ -126,8 +167,10 @@ probes disable optional locks. Imports execute installed package code, so these
 checks assume trusted installed tools. The host also needs Bash and `timeout`.
 Nix availability remains a nonfatal bootstrap diagnostic, not proof of evaluation
 or daemon access. `--no-container` skips both engine and image queries and does
-not certify native EDA readiness. Native capabilities beyond these probes and
-runtime preflight Tcl policy remain unmodeled by this slice.
+not certify native EDA readiness. Preflight now checks host Tcl readiness; native
+capabilities beyond these probes remain unmodeled. With container checks enabled,
+the shared observer checks the official image's distribution-supported Python
+and exact LibreLane metadata. See [runtime policy](flow.md#runtime-policy-and-launch-binding).
 
 The generated shell file exports `ASIC_TOOLCHAIN`, `TT`, `PDK`, `PDK_ROOT`,
 `FLOW_PY`, and `PRECHECK_PY`. Single-quoted literal defaults safely preserve
@@ -142,10 +185,10 @@ The example's thin bootstrap uses the installed provider, with no required sourc
 checkout, copied pins, source fallback or automatic refresh. Root precedence is
 explicit `--toolchain` > `TOOLCHAIN` > absolute example `_flow_tools/`.
 Provider library refresh is separate. In the user's shell, first
-`source .dev/asic/current/activate.sh`, then `./bootstrap.sh --check --no-container`;
-the observed local host is expected to return nonzero until Python 3.11 and Tcl
-prerequisites are available. See [consumer check](bootstrap.md#consumer-check) and
-[dated acceptance](../phase_plan.md#tool-environment-closeout-acceptance).
+`source .dev/asic/current/activate.sh`, then `./bootstrap.sh --check`;
+the final actual check including container exits 0. The earlier five-gap result
+is historical. See [consumer check](bootstrap.md#consumer-check) and
+[dated acceptance](../phase_plan.md#hostcontainer-runtime-policy-closeout).
 
 To validate an emitted consumer bundle against the actual installed collateral:
 
