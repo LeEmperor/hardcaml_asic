@@ -171,8 +171,8 @@ need_stage() {
 
 case "$command" in
   build)
-    dune build
-    dune runtest
+    dune build -j 20
+    dune runtest -j 20
     ;;
 
   emit)
@@ -182,7 +182,7 @@ case "$command" in
       die "$BUNDLE already has files; use a new OUT or: rm -rf $BUNDLE"
     fi
     mkdir -p "$OUT"
-    dune exec "examples/tt_bundle_example.exe" -- "$KIND" "$BUNDLE"
+    dune exec -j 20 "examples/tt_bundle_example.exe" -- "$KIND" "$BUNDLE"
     cat "$BUNDLE/constraints/top.sdc"
     ;;
 

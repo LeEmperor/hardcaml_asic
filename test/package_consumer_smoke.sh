@@ -7,8 +7,8 @@ stage=$(mktemp -d /tmp/hardcaml-asic-consumer.XXXXXX)
 trap 'rm -rf "$stage"' EXIT
 
 cd "$repo_root"
-dune build @install
-dune install --prefix "$stage/prefix" hardcaml_asic
+dune build -j 20 @install
+dune install -j 20 --prefix "$stage/prefix" hardcaml_asic
 
 mkdir "$stage/consumer"
 cat > "$stage/consumer/dune-project" <<'EOF'
@@ -32,7 +32,7 @@ let () =
 EOF
 
 cd "$stage/consumer"
-OCAMLPATH="$stage/prefix/lib${OCAMLPATH:+:$OCAMLPATH}" dune build
+OCAMLPATH="$stage/prefix/lib${OCAMLPATH:+:$OCAMLPATH}" dune build -j 20
 actual=$(_build/default/main.exe)
 if [[ "$actual" != 'address=2 storage=32' ]]; then
   printf 'unexpected consumer output: %s\n' "$actual" >&2

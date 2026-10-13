@@ -1,9 +1,11 @@
 # hardcaml_asic architecture
 
-Consolidated 2026-10-12; runtime-policy/result-store boundaries reviewed 2026-10-13.
+Consolidated 2026-10-12; explicit-stage delivery reconciled 2026-10-13.
 This document owns system boundaries; the [phase plan](phase_plan.md) owns
-status and sequencing. Default bundle/run/preflight storage is implemented;
-the live observation contract and refactoring sequence below remain proposals.
+status and sequencing. Default bundle/run/preflight storage and the bounded
+explicit-stage runner, checkpoints, observation and finalization are implemented.
+Start with the [stage quickstart](guides/stage-quickstart.md) or the detailed
+[OCaml recipe guide](guides/ocaml-stage-recipes.md).
 The [historical architecture](archive/architecture-2026-09.md) preserves the
 original rationale; the [memory contract](reference/program-memory-contract.md)
 remains normative for `Single_port_ram`.
@@ -20,10 +22,13 @@ Implemented: project declaration inspection and shared emission entry point,
 project elaboration, target/constraint resolution, immutable bundles,
 installed Python dispatcher, separate execution IDs, `run.json`, `results.json`,
 postcheck attempts, operation-aware acceptance and integrity-checked archives;
-default result stores, standalone preflight receipts, human/explicit-JSON CLI 2,
+default result stores, standalone preflight receipts, human/explicit-JSON CLI 3,
 and project preflight/implementation-run routing.
-Missing: public catalog, early request correlation, durable operation/step updates
-and incremental result snapshots. Source-artifact stamping remains ASIC P6.5a.
+Opt-in delivery adds six sequential physical boundaries, schema-3 OCaml/Python
+recipes, exact-runtime path-bound checkpoints, early per-attempt allocation and
+stage inspect/cursor updates, plus separate terminal-results/acceptance operations.
+Missing: store-wide catalog/idempotency, fine backend-step updates, execution
+recovery and full Workbench application integration. Source-artifact stamping remains ASIC P6.5a.
 The provisional synthetic [observation fixtures](../test/fixtures/provider_observation/v1/README.md)
 and test-only validator/replayer are implemented and accepted; they add no installed
 or live provider capability.
@@ -157,7 +162,7 @@ interrupted readiness is saved where storage permits. These bounded diagnostics
 are not a live journal, fsync guarantee or crash-recovery protocol. Required stage
 validation precedes project work; project run is implementation only. Subsequent
 collect/report select an explicit existing run, never newest or arbitrary resume.
-See the [CLI 2 migration and command matrix](guides/flow.md#default-result-store-and-cli-contract-2).
+See the [CLI 3 migration and command matrix](guides/flow.md#default-result-store-and-cli-contract-3).
 Dependencies remain acyclic: Project composes Bundle and Resolved_flow, which use
 Elaborated_project rather than calling back into Project. Private construction
 boundaries remain intact. See the [entrypoint guide](guides/bundle-emission.md#project-centered-entry-point).
@@ -245,6 +250,68 @@ and does not advertise partial input as ready; see
 
 ## 8. Provider observation direction
 
+### Delivered bounded execution and readers
+
+The implementation is modules in the existing installed package, not a backend
+directory rewrite. `execution_plan` and `runner` share sequencing for the coarse
+Classic service plan (implementation, optional postcheck, collection, acceptance,
+optional archive) and opt-in `StagePlan` recipes. CLI presentation is separate;
+collection remains best-effort after coarse failures without replacing the primary
+failure. `Flow.Stage` / `Flow.Recipe` are pure typed OCaml declarations; Python
+`resolve_sequence` and `StagePlan.from_dict` validate the same schema-3 contract.
+Recipes are contiguous, fresh from synthesis or resumed immediately after an
+explicit source; no arbitrary DAG/custom steps or per-stage settings are exposed.
+
+| Boundary | Classic endpoint | Standalone restart targets |
+| --- | --- | --- |
+| synthesis | `Yosys.Synthesis` | floorplan, placement |
+| floorplan | `OpenROAD.Floorplan` | placement |
+| placement | `OpenROAD.DetailedPlacement` | cts |
+| cts | `OpenROAD.CTS` | routing |
+| routing | `OpenROAD.DetailedRouting` | signoff |
+| signoff | `Misc.ReportManufacturability` | none |
+
+Composable recipes include every intervening boundary; direct synthesis → placement
+is a standalone segment capability only. Official Classic successors/checkers and
+configured gates are retained. CTS's later STA/repair belongs to routing; routing's
+checkers/fill/extraction belong to signoff. Names are grouping boundaries, not a
+license to skip checks or an acceptance verdict.
+
+`stages` binds the exact tested Docker image/engine once; `librelane_bridge` uses
+official `State.loads` / `Flow.start` without copying orchestration. `checkpoint`
+copies all state views, configuration and hashed host/image-only closure, validates
+in the bound runtime, removes write bits and atomically promotes a unique no-clobber
+publication before announcing readiness. Schema-2 checkpoints declare exact restart
+targets and path-bound compatibility. Retain original workspace/input/support/PDK
+roots and bridge/image; copied views remove producer-run dependencies, not input-root
+dependencies. `checkpoint-inspect` is host-only validation, not runtime readiness.
+Older schema-1 physical checkpoints are not upgraded.
+
+Opt-in `flow_observation` supplies early allocation, per-attempt hash-chained atomic
+records, advisory observed-writer locks, `describe`, `inspect`, and cursor
+`read-updates`. Publication precedes stage finish; physical completion, outer
+outcome and acceptance remain distinct. Readers can reconnect after process exit;
+writer loss leaves unresolved facts, never invented recovery/completion. This is
+not the provisional store-wide fixture protocol, fsync durability, request
+idempotency, takeover, raw step observation or completed Workbench integration.
+Classic `run`/`execute` do not acquire this journal.
+
+`finalization` allocates a separate operation snapshot selecting one completed fresh
+six-stage execution. It maps actual synthesis/signoff evidence, validates retained
+runtime closure without repeating implementation, and optionally invokes existing
+TT precheck, gate replay and acceptance policy. Stage streams stay terminal and
+checkpoints retain `acceptance: not_evaluated`. Resumed-attempt stitching or a
+standalone signoff checkpoint is not eligible. No segmented artifact archive/GC,
+native/macro/other-image support or cross-machine relocation is delivered.
+
+The [implementation/review record](development/explicit-stage-refactor.md#final-independent-integration-review--2026-10-13)
+records forced full checks, isolated installed-package verification and consumer
+linkage. Curated repo evidence records [six physical stages](../evidence/librelane-observation/slice4-physical.json),
+[actual observed execution](../evidence/librelane-observation/slice5-observed.json)
+and [successful external acceptance](../evidence/librelane-observation/slice6-finalization.json).
+The independent review re-audited retained evidence; it did not repeat EDA or adopt
+a committed consumer pin. See the [phase closeout](phase_plan.md#explicit-stage-refactor-closeout).
+
 ### Provisional fixture/model boundary
 
 The [v1 corpus and executable contract](../test/fixtures/provider_observation/v1/README.md)
@@ -265,20 +332,22 @@ resumable checkpoint. Runtime locking, fsync/data durability, authentic persiste
 history and producer liveness are unproven; deeper hierarchy is unmodeled. Silence
 or reader disconnect never supplies interruption/completion facts.
 
-The prior LibreLane observation probe is historically **BLOCKED**; a compatible
-verified scratch runtime is now available, but official cases have not yet been
-rerun. Project implementation-run routing is delivered, independently of live
-catalog, early correlation, step updates and incremental result publication remain
-undelivered.
+The prior LibreLane observation probe remains historically **BLOCKED**. Later
+selected-runtime official cases and real physical handoffs succeeded; see the
+delivered contracts above. The synthetic fixture is not upgraded by that delivery.
 
 ### Domain facts and identities
 
-Proposed contract: describe capabilities/versions; list/inspect explicit stores;
+Broader proposed contract: describe capabilities/versions; list/inspect explicit stores;
 correlate a request with an early allocated operation/run; inspect step occurrences;
 replay recorded updates; read versioned snapshots and evidence references.
 Events describe allocation, lifecycle, publication and operation outcomes, never
-UI refresh actions. CLI 2 requires explicit `--json` to retain machine payloads;
-human output is now the default. A future read/watch interface is separate.
+UI refresh actions. CLI contract 3 requires explicit `--json` for machine payloads,
+including additive stage/checkpoint/observation/finalization commands. Presentation
+consumes existing results without new probes or policy changes; observed stages and
+finalization preserve flushed allocation/terminal JSONL. The example's contract-2
+gate needs final integration review before provider refresh. Per-attempt inspect/cursor reads are delivered; store-wide reads and
+blocking watch remain separate scope.
 
 One build may have two runs. Each run has identified operation attempts and step
 occurrences; display names or numbered directories are not identities. Collecting
@@ -293,7 +362,8 @@ promise of a resumable physical checkpoint.
 
 ### Durable publication and evidence
 
-Choose one coordinated provider write path for `execute` and standalone operations.
+For the remaining store-wide protocol, choose one coordinated provider write path
+for `execute` and standalone operations.
 Before implementation, settle per-run ordering, writer locks/conflict behavior,
 snapshot-to-cursor consistency, request retry/idempotency semantics, duplicate
 updates, incomplete writes and stale/crashed-producer behavior. Current atomic
@@ -322,10 +392,11 @@ validated and no observation seam is demonstrated.** Targeted standard-location
 checks found no compatible Python 3.12 Tcl/Tk module. This remains historical
 evidence. The [actual managed-runtime acceptance](../evidence/managed-python/actual-runtime.json)
 now proves Python 3.11.17, Tcl 9.0.4 and official LibreLane Tcl evaluation in a
-disposable venv. Next: repeat the bounded official-API probe using that verified
-scratch LibreLane venv. No official Flow case has yet run; full collateral
-provisioning is a separate owner action. Matching source metadata or Tcl smoke
-does not demonstrate an observation seam.
+disposable venv. Subsequently, all 12 official-API cases passed in the selected
+image, and real consumer synthesis/physical continuation succeeded
+([slice-2 evidence](../evidence/librelane-observation/slice2-real.json)). Later
+production stages, observation and acceptance are recorded above. The blocked
+probe and Tcl smoke remain earlier evidence, not the basis for those later claims.
 
 Source inspection shows `SequentialFlow.run` calls `step.start` directly; `Step.start` is
 final. Overriding `Flow.start_step` is not a demonstrated lifecycle hook.
@@ -348,7 +419,7 @@ current interpreter path without sourcing it.
 
 ## 9. Core review and development specimen
 
-### Review recommendation — discuss before implementation
+### Refactor review — bounded implementation delivered
 
 **Keep the P0–P3 model; strengthen boundaries and refactor P4 internals in slices.**
 The integration needs richer execution evidence, not a different RAM behavior or
@@ -360,8 +431,8 @@ they do not claim that future observation requirements have already been met.
 | Project/context/Elaborated_project, resource semantics | Reuse with current tests | No rewrite prerequisite |
 | `Resolved_flow` construction | Private interface enforces resolution-only construction; readers preserved | Implemented; evidence in phase plan |
 | Bundle/manifest | Preserve format and determinism; additive provenance and declared-fact export | Coordinate with P6.5a and result contract |
-| Runner/dispatcher | Extract operation/publication logic behind existing entry points | As durable observation is added |
-| Collection/reporting | Step-aware extractors plus final aggregation; retain existing acceptance policy | Before incremental result publication |
+| Runner/dispatcher | Shared coarse/stage runner behind existing entry points | Delivered bounded implementation |
+| Collection/reporting | Canonical segmented evidence mapping and final aggregation; existing policy | Delivered for fresh six-stage finalization; fine step extraction remains open |
 | Archives | Preserve snapshot/evidence closure at an explicit revision | Alongside snapshots, before scratch deletion is advertised |
 | Resource matching, multi-target abstraction | Revisit on concrete resource/backend demand | Backlog, not pre-P6 gates |
 
@@ -400,7 +471,8 @@ example-root emission also passes complete bundle equality, copied-input hashes,
 actual revision/dirty-input provenance and RTL replay; see the
 [project-entrypoint evidence](phase_plan.md#project-centered-entrypoint-acceptance).
 Synthetic committed fixtures remain separate provenance tests. This does not
-establish full environment locking, embedded source identity, source-access-denied
-P6.6 acceptance or physical acceptance. The separate provisional observation fixture
-slice is accepted; LibreLane feasibility awaits the bounded rerun above. FIFO delivery does
-not implement live provider observation or close ASIC P6 gates.
+establish full environment locking, embedded source identity or source-access-denied
+P6.6 acceptance. Later explicit-stage work proved actual specimen physical and
+external acceptance, plus isolated linkage of the additive recipe executable;
+it did not adopt a committed pin or close the broader ASIC P6 gates. Workbench
+application integration remains separate from the delivered provider readers.

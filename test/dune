@@ -1,8 +1,35 @@
 ; P0 lifecycle, registration and selection tests.
 
+(rule
+ (alias related-presentation)
+ (deps test_related_presentation.py test_stages.py (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:test_related_presentation.py})))
+
+(alias
+ (name runtest)
+ (deps (alias related-presentation)))
+
+(rule
+ (alias inspector-presentation)
+ (deps test_inspector_presentation.py test_stages.py (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:test_inspector_presentation.py})))
+
+(alias
+ (name runtest)
+ (deps (alias inspector-presentation)))
+
+(rule
+ (alias finalization)
+ (deps test_finalization.py (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:test_finalization.py})))
+
+(alias
+ (name runtest)
+ (deps (alias finalization)))
+
 (library
  (name hardcaml_asic_test)
- (modules (:standard \ project_api_consumer))
+ (modules (:standard \ project_api_consumer stage_recipe_contract))
  ; The trailing -source-tree-root wins over the one dune passes (%{workspace_root},
  ; .. from here). Works around a ppx_expect v0.18~preview bug: it drops the directory
  ; from the test file's path when registering a test, then rebuilds the path at exit
@@ -75,7 +102,7 @@
 ; routing cases and never runs dune, a provisioner or an external tool.
 
 (rule
- (alias runtest)
+ (alias flow-cli)
  (deps
   test_flow_cli.py
   (source_tree ../flow)
@@ -130,5 +157,50 @@
  (action (run python3 -B %{dep:test_execution_transport.py})))
 
 (alias
+  (name runtest)
+  (deps (alias execution-transport)))
+
+; Coarse lifecycle and CLI compatibility; no nested Dune or live EDA runtime.
+(rule
+ (alias coarse-runner)
+ (deps test_runner.py test_phase4.py test_flow_cli.py (alias flow-cli)
+       (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:test_runner.py})))
+
+(alias
  (name runtest)
- (deps (alias execution-transport)))
+ (deps (alias coarse-runner)))
+
+(rule
+ (alias stage-checkpoint)
+ (deps test_stages.py (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:test_stages.py})))
+
+(alias
+ (name runtest)
+ (deps (alias stage-checkpoint)))
+
+(rule
+ (alias flow-observation)
+ (deps test_flow_observation.py test_stages.py (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:test_flow_observation.py})))
+
+(alias
+  (name runtest)
+  (deps (alias flow-observation)))
+
+(executable
+ (name stage_recipe_contract)
+ (modules stage_recipe_contract)
+ (libraries core hardcaml_asic yojson)
+ (preprocess (pps ppx_jane)))
+
+; Also run this script explicitly with --provider-prefix after installation.
+(rule
+ (alias ocaml-stage-recipes)
+ (deps check_stage_recipes.py test_stages.py (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:check_stage_recipes.py} --emitter %{exe:stage_recipe_contract.exe})))
+
+(alias
+ (name runtest)
+ (deps (alias ocaml-stage-recipes)))

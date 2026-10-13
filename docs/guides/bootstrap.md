@@ -78,14 +78,17 @@ Matching package/source versions do not establish environment acceptance.
 The prior [official-API observation probe](../../experiments/librelane_observation/README.md)
 was **historically BLOCKED** by missing `tkinter` in that old 3.12 venv
 ([unchanged record](../../evidence/librelane-observation/blocked-local.json)). Zero
-of eleven official sequencing cases ran; they have **not yet been rerun**.
+of eleven official sequencing cases ran in that attempt. Later selected-image
+official cases and production physical/observation/external acceptance succeeded;
+see the [explicit-stage closeout](../phase_plan.md#explicit-stage-refactor-closeout).
 The old source `.toolchain/` remains unchanged. A verified managed 3.11 runtime
-and disposable LibreLane venv are now available for the next bounded rerun;
-official Tcl evaluation smoke passed, but synthetic Flow configuration remains
-unvalidated. See [managed-runtime evidence and reproduction](consumer-installation.md#managed-python-integrity-and-initial-platform)
+and disposable LibreLane venv supplied the subsequent readiness evidence;
+official Tcl evaluation smoke itself did not prove Flow behavior. See
+[managed-runtime evidence and reproduction](consumer-installation.md#managed-python-integrity-and-initial-platform)
 and [current closeout](../phase_plan.md#tool-environment-closeout-acceptance).
 Preflight now checks host Tcl readiness. P6.5c is partially addressed; native EDA,
-Podman runner generalization and physical gates remain open.
+Podman runner generalization remain open. Later exact-image physical evidence does
+not establish native or other-runtime support.
 
 ## Quick start
 

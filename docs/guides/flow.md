@@ -1,14 +1,21 @@
 # TT/CMOS5L flow execution and results
 
-Status: operating guide, 2026-09-20. P4.1–P4.5 and the consumer reproduction are
+Status: operating guide, reconciled 2026-10-13. P4.1–P4.5 and the consumer reproduction are
 closed with evidence; see
 [phase plan section 7](../archive/phase-plan-through-p6.4b.md#7-p4--execution-results-and-physical-integration)
-for what each gate rests on. Nothing below is outstanding work. This is the
+for what each historical gate rests on. Explicit-stage scope and later checks are
+recorded in the [current closeout](../phase_plan.md#explicit-stage-refactor-closeout).
+This is the
 standing account of how the flow is run and how a run becomes an evidence
 directory, and the only documentation of `flow.sh`, `report.py` and
 `archive.py`: [bootstrapping](bootstrap.md) ends where this begins, and
 [bundle emission](bundle-emission.md) produces its input. The same sequence is
 used for this repository's examples and consumer-owned adopted bundles.
+
+Start with the [explicit-stage quickstart](stage-quickstart.md). For the typed
+OCaml facade to the opt-in schema-3 stage provider, see
+[OCaml stage declarations and recipes](ocaml-stage-recipes.md), including
+composition, the specimen recipe command and read-only `checkpoint-inspect`.
 
 The P3 bundle is immutable input. `scripts/phase4.py` is an external consumer:
 it verifies the emitted file hashes and pinned target references, creates a
@@ -16,28 +23,57 @@ unique run directory for each attempt, executes LibreLane, and collects results
 from either new or existing run directories. It does not install tools or change
 `manifest.json`.
 
-## Default result store and CLI contract 2
+## Default result store and CLI contract 3
 
-Current source candidate, 2026-10-13: the installed CLI defaults to concise human
-output. **Machine callers must request `--json`**; this intentional presentation
-break is advertised as `cli_contract.version = 2` by `--version --json`, separately
+Current interface, 2026-10-13: the installed CLI defaults to concise human
+output. **All machine callers request `--json`**; this intentional presentation
+break is advertised as `cli_contract.version = 3` by `--version --json`, separately
 from package version 0.1.0 and record schema 1. JSON stdout is the command's raw
 payload, with paths, issues and verbose diagnostics on stderr. `--verbose` expands
 stderr diagnostics; it does not change the payload or enable execution.
+The additive `stages`, `checkpoint-inspect`, `observation`, `finalize` and
+`finalization-inspect` interfaces also default to human summaries. With `--json`,
+observed execution and finalization emit allocation and terminal JSON lines, not
+one aggregate object. Persisted schemas and complete JSON payloads are unchanged.
+This is not stdout backward compatibility: migrate parsing callers to `--json`.
+CLI contract 3 advertises the additive JSON commands, JSON-lines commands and flag
+placements. The example accepts exactly contracts 2 and 3; unknown versions remain
+rejected. Refresh and re-source its private development installation for contract 3;
+see [integration evidence](../development/human-readable-flow-output.md#slice-3--independent-integration-2026-10-13).
+
+`--json` works before the command, anywhere after the command, and at either
+observation parser level. An omitted inner flag never resets an outer flag:
+
+```sh
+hardcaml-asic-flow --json observation describe
+hardcaml-asic-flow observation --json read-updates "$ATTEMPT" --stream-id "$STREAM_ID" --after 0
+hardcaml-asic-flow observation read-updates --json "$ATTEMPT" --stream-id "$STREAM_ID" --after 0
+hardcaml-asic-flow observation read-updates "$ATTEMPT" --stream-id "$STREAM_ID" --after 0 --json
+hardcaml-asic-flow finalization-inspect --json "$FINALIZATION_ATTEMPT"
+# Parsing pipelines must opt in; read-updates returns one complete object:
+hardcaml-asic-flow observation read-updates "$ATTEMPT" --stream-id "$STREAM_ID" --after 0 --json | jq '.cursor'
+```
+
+Observed `stages --json` and `finalize --json` are JSONL: parse each line separately,
+retain the early allocation receipt, and handle either terminal results or errors.
+Unobserved `stages --json` returns one execution object. Unsupported combinations
+(for example `archive --list --json`, `provision --json`, `describe --after`, or
+`finalization-inspect --accept`) remain parser errors. `--verbose` selects stderr
+diagnostics, not an alternate payload.
 
 From the example checkout, with the existing current installation activated:
 
 ```sh
 source .dev/asic/current/activate.sh
-dune exec bin/project.exe -- emit
-dune exec bin/project.exe -- preflight
-dune exec bin/project.exe -- preflight --json
+dune exec -j 20 bin/project.exe -- emit
+dune exec -j 20 bin/project.exe -- preflight
+dune exec -j 20 bin/project.exe -- preflight --json
 # Future explicit expensive implementation request:
-dune exec bin/project.exe -- run --stage synthesis
+dune exec -j 20 bin/project.exe -- run --stage synthesis
 ```
 
 The project CLI owns root discovery and emission; the installed provider owns
-readiness and implementation. It checks provider contract 2 before automatic
+readiness and implementation. It checks supported provider contracts 2 or 3 before automatic
 emission for preflight/run, then dispatches with `execv`, preserving provider exits
 and signals. Missing/invalid `--stage` is rejected before emission or dispatch.
 Project `run` is **implementation only**: no implicit collect, postcheck, report,
@@ -82,7 +118,65 @@ reports and exit 1, while usage/output-path errors exit 2. Scoped SIGINT/SIGTERM
 save interrupted diagnostics where storage permits. Run records precede readiness
 probes; failed readiness leaves no staged project or implementation commands.
 Run status describes implementation, not report acceptance. Atomic JSON replacement
-does not promise fsync, power-loss recovery or a live event journal.
+does not promise fsync or power-loss recovery. Classic commands have no live event
+journal; opt-in stage observation is a separate bounded interface below.
+
+## Explicit sequential stages and checkpoints
+
+The shared `execution_plan` / `runner` modules retain the coarse Classic sequence
+and also execute opt-in stage plans. Preflight binds runtime once; each stage runs
+in a fresh owned process/toolbox and publishes a checkpoint before its occurrence
+can complete. StagePlan schema 3 has exactly these fields:
+
+```json
+{"schema_version":3,"stages":["synthesis","floorplan","placement","cts","routing","signoff"],"initial_boundary":null}
+```
+
+Fresh sequences start at synthesis; resumed sequences start immediately after
+`initial_boundary`. Empty, repeated, reordered, skipped stages, extra fields and
+duplicate JSON keys are rejected. `--plan FILE` and `--endpoint STAGE` are mutually
+exclusive; endpoint shorthand expands a contiguous sequence. With `--checkpoint`,
+endpoint shorthand infers its source. Legacy schema-2 endpoint/resume JSON remains
+readable, with resumed source synthesis. Python callers use
+`execution_plan.resolve_sequence(stages, initial_boundary=...)`,
+`resolve_stages(endpoint, ...)` or `StagePlan.from_dict`; OCaml callers use
+[`Flow.Stage` / `Flow.Recipe`](ocaml-stage-recipes.md).
+
+| Boundary | Endpoint | Immediate successor | Standalone restart targets |
+| --- | --- | --- | --- |
+| synthesis | `Yosys.Synthesis` | `Checker.YosysUnmappedCells` | floorplan, placement |
+| floorplan | `OpenROAD.Floorplan` | `OpenROAD.DumpRCValues` | placement |
+| placement | `OpenROAD.DetailedPlacement` | `OpenROAD.CTS` | cts |
+| cts | `OpenROAD.CTS` | `OpenROAD.STAMidPNR-1` | routing |
+| routing | `OpenROAD.DetailedRouting` | `Odb.RemoveRoutingObstructions` | signoff |
+| signoff | `Misc.ReportManufacturability` | none | none |
+
+`stages.SegmentAdapter.run_segment` supplies the standalone direct synthesis →
+placement capability; recipes include floorplan. CTS's later STA/repair is in
+routing; routing checkers/fill/extraction are in signoff. Official Classic gates
+and successors remain intact. There is no arbitrary DAG/custom-step/settings API.
+
+Stages require Docker and exact image
+`sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a`.
+`stages.prepare` takes explicit bundle, support, PDK, interpreter, workspace and
+checkpoint store. Fresh workspaces must not exist and their parent must exist;
+checkpoint storage is inside the mounted workspace. Retain the original workspace
+for resume. Default `--timeout 600` bounds each launch; real signoff evidence used
+7200 seconds. No native/macro/other-image or relocated handoff is supported.
+
+`checkpoint.publish` copies official state, configuration, closure, segment metadata
+and every non-null view; a hashed schema-2 manifest declares exact restart targets,
+compatibility, file inventories and `acceptance: not_evaluated`. Host and image-only
+closure are validated before write-bit removal and atomic no-clobber promotion.
+Publication failure prevents successor readiness. Retain original input/support/PDK
+paths and the bound bridge/image; copied views remove dependence on old producer
+runs, not those external roots. This is path-bound visibility/integrity, not fsync
+durability, execution recovery or archive/GC. Schema-1 physical publications are
+not upgraded. `checkpoint-inspect CHECKPOINT --restart-to STAGE` checks host closure
+and transition only; `--compatibility EXPECTED_JSON` checks a caller-supplied object.
+It reports `host_only` and `runtime_closure_validated: false`; execution validates
+image-only closure anew. Public finite metrics and explicit unavailable values are
+cumulative evidence, not per-step origin or an acceptance verdict.
 
 Bundle public paths are symlinks to verified `.objects/<identity>.<unique>` data.
 Preflight/run canonicalize them, so saved records may name the backing path;
@@ -93,9 +187,138 @@ reuse, exclusive no-clobber publication and race behavior are documented in
 `scripts/phase4.py` retains its historical path-only run contract and development
 preflight JSON spelling; it is not the installed CLI presentation contract.
 
-This feature is storage and CLI ergonomics, not live catalog/early correlation,
-internal step observation, incremental results or physical acceptance. See
-[dated acceptance](../phase_plan.md#default-result-store-and-cli-2-closeout).
+### Opt-in persistent stage observation (schema 1)
+
+The installed provider exposes a separate structured API for Workbench and other
+machine readers. It observes the opt-in `stages` production path; the default
+Classic `run`/`execute` path keeps its existing behavior. Locations are explicit:
+
+```sh
+hardcaml-asic-flow stages "$BUNDLE" --support-tools "$TT" --pdk-root "$PDK" --python "$FLOW_PYTHON" --workspace "$NEW_WORKSPACE" --checkpoint-store "$NEW_WORKSPACE/checkpoints" --endpoint floorplan --observation-store "$OBSERVATIONS"
+hardcaml-asic-flow observation describe
+hardcaml-asic-flow observation inspect "$ATTEMPT_DIRECTORY"
+hardcaml-asic-flow observation inspect "$ATTEMPT_DIRECTORY" --json  # complete machine payload
+hardcaml-asic-flow checkpoint-inspect "$CHECKPOINT" --restart-to cts
+hardcaml-asic-flow checkpoint-inspect "$CHECKPOINT" --restart-to cts --json
+hardcaml-asic-flow observation read-updates "$ATTEMPT_DIRECTORY" --stream-id "$STREAM_ID" --after 5
+```
+
+`OBSERVATIONS` must be outside the workspace. The workspace's parent must exist.
+Fresh execution still requires a new workspace; resumed execution requires the
+original retained workspace and an explicit `--checkpoint`; `--plan` only supplies
+the recipe and does not replace that checkpoint path.
+Each observation attempt is exclusively allocated under the chosen root. Before
+recipe/checkpoint reading, preflight or tool execution, the observed `stages`
+command flushes an early human allocation receipt. With `--json`, it flushes one
+JSON-line receipt with `contract`, `schema_version`,
+`event: observation_allocated`, `stream_id`, and absolute `attempt` directory.
+With `--json`, on success the next line is the existing execution JSON. Ordinary caught failures
+emit an error JSON line and exit 2; caught interruption exits `128 + signal`.
+Inspect the attempt for its persisted outcome. Allocation conflicts have no receipt
+and return a structured `BUSY` error. Argument parsing/allocation I/O failures may
+precede allocation, so there need not be an attempt to inspect.
+
+All observation queries and `checkpoint-inspect` default to labeled plain-text
+reports. Add `--json` for their complete unchanged machine payloads, including
+structured errors. JSON may precede the command, follow `observation`, or appear
+after `inspect`/`checkpoint-inspect` (before or after the path). Diagnostics go to
+stderr. Inspection success remains exit 0 even for a recorded failed execution;
+invalid/missing records or failed checkpoint validation remain exit 2.
+`describe --json` and `read-updates --json` return their complete strict JSON.
+Human updates show up to 20 chronological event summaries (first/last ten for larger
+responses), publication paths, omitted count and an explicit complete-response cursor;
+empty reads do not imply completion. These read commands
+need no tools, a PDK, or original producer process. `describe` returns the contract
+`hardcaml-asic.stage-observation`, `schema_version: 1`, capabilities, closed field
+descriptions under `schemas`, writer and retention policies. Python callers can use
+the installed `hardcaml_asic_flow.flow_observation.describe()`, `inspect(directory)`
+and `read_updates(directory, stream_id=..., after=...)` directly. There is no
+blocking watch command: poll `read-updates`, save its cursor, and reconnect with
+the same stream ID and cursor. `inspect` supplies a consistent recorded prefix and
+its cursor; concurrent later events can be fetched after that cursor. Reader calls
+do not acknowledge execution, append events, repair records, or acquire ownership.
+
+**Journal and lifecycle schema.** An attempt contains atomically promoted
+`000000000001.json`, `000000000002.json`, … records plus `writer.lock` and, when
+preflight is reached, `preflight.json`. Each record has exactly:
+
+```text
+contract, schema_version, stream_id, sequence, previous_sha256,
+event, data, sha256
+```
+
+Sequence starts at 1. `previous_sha256` is null at 1 and otherwise the preceding
+record hash. `sha256` hashes UTF-8 JSON of the other fields with sorted keys,
+compact separators and `allow_nan=False`. The stream/attempt ID is a fresh
+32-character lowercase UUID hex value; occurrence IDs are stable
+`STREAM_ID/implementation.STAGE`. Events are:
+
+| Event | Exact `data` fields | Meaning |
+| --- | --- | --- |
+| `allocated` | `request`, `workspace`, `checkpoint_store`, `lock_path`, `preflight_record` | Intent and explicit path-bound references, before preflight |
+| `planned` | `plan` | Validated StagePlan schema 2 or 3; all occurrences initially `unreached` |
+| `prepared` | `runtime_record` | Staging/binding returned; runtime facts remain a separate referenced transport record |
+| `started` | `occurrence`, `artifact` | Stage running; artifact null |
+| `published` | `occurrence`, `artifact` | Validated atomic checkpoint publication returned; stage still running |
+| `finished` | `occurrence`, `artifact` | Outer stage completed/failed/interrupted; completed requires its prior publication |
+| `outcome` | `status`, `exit_code`, `error` | Final outer operation outcome, after execution-record publication |
+
+Occurrence fields are exactly `occurrence_id`, `action_key`, `status`, `exit_code`,
+`duration_seconds`, `best_effort`, `error`, `verdict`. Status is `unreached`,
+`running`, `completed`, `failed`, or `interrupted`; unreached successors are never
+inferred skipped. Here `best_effort` is false and `verdict` is null. Checkpoint
+references have `path`, `identity`, `boundary`, `restart_supported`,
+`restart_targets`, `closure_scope`, `tested_image_id`, `acceptance` (the existing
+checkpoint schema-2 reference contract).
+
+`inspect` returns `contract`, `schema_version`, `stream_id`, `cursor`, `state`,
+`writer_active`, `observation_status`, `final_results`. `state` contains
+`attempt_id`, all allocation fields, `phase`, `plan`, `occurrences`, `artifacts`,
+`runtime_record`, and `outcome`. Phase is `preparing`, `executing`, or `finished`;
+missing plan/runtime/outcome are null. Preflight errors preserve their diagnostic
+report; preparation errors leave planned stages unreached. Stage failures block
+successors. Final outer failure may coexist with already completed physical work.
+
+`final_results` has `physical_completion` (`completed` only after a recorded
+signoff-stage finish, otherwise `not_recorded`), explicit `checkpoint_refs`,
+`acceptance: not_evaluated`, and `external_postcheck: not_evaluated`. A segmented
+signoff checkpoint is not a fully accepted result. External postcheck/acceptance
+is delivered as the [separate finalization operation](#segmented-terminal-results-and-external-acceptance-opt-in),
+which never revises this terminal stage stream.
+
+`read-updates` returns `contract`, `schema_version`, `stream_id`, `after`, `cursor`,
+and `events` (complete journal records strictly after the requested cursor).
+Wrong stream, negative/noninteger or beyond-head cursor produces `RESET_REQUIRED`.
+Missing/malformed/gapped records, hash-chain failures, duplicate keys, nonfinite
+JSON and invalid lifecycle transitions produce `INVALID_RECORD`; inspection fails
+closed without returning a success snapshot. With `--json`, errors are JSON
+`{contract,schema_version,error:{code,detail}}`, exit 2.
+
+**Ownership, interruption and retention.** Observed writers hold a nonblocking
+Linux/POSIX advisory workspace lock across allocation/preparation/execution, even
+when using different observation roots. A per-attempt lock supplies best-effort
+writer presence: `writer_active` is boolean, or null if it cannot be checked.
+Unobserved Classic executions and external programs do not participate in this
+lock. Released writers cannot append; another attempt does not revive the old
+one. There is no writer takeover, execution recovery, or request idempotency.
+
+SIGINT/SIGTERM are recorded when handling and storage succeed. SIGKILL/crashes or
+failed journal writes leave the last committed prefix: `outcome` stays null and
+`observation_status` becomes `writer_lost_or_unknown` when no writer is observed.
+Do not interpret a stale `running` status as current liveness, or artifact publication
+as stage/outer completion. Temporary hidden write files are ignored; incomplete
+promoted records are errors. Atomic replacement is process-restart-readable, not
+an fsync or power-loss durability guarantee. Hashes detect corruption, not hostile
+owner mutation. Preserve the observation directory, workspace, checkpoints and
+external input/support/PDK roots. Inspect reports historical publication facts; it
+does not revalidate current checkpoint contents or promise ongoing artifact readiness.
+This is a bounded per-attempt stage journal, not the full provisional provider
+fixture contract, a store-wide catalog, or raw LibreLane step/body observation.
+
+Observation delivers early per-attempt correlation and checkpoint publication
+facts, not a store-wide catalog, fine internal-step observation or acceptance.
+It is a public provider reader seam, not completed Workbench application integration.
+See [current acceptance](../phase_plan.md#explicit-stage-refactor-closeout).
 
 ## Runtime policy and launch binding
 
@@ -120,7 +343,7 @@ malformed versions, LibreLane or metadata failures.
 ```sh
 source .dev/asic/current/activate.sh
 BUNDLE="$PWD/.dev/runtime-contract-checks/bundle-20261013-01" # new destination
-dune exec bin/project.exe -- emit --source-root "$PWD" --output-dir "$BUNDLE"
+dune exec -j 20 bin/project.exe -- emit --source-root "$PWD" --output-dir "$BUNDLE"
 hardcaml-asic-flow preflight "$BUNDLE" --toolchain "$PWD/_flow_tools"
 ```
 
@@ -140,7 +363,9 @@ This changes transport only, not LibreLane's flow engine. New postcheck verifies
 the recorded image/engine and records simulator identity separately. Historical
 records retain tag/engine fallback. Readiness and tiny transport smoke do not
 establish synthesis or physical compatibility; no real ASIC flow was run in this
-closeout.
+closeout. Later [explicit-stage physical evidence](../../evidence/librelane-observation/slice4-physical.json)
+and [external acceptance](../../evidence/librelane-observation/slice6-finalization.json)
+are separate successful experiments, not a reinterpretation of readiness checks.
 
 ## Running it
 
@@ -153,7 +378,7 @@ anything:
 
 ```sh
 scripts/flow.sh                      # help; nothing is built or run
-scripts/flow.sh build                # dune build && dune runtest
+scripts/flow.sh build                # dune build -j 20 && dune runtest -j 20
 OUT=/tmp/try KIND=memory scripts/flow.sh emit
 OUT=/tmp/try STAGE=synthesis scripts/flow.sh execute   # run -> collect -> report
 OUT=/tmp/try RUN=/tmp/try/runs/<id> scripts/flow.sh report
@@ -235,7 +460,7 @@ paths, and what to do when a check fails.
 
 There is no dependency on a sibling checkout, in either direction. The pins are
 this repository's own, in `lib/target.ml` and `lib/bundle.ml`; `toolchain.lock`
-is a copy of them for the shell, and `test/check_bundle.py` fails `dune runtest`
+is a copy of them for the shell, and `test/check_bundle.py` fails `dune runtest -j 20`
 if the two ever disagree.
 
 Bootstrapping prepares an environment. It does not prove the design hardens,
@@ -297,7 +522,7 @@ gate-level netlist with the observable wrapper testbench:
 python3 scripts/phase4.py postcheck "$RUNS/<printed-run-id>" \
   --support-tools "$SUPPORT_TOOLS" --pdk-root "$PDK_ROOT" \
   --precheck-python /absolute/path/to/precheck-venv/bin/python \
-  --testbench test/tt_bundle_tb.v
+  --testbench test/tt_bundle_tb.v --testbench-top tb_observable
 
 python3 scripts/phase4.py collect "$RUNS/<printed-run-id>" \
   --output "$RUNS/<printed-run-id>/results.json"
@@ -453,3 +678,126 @@ passes `cell/pin` where ABC expects a cell name. The consumer's
 [analysis](../../../scaf/tinytapeout/reports/2026-09-20-p0.7-memory-synthesis.md#abc-diagnostics)
 shows why that print is not timing evidence. It does not invalidate mapped
 cell/area evidence or the independently reported post-route OpenSTA timing.
+
+## Segmented terminal results and external acceptance (opt-in)
+
+`finalize` selects the six published checkpoints from one completed fresh
+six-stage execution JSON. It validates their identities, full host closure,
+shared configuration and exact runtime binding, then rechecks the shared image-only
+closure with the retained bound bridge in that image. This validation calls no
+`Flow.start` and does not repeat implementation. Only this demonstrated schema-2
+checkpoint composition is eligible; independently resumed execution stitching is
+not yet supported by finalization.
+
+```sh
+hardcaml-asic-flow finalize WORKSPACE/execution-ATTEMPT.json --operation-store OPERATIONS
+hardcaml-asic-flow finalize WORKSPACE/execution-ATTEMPT.json --operation-store OPERATIONS --accept --support-tools TT --precheck-python PRECHECK_PYTHON --testbench CONSUMER/acceptance/replay.v --testbench-top replay --replay-trace TRACE.txt
+hardcaml-asic-flow finalization-inspect OPERATIONS/OPERATION_DIRECTORY
+```
+
+Paths are caller-cwd-relative or absolute; the operation store is explicit. The
+source adapter is `PYTHONPATH=flow python3 -B -m hardcaml_asic_flow`. `--replay-trace`
+is optional for self-contained benches; for the example's consumer replay it
+copies the supplied reference trace into the check attempt and passes its retained
+path as `+trace=...`. The consumer's `acceptance/export_trace.exe` produces that
+oracle; record its command/hash when producing evidence. No Dune command is hidden
+inside finalization.
+
+Without `--accept`, this operation publishes results with external postcheck and
+acceptance `not_evaluated`. With `--accept`, it invokes the **existing**
+`phase4.check` and `report.report` services: TT precheck under its pinned Nix
+environment, gate-level simulation in the implementation's exact bound container,
+then the existing full acceptance policy. Missing/malformed synthesis, timing,
+DRC/LVS/antenna evidence, unconstrained timing and failed external checks remain
+failures. Classic `run`, `execute`, `postcheck`, `collect`, `report` and `archive`
+keep their interfaces and default policy.
+
+### Separate operation snapshot contract
+
+Each invocation allocates a new `result_store` attempt and atomically updates its
+`operation.json`, contract **`hardcaml-asic.segment-finalization`, schema 1**. The
+CLI flushes an early allocation receipt and shows status, selected publication
+paths, result path, requested acceptance versus actual verdict and external postchecks.
+With `--json` it flushes an allocation JSON line (`contract`, `schema_version`, `event:
+allocated`, `attempt`, `attempt_id`) before validation, and prints the final
+receipt plus `attempt` afterwards. Exit 0 means the requested operation completed;
+1 means failed validation/checks/acceptance; interruption uses 128 + signal.
+Allocation/storage errors that prevent recording return 2 without inventing facts.
+
+`finalization-inspect` strictly reads the receipt without writing; its human default
+uses the same summary, and `--json` returns the complete receipt. A running receipt
+has no terminal exit; failed validation does not imply acceptance rejection, while
+`acceptance: fail` is an actual rejection. `interrupted` is cancellation/interruption.
+This is a **separate versioned snapshot API**, not the stage journal/cursor API:
+the terminal implementation stream is never reopened or rewritten. Required
+receipt fields are:
+
+- `contract`, `schema_version`, fresh `attempt_id`, `request` (execution path,
+  accept flag, explicit later-check inputs), `started_at`, nullable `ended_at`;
+- `status`: `running`, `completed`, `failed`, or `interrupted`; `phase`: last entered
+  `validation`, `collection`, `external_postcheck`, or `acceptance`;
+- `external_postcheck`: `not_evaluated`, `running`, `completed`, `failed`, or
+  `interrupted`; `acceptance`: `not_evaluated`, `pass`, or `fail`;
+- `commands` (actual runtime-validation argv), nullable `results` and `error`;
+  terminal receipts additionally have `exit_code`.
+
+As work progresses, optional evidence fields record `execution` (original path,
+SHA256 and attempt ID), `binding`, `selected_checkpoints` (six path/identity/boundary
+refs), `runtime_validation: completed`, `selected_evidence`, `mapped_files`
+(bytes/SHA256 inventory), `adapter`, `evidence_context`, `postcheck_collateral`
+(full selected TT precheck/tech file inventory), `postcheck_record` / `postcheck_sha256`
+and `acceptance_report` (path/SHA256). Transport
+may append `container_cleanup` diagnostics. `results` has an exact path/SHA256.
+`phase` is diagnostic, not an independent success event. A `running` snapshot after
+writer loss is unresolved; inspection makes no liveness, recovery or invented
+completion claim. Atomic replacement provides process-readable snapshots, not
+fsync durability, a journal, fencing, takeover or hostile-owner protection.
+
+The adapter copies official synthesis/signoff states, final GDS/netlist/LEF,
+manifest, constraints and TT metadata into the new attempt. It derives the metrics
+CSV directly from cumulative official signoff metrics and retains all raw values.
+Synthesis area/cell/check metrics come from the synthesis checkpoint, never from
+inherited final counts or a fabricated Yosys report. Worst-slack selection still
+includes all timing evidence; an equal-value tie prefers an actual corner over an
+anonymous aggregate in this mapped adapter. Every public metric
+or physical check adds `origin_boundary`; the results' `provenance` names the
+adapter, operation and selected publications. Unavailable sequential-area/cell-type
+details remain unavailable. No per-step remeasurement provenance is claimed.
+
+The existing services receive an explicit canonical **in-memory evidence context**:
+its `run_id` is the new operation ID and `full` denotes the selected six-stage
+physical completion, not completion of an old classic run. That context and
+provenance are saved in the operation receipt; **no synthetic `run.json` or
+`stat.json` is written**. Real later-check records stay under this operation's
+`checks/`; new mapped checks also carry an `evidence_origin` reference. Results
+are published only after collection and consistency checks; failed acceptance
+still retains collected evidence and the reporter's `acceptance.txt` diagnostics.
+
+### Retention and current real verdict
+
+Retain the operation directory, selected checkpoints, original path-bound
+workspace/bundle/collateral/PDK roots and exact image for audit and reruns. Receipt
+references report historical selection; they are not permanent readiness or an
+automatic retention guarantee. Finalization checks readiness anew each time and
+rechecks selected inputs after external checks. The copied evidence is a bounded
+acceptance package, not a complete restart closure or a classic archive input.
+The existing classic archiver continues to require its genuine run/bundle
+contract; preserve the operation tree directly rather than fabricating that record.
+
+The real consumer experiment is `experiments/finalization_smoke.py`, reusing
+`/tmp/opencode/librelane-slice4-production` without another physical flow. Curated
+verdict and retained operation paths are in
+[`evidence/librelane-observation/slice6-finalization.json`](../../evidence/librelane-observation/slice6-finalization.json).
+The real operation passed all nine applicable TT checks and the 11,429-edge
+bound-image replay; shared full acceptance passed. Six disconnected pins and one
+max-fanout violation remain visible in raw final metrics, outside the existing
+acceptance gates. `experiments/verify_finalization.py OPERATION` audits retained
+hashes and re-evaluates the current shared collector/reporter read-only.
+
+The accepted operation took 675.606435 seconds: worst setup 11.67551954830797 ns
+at `nom_slow_1p08V_125C`, hold 0.12502899069955042 ns at
+`nom_fast_1p32V_m40C`; DRC/LVS/antenna passed. Earlier missing-metadata and timeout
+attempts remain failures in the evidence. The final independent review reran
+full software checks and audited retained physical/accepted evidence, without
+repeating implementation or external checks. Exact commands and counts are in
+the [review record](../development/explicit-stage-refactor.md#exact-successful-verification).

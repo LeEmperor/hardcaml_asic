@@ -277,8 +277,8 @@ def write_bundle(bundle, librelane=STUB_LIBRELANE, python=STUB_PYTHON_MINOR):
 
 
 def build_prefix(prefix):
-    for command in (["dune", "build", "@install"],
-                    ["dune", "install", "--prefix", str(prefix), "hardcaml_asic"]):
+    for command in (["dune", "build", "-j", "20", "@install"],
+                    ["dune", "install", "-j", "20", "--prefix", str(prefix), "hardcaml_asic"]):
         subprocess.run(command, cwd=REPO, check=True)
 
 
@@ -315,6 +315,128 @@ class InstalledPrefixTest(unittest.TestCase):
                               text=True, capture_output=True, check=False)
 
     # -- discovery -------------------------------------------------------
+
+    def test_installed_inspector_presentation_suite(self):
+        self.assertTrue((self.package / "presentation.py").is_file())
+        completed = subprocess.run(
+            [sys.executable, "-I", "-B", str(REPO / "test/test_inspector_presentation.py")],
+            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin",
+                                     "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
+            text=True, capture_output=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Ran 11 tests", completed.stderr)
+        missing = self.invoke("checkpoint-inspect", "/missing-checkpoint")
+        self.assertEqual(missing.returncode, 2)
+        self.assertIn("inspection             failed", missing.stdout)
+        self.assertTrue(missing.stderr)
+
+    def test_installed_stage_interfaces_and_explicit_bridge_resource(self):
+        entry = '''import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from hardcaml_asic_flow import stages, checkpoint, execution_plan, runner
+bridge = Path(stages.__file__).with_name("librelane_bridge.py")
+print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution_plan, runner)],
+                  "bridge": str(bridge), "hash": checkpoint.digest(bridge),
+                  "plan": execution_plan.resolve_stages("placement").as_dict()}))
+'''
+        completed = subprocess.run(
+            [sys.executable, "-I", "-B", "-c", entry, str(self.package.parent)],
+            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(REPO / "flow")},
+            text=True, capture_output=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        raw = json.loads(completed.stdout)
+        self.assertTrue(all(Path(p).parent == self.package for p in raw["modules"]))
+        self.assertEqual(Path(raw["bridge"]).parent, self.package)
+        self.assertEqual(len(raw["hash"]), 64)
+        self.assertEqual(raw["plan"], {"schema_version": 2, "endpoint": "placement", "resume": False})
+        help_result = self.invoke("stages", "--help")
+        self.assertEqual(help_result.returncode, 0, help_result.stderr)
+        self.assertIn("--checkpoint-store", help_result.stdout)
+        self.assertIn("--plan", help_result.stdout)
+
+    def test_installed_stage_checkpoint_negative_and_composed_suite(self):
+        completed = subprocess.run(
+            [sys.executable, "-I", "-B", str(REPO / "test/test_stages.py")],
+            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin",
+                                     "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent),
+                                     "PYTHONPATH": str(REPO / "flow")},
+            text=True, capture_output=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Ran 30 tests", completed.stderr)
+
+    def test_installed_finalization_suite_and_receipt_cli(self):
+        completed = subprocess.run(
+            [sys.executable, "-I", "-B", str(REPO / "test/test_finalization.py")],
+            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin",
+                                     "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
+            text=True, capture_output=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("OK", completed.stderr)
+        self.assertTrue((self.package / "finalization.py").is_file())
+        with tempfile.TemporaryDirectory(dir=self.elsewhere) as root:
+            root = Path(root)
+            failed = self.invoke("finalize", "--json", str(root / "missing-execution.json"),
+                                 "--operation-store", str(root / "operations"), "--accept")
+            self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+            allocation = json.loads(failed.stdout.splitlines()[0])
+            self.assertEqual(allocation["event"], "allocated")
+            attempt = Path(allocation["attempt"])
+            before = (attempt / "operation.json").read_bytes()
+            inspected = self.invoke("finalization-inspect", "--json", str(attempt))
+            self.assertEqual(inspected.returncode, 0, inspected.stdout)
+            receipt = json.loads(inspected.stdout)
+            self.assertEqual(receipt["contract"], "hardcaml-asic.segment-finalization")
+            self.assertEqual(receipt["status"], "failed")
+            self.assertEqual(receipt["acceptance"], "not_evaluated")
+            self.assertEqual((attempt / "operation.json").read_bytes(), before)
+            self.assertFalse((attempt / "run.json").exists())
+
+    def test_installed_related_presentation_suite(self):
+        completed = subprocess.run(
+            [sys.executable, "-I", "-B", str(REPO / "test/test_related_presentation.py")],
+            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin",
+                                     "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
+            text=True, capture_output=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Ran 8 tests", completed.stderr)
+        human = self.invoke("observation", "describe")
+        self.assertEqual(human.returncode, 0, human.stderr)
+        self.assertIn("CAPABILITIES", human.stdout)
+        self.assertNotIn('"schemas"', human.stdout)
+
+    def test_installed_flow_observation_suite_and_public_cli(self):
+        completed = subprocess.run(
+            [sys.executable, "-I", "-B", str(REPO / "test/test_flow_observation.py")],
+            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin",
+                                    "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
+            text=True, capture_output=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Ran 16 tests", completed.stderr)
+        descriptor = self.invoke("observation", "describe", "--json")
+        self.assertEqual(descriptor.returncode, 0, descriptor.stderr)
+        self.assertEqual(json.loads(descriptor.stdout)["contract"], "hardcaml-asic.stage-observation")
+        with tempfile.TemporaryDirectory(dir=self.elsewhere) as root:
+            root = Path(root)
+            failed = self.invoke("stages", "--json", str(root / "missing-bundle"), "--endpoint", "floorplan",
+                "--support-tools", str(root / "tt"), "--pdk-root", str(root / "pdk"),
+                "--python", sys.executable, "--workspace", str(root / "workspace"),
+                "--checkpoint-store", str(root / "workspace/checkpoints"),
+                "--observation-store", str(root / "observations"))
+            self.assertEqual(failed.returncode, 2, failed.stderr)
+            receipt = json.loads(failed.stdout.splitlines()[0])
+            inspected = self.invoke("observation", "inspect", receipt["attempt"], "--json")
+            self.assertEqual(inspected.returncode, 0, inspected.stdout)
+            state = json.loads(inspected.stdout)
+            self.assertEqual(state["state"]["outcome"]["status"], "failed")
+            self.assertFalse(state["writer_active"])
+            update = self.invoke("observation", "read-updates", "--json", receipt["attempt"],
+                                 "--stream-id", receipt["stream_id"], "--after", "0")
+            self.assertEqual(update.returncode, 0, update.stdout)
+            self.assertEqual(json.loads(update.stdout)["cursor"], state["cursor"])
+            reset = self.invoke("observation", "read-updates", "--json", receipt["attempt"],
+                                "--stream-id", "other", "--after", "0")
+            self.assertEqual(json.loads(reset.stdout)["error"]["code"], "RESET_REQUIRED")
 
     def test_managed_python_assets_and_isolated_internal_entry(self):
         self.assertTrue((self.package / "managed_python.py").is_file())
@@ -582,7 +704,7 @@ class InstalledPrefixTest(unittest.TestCase):
 
     def test_installed_shared_cli_contract_version_is_separate_from_records(self):
         described = json.loads(self.invoke("--version", "--json").stdout)
-        self.assertEqual(described["cli_contract"]["version"], 2)
+        self.assertEqual(described["cli_contract"]["version"], 3)
         self.assertEqual(described["cli_contract"]["default_output"], "human")
         self.assertEqual(described["supported_record_schemas"], [1])
         self.assertEqual(described["package_version"], "0.1.0")

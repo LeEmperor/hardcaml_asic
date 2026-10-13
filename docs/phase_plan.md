@@ -1,15 +1,14 @@
 # hardcaml_asic phase plan
 
-Current checkpoint: 2026-10-13 default result store, CLI contract 2 and project
-workflow review/docs closeout; acceptance passed. New bundles declare role-specific
-runtime policy and attempts bind to observed local image/engine identity.
-Managed Python/Tcl, interpreter paths and thin bootstrap are delivered;
-ASIC P6.5c is partially addressed and remains open.
-The prior LibreLane probe is historically BLOCKED, zero official cases executed;
-verified compatible scratch LibreLane is now available for the next bounded rerun.
-project-centered entrypoint delivered and reviewed,
-following provisional provider observation fixture/model acceptance, consumer
-refresh/activation, real-checkout emission, API rename, hardening and the FIFO specimen.
+Current checkpoint: 2026-10-13 bounded explicit-stage implementation, independent
+review and documentation closeout delivered. Coarse runner, six sequential physical
+boundaries, schema-3 OCaml/Python recipes, exact-runtime path-bound checkpoints,
+opt-in per-attempt observation and separate existing-policy finalization passed.
+Actual physical and external acceptance evidence is retained as curated repo JSON.
+The earlier blocked probe remains history; later official cases succeeded.
+Default stores, human/explicit-JSON CLI 3, project entrypoint, role-specific runtime policy, managed
+Python/Tcl and thin bootstrap remain delivered. ASIC P6.5c is partially addressed;
+broader P6.5/P6.6 identity/installation gates and committed-pin adoption remain open.
 This is the **only active queue**. [Architecture](architecture.md) owns boundaries;
 [P6 details](development/p6-implementation-plan.md) retain the detailed specification
 and exact delivery evidence. Proposed new work below awaits design discussion.
@@ -33,16 +32,83 @@ and exact delivery evidence. Proposed new work below awaits design discussion.
 3. The provisional provider observation fixtures/model are accepted with
     [evidence below](#provider-observation-fixture-acceptance). The authorized
     [LibreLane probe review](#librelane-feasibility-probe-review) retains its historical
-    blocker; next rerun boundedly using the verified scratch LibreLane venv.
-     Full collateral provisioning is separate. Project run routing is delivered;
-     execution still requires an explicit stage. Follow the dependencies below for P6 identity/installation.
+     blocker as history. Later [explicit-stage delivery](#explicit-stage-refactor-closeout)
+     supplies successful official/physical evidence and bounded installed readers.
+     Follow the dependencies below for P6 identity/installation.
 
 This queue records future ordering, not authorization to proceed beyond the
-completed bounded tool-environment slices.
+completed bounded implementation. The [quickstart](guides/stage-quickstart.md) and
+[detailed recipes](guides/ocaml-stage-recipes.md) describe the delivered interfaces.
+
+### Explicit-stage refactor closeout
+
+2026-10-13: slices 1–7, final independent integration review and documentation
+reconciliation complete. The [refactor record](development/explicit-stage-refactor.md)
+retains exact commands, defects/fixes and historical slice limits.
+
+- Shared `execution_plan`/`runner` modules preserve coarse Classic sequencing,
+  best-effort collection and primary failures. Opt-in six-stage recipes use the
+  same runner; implementation is modules in the existing package.
+- Pure `Flow.Stage` / `Flow.Recipe` and Python schema-3 plans agree on contiguous
+  composition, capabilities and checkpoint input/output declarations. Endpoint
+  shorthand/schema-2 readers remain compatible. No new project/per-stage settings.
+- Exact tested Docker image/engine/bridge and path-bound input/support/PDK closure
+  are validated before atomic no-clobber checkpoint publication and continuation.
+  Standalone transitions: synthesis → floorplan/placement, floorplan → placement,
+  placement → cts, cts → routing, routing → signoff. Recipes never elide intervening
+  boundaries; signoff is terminal and host-only inspection is not runtime readiness.
+- Opt-in observation supplies early attempt allocation, publication-before-finish,
+  inspect and reconnectable cursor reads. Separate finalization selects one completed
+  fresh six-stage execution, maps real synthesis/signoff evidence, and optionally
+  runs external checks and the existing acceptance policy. Physical completion,
+  checkpoint publication, external postcheck and acceptance are separate facts.
+
+Actual evidence, not synthetic fixtures or only external scratch paths:
+
+| Record | Proven scope |
+| --- | --- |
+| [Blocked local probe](../evidence/librelane-observation/blocked-local.json) | Historical missing Tcl/Tk; zero of eleven authored cases in that attempt |
+| [Slice 2](../evidence/librelane-observation/slice2-real.json) | 12 official-API cases; real synthesis → fresh physical handoff and bounded cancellation proof |
+| [Slice 3](../evidence/librelane-observation/slice3-production.json) | Production checkpoint publication/runtime closure and synthesis resume |
+| [Slice 4](../evidence/librelane-observation/slice4-physical.json) | Full six-stage physical execution, fresh successors with producer runs renamed, matching config/1509 external hashes, 21 final view leaves; 1550.116548 occurrence seconds |
+| [Slice 5](../evidence/librelane-observation/slice5-observed.json) | Real observed synthesis/floorplan, ten records, independent post-exit cursor/closure audit |
+| [Slice 6](../evidence/librelane-observation/slice6-finalization.json) | Separate 675.606435-second accepted operation, nine TT checks and 11,429-edge exact-image replay |
+
+Worst setup/hold are 11.67551954830797 ns at `nom_slow_1p08V_125C` and
+0.12502899069955042 ns at `nom_fast_1p32V_m40C`; DRC/LVS/antenna passed. Six
+disconnected pins and one max-fanout violation remain raw evidence outside existing
+acceptance gates. Earlier missing-metadata/timeout operations remain failed or
+interrupted, not rewritten. The final review re-audited retained physical/observed/
+accepted evidence without repeating costly EDA/external checks or reproving current
+image-only closure in a new container.
+
+Full successful verification (exact invocations in the
+[review](development/explicit-stage-refactor.md#exact-successful-verification)):
+`dune runtest -j 20 --force`, build/install, installed-prefix, external Project and
+resolved-flow API checks, OCaml/Python recipe comparison, retained physical and
+finalization verifiers, shell syntax, whitespace and container cleanup checks.
+Forced suites: stage 30, finalization 15, observation 16, runner 11, CLI 43,
+store 45, transport 10, runtime contract 8, runtime observation 18, phase4 26,
+report 15, archive 20, packaging 17, managed Python 48, toolchain 25, provider
+fixture 50, plus OCaml inline/bundle checks. Recipe checks: 36 accepted / 1819
+rejected, capabilities/handoffs/composition. Installed-prefix: 51 top-level cases
+including installed stage/finalization/observation suites. Independent sibling
+`stage_recipe` and existing project CLI linkage passed all 42 endpoint/source
+combinations and installed host-only reader checks. **Isolated installed linkage
+is not adoption of a committed consumer pin.**
+
+Remaining scope: full Workbench application integration; store-wide catalog/journal/
+idempotency/fsync; detailed backend-step observation; arbitrary DAG/custom steps or
+per-stage settings; execution takeover/recovery; native/macros/other images and
+relocation; resumed-attempt or standalone signoff finalization; segmented artifact
+archive/GC. Retention remains caller-owned. Broader P6 gates below are not silently
+closed. Earlier closeouts below are dated history, superseded only by explicit later
+evidence. This final slice checked documentation links/commands and whitespace only.
 
 ### Default result store and CLI 2 closeout
 
-2026-10-13, completed implementation acceptance; final independent review:
+Historical CLI-contract-2 closeout, 2026-10-13; completed implementation acceptance
+and independent review. Current interface is contract 3:
 
 - Delivered default `_flow_results/{bundles,runs,operations}`, verified immutable
   identity publication/reuse, durable bounded readiness diagnostics, human defaults,
@@ -51,7 +117,11 @@ completed bounded tool-environment slices.
 - Project `describe|emit|preflight|run` owns discovery/emission and routes to the
   installed provider. Run requires a stage and performs implementation only;
   collect/report require an explicit existing run. No newest guess or project execute.
-  See the [detailed command/storage matrix](guides/flow.md#default-result-store-and-cli-contract-2).
+  See the [detailed command/storage matrix](guides/flow.md#default-result-store-and-cli-contract-3).
+  The completed human-output feature extends explicit JSON selection to all
+  additive commands and advertises CLI contract 3. Independent integration,
+  consumer supported-contract migration/private refresh and installed retained
+  inspection passed. See [completion evidence](development/human-readable-flow-output.md).
 - Accepted provider checker: **325 Python tests**, OCaml, external public/private
   checks and high-/lower-level bundle equivalences. Installed-prefix **47**;
   example **11 bootstrap + 8 routing + 17 dependency = 36 Python**, core/wrapper
@@ -246,7 +316,8 @@ The earlier blanket "finish P6, then migrate scaf" queue is superseded. Do not
 execute archived handoff prompts. No feature, source stamp, specimen, observation
 contract or new test pass was claimed by the earlier documentation-only checkpoint.
 The subsequent FIFO delivery and provisional provider fixture acceptance are
-recorded below; live observation remains unimplemented.
+recorded below; later bounded live stage observation is delivered in the
+[explicit-stage closeout](#explicit-stage-refactor-closeout).
 
 ## Status and preserved history
 
@@ -264,10 +335,10 @@ recorded below; live observation remains unimplemented.
 | ASIC S.2 | Open; S.2a complete, S.2b research partially resolved | [SRAM checkpoint](sram/sram-status.md) |
 | ASIC S.4 | Gated, unimplemented | Requires S.2 capability gates |
 | ASIC T.1 | Open, independent toolchain follow-up | Scope below |
-| Provider observation | Provisional synthetic fixtures/model accepted; live observation unimplemented; historical probe BLOCKED, zero official cases; verified scratch runtime available for rerun | [Probe review](#librelane-feasibility-probe-review), [fixture acceptance](#provider-observation-fixture-acceptance), [architecture](architecture.md#8-provider-observation-direction) |
+| Provider observation / explicit stages | Bounded per-attempt journal/readers, checkpoint restarts and separate finalization delivered; full checks and real physical/external acceptance passed; store-wide/fine-step/Workbench scope remains open | [Current closeout](#explicit-stage-refactor-closeout), [historical probe](#librelane-feasibility-probe-review), [fixture acceptance](#provider-observation-fixture-acceptance), [architecture](architecture.md#8-provider-observation-direction) |
 | Resolved-build boundary hardening | Implemented; full runtest passes | [Evidence below](#resolved-build-boundary-hardening-evidence) |
 | Public API rename | Implemented; provider and FIFO acceptance passed, active documentation migrated | [Migration and evidence below](#public-api-rename-migration-and-evidence) |
-| Project-centered entrypoint | Delivered: declaration/inventory, immutable emission, `describe|emit|preflight|run`; run is implementation only, explicit stage; CLI contract 2 | [Current closeout](#default-result-store-and-cli-2-closeout), [original acceptance](#project-centered-entrypoint-acceptance) |
+| Project-centered entrypoint | Delivered: declaration/inventory, immutable emission, `describe|emit|preflight|run`; run is implementation only, explicit stage; current CLI contract 3 | [Presentation completion](development/human-readable-flow-output.md), [historical CLI-2 closeout](#default-result-store-and-cli-2-closeout), [original acceptance](#project-centered-entrypoint-acceptance) |
 | Controlled-FIFO development specimen | Contract/core, scoreboard, TT wrapper/declaration and emitter delivered; PDK-free acceptance | [Original evidence](#controlled-fifo-development-specimen-evidence), [consumer README](../../hardcaml_asic_example/README.md) |
 | Consumer dependency refresh / emitter | Delivered: isolated library/CLI, activation and real-checkout acceptance; development works, old recorded API refused pending owner candidate adoption | [Original closeout](#consumer-refresh-and-real-checkout-emitter-closeout), [current acceptance](#project-centered-entrypoint-acceptance), [commands](development/consumer-dependency-workflow.md#implemented-commands) |
 
@@ -293,14 +364,14 @@ Recommendation for discussion: **bounded hardening, not a P0–P5 rewrite**.
 - Define the optional generator identity and artifact inventory for ASIC P6.5a
   before coding it. Later internal file moves change an inventory digest normally;
   they do not make source stamping throwaway work.
-- Refactor runner/collector publication boundaries with the observation slices,
-  preserving the current CLI and report/archive acceptance tests. Do not first
-  rewrite the whole runner or generalize every target/resource API.
+- Runner/collector publication boundaries are now refactored in the bounded
+  explicit-stage delivery, preserving Classic CLI and existing acceptance policy.
+  Broader target/resource generalization remains separate scope.
 
 The bounded interface slice and subsequent FIFO specimen are delivered, without
 changing historical M3 or P6 completion criteria. The separate provisional provider
-observation fixture/model slice is now accepted; live observation and further P6
-implementation remain open.
+observation fixture/model slice is accepted; later per-attempt stage observation is
+delivered, while store-wide/fine-step observation and further P6 work remain open.
 
 ### Resolved-build boundary-hardening evidence
 
@@ -717,26 +788,28 @@ Keep existing IDs. The detailed acceptance matrix and original commands are in
 tooling, works independently of the checkout and preserves P6.1/P6.2 guarantees.
 This is still worthwhile when internal observation implementation evolves.
 
-## Proposed provider sequence — not a new phase numbering scheme
+## Provider sequence — delivered subset and remaining proposals
 
-After the core/specimen discussion, adopt bounded task IDs here rather than in
-another planning document. Every provider slice must work without Workbench.
+The original broader sequence below is not wholly delivered. The bounded
+[explicit-stage implementation](#explicit-stage-refactor-closeout) works without
+Workbench and provides the subset called out below; remaining proposals require
+their own contracts and acceptance.
 
 | Slice | ASIC deliverable and acceptance | Other repository ownership |
 | --- | --- | --- |
-| Contract and feasibility | Provisional two-run fixtures/model accepted; historical probe BLOCKED, verified scratch runtime ready for rerun, no demonstrated LibreLane observation seam | Workbench decoder/reducer fixtures; example design/constraint selection |
-| Durable catalog and outer observation | Explicit stores, list/inspect, early request correlation, stored operation outcomes, consistent snapshot/cursor and replay; late independent readers observe two runs | Workbench P1 adapter/P2 derived catalog and early run display |
+| Contract and feasibility | Synthetic model accepted; later official cases and six-stage physical handoffs demonstrated; blocked probe retained as history | Workbench decoder/reducer fixtures; example design/constraint selection |
+| Durable catalog and outer observation | Per-attempt early allocation, inspect/cursor prefix and stored outcomes delivered; store-wide list/catalog/idempotency/fencing remains proposed | Workbench P1 adapter/P2 derived catalog and early run display |
 | Internal step lifecycle | Actual starts/completions/failures/skips/interruption and repeated occurrences, including deferred errors; earlier steps visible while a later one runs | Workbench execution feature/views |
-| Incremental results | Synthesis resources, then one intermediate timing result, then checks; origin/constraints/corner/units preserved and data complete before publication | Workbench timing/resources/check projections |
-| Preservation and installed acceptance | History and referenced evidence survive later failure, archive/restore and scratch cleanup; independent readers, conflicting operations, duplicate/truncated updates and crash tests | Workbench restart/reconnect and cache invalidation |
-| Real specimen handoff | Validate actual supported runtime/container and descendant cancellation; retain final-JSON compatibility and existing acceptance policy | Example pins deliberate provider revision, supplies real flow/test evidence; Workbench live acceptance |
+| Incremental results | Stage checkpoint publications and final synthesis/signoff origin mapping delivered; per-step measurement origin/units and general incremental result protocol remain proposed | Workbench timing/resources/check projections |
+| Preservation and installed acceptance | Installed readers, corruption/conflict/signal tests delivered; caller-owned path-bound retention, no segmented archive/GC/fsync/recovery | Workbench restart/reconnect and cache invalidation |
+| Real specimen handoff | Actual physical/external acceptance and isolated installed recipe/project linkage passed; deliberate committed pin and Workbench live acceptance remain separate | Example owns pin adoption; Workbench owns application integration |
 
 The fixtures provisionally specify store-wide ordering, idempotency/BUSY ownership,
 fencing, snapshot/cursor consistency, transitive readiness and retention. The probe
-must test lifecycle observability; actual locking, fsync/data durability, incomplete
-writes, crashed-writer reconciliation and preservation mechanisms remain open before
-durable implementation. There is no chosen interception
-mechanism yet. Metric equality cannot establish measurement origin. Archive policy
+proved body-hook limits; runner callbacks now supply bounded stage lifecycle facts
+and observed writers use local advisory locks. Store-wide fsync/data durability,
+crashed-writer reconciliation and preservation remain open. Full backend-step
+interception is not delivered. Metric equality cannot establish measurement origin. Archive policy
 must cover advertised evidence, not just final metrics. Failed-run diagnostics
 need an explicit export contract separate from completed-run archives.
 
@@ -749,6 +822,10 @@ and equal-valued fresh measurements retain distinct origins. Deeper hierarchy is
 unmodeled, and a snapshot file is not a resumable checkpoint.
 
 ### Provider observation fixture acceptance
+
+Historical fixture-only acceptance; later installed stage observation is recorded
+in the [current closeout](#explicit-stage-refactor-closeout). Its original limits
+and commands below describe that earlier pass, not current production scope.
 
 2026-10-12, independent single-agent review/final acceptance of the provisional
 test-only [v1 contract](../test/fixtures/provider_observation/v1/README.md),
@@ -835,11 +912,14 @@ read-only runtime/source review. [Experiment and eleven authored cases](../exper
   are outside it. No live observation interface, durable publication, container
   visibility or real descendant cancellation has been demonstrated.
 
-**Current next bounded action:** the later [managed-runtime closeout](#tool-environment-closeout-acceptance)
+**Historical next bounded action:** the later [managed-runtime closeout](#tool-environment-closeout-acceptance)
 supplies compatible Python/Tcl and a scratch LibreLane venv. Rerun the same
 official constructor/probe under its bounds using
 `hardcaml_asic_example/.dev/managed-python-acceptance/real-av_wxhlt/librelane-smoke/bin/python`.
-The historical record above remains unchanged; no official case has yet run.
+At that checkpoint no official case had yet run. Later selected-image official
+cases and real physical/observed/external acceptance succeeded; see the
+[explicit-stage closeout](#explicit-stage-refactor-closeout). The blocked record
+above remains unchanged.
 Do not bypass configuration validation. Full collateral provisioning is separate.
 
 **Separate installed-launch fix delivered:** CLI interpreter paths formerly used

@@ -21,6 +21,11 @@
 
 open! Core
 
+(** Explicit provider-stage declarations and schema-3 recipes. These are separate
+    from the legacy project adapter/operation selection below. *)
+module Stage = Flow_stage
+module Recipe = Flow_recipe
+
 [@@@ocamlformat "disable"]
 
 (* How far the flow is asked to take the design;

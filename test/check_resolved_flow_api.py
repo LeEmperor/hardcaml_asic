@@ -74,7 +74,7 @@ def main():
         source.write_text(positive)
 
         def compile_consumer():
-            return run("dune", "build", "--root", str(consumer), "main.exe",
+            return run("dune", "build", "-j", "20", "--root", str(consumer), "main.exe",
                        cwd=consumer, env=env)
 
         result = compile_consumer()

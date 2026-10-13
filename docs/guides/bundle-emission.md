@@ -39,7 +39,7 @@ to verified identity-addressed publication and a human created/reused summary;
 `--json` prints `identity` and `output_dir`. Explicit `--output-dir` retains ordinary
 writing. `preflight` and `run` emit/reuse current sources unless given `--bundle`,
 then route to the installed provider. Run requires a stage and performs implementation
-only. See the [command/storage matrix](flow.md#default-result-store-and-cli-contract-2)
+only. See the [command/storage matrix](flow.md#default-result-store-and-cli-contract-3)
 for roots, JSON migration, persistence and separate existing-run operations.
 
 `Project.create ?source_inputs` defaults to `[]`; `Project.source_inputs` returns

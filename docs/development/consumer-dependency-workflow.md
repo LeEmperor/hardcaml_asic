@@ -120,7 +120,8 @@ dependencies. To use the current successful installation:
 
 ```sh
 . .dev/asic/current/activate.sh
-dune build @all
+ocamlfind query hardcaml_asic
+dune runtest . -j 20
 python3 scripts/asic_dependency.py status --json
 ```
 
@@ -131,11 +132,26 @@ activated environment. To capture future local provider edits:
 python3 scripts/asic_dependency.py refresh \
   --source /home/wayne/devel/jane/hardcaml_asic --mode development
 . .dev/asic/current/activate.sh
-dune build @all
+dune runtest . -j 20
 python3 scripts/asic_dependency.py status --json
 ```
 
 `--mode recorded` selects the committed baseline in `asic-dependency.json`.
+Refresh bounds its provider build/install and external Dune link probe to `-j 20`.
+Current provider CLI contract is 3; consumer refresh and dispatch accept exactly
+integer contracts 2 or 3, rejecting unknown versions before publication/emission.
+Parsing callers explicitly request `--json`, with per-line parsing for observed
+stages/finalize. See [integration evidence](human-readable-flow-output.md#slice-3--independent-integration-2026-10-13).
+Refresh and bootstrap cannot activate their calling shell: source the activation
+file in the shell that will run Dune, again after refresh or opam environment
+reset. Without activation, the observed `5.2.0+ox` switch resolves
+`~/.opam/5.2.0+ox/lib/hardcaml_asic` version `0.1.0`, whose old interface uses
+`Build`/`Resolved_build` and lacks the required Project API. The matching package
+version alone does not identify current source bytes. `status` diagnoses an
+unactivated/older selection and gives the exact source command; `ocamlfind query`
+should resolve the selected consumer generation. Local receipts identify captured
+inputs, not the shared opam installation's source revision.
+
 Its initial package/repository are `hardcaml_asic` and
 `https://github.com/LeEmperor/hardcaml_asic.git`, revision
 `1714764859274f80a9f5ad207421a04601824e99`. Neither refresh mode edits the record.
@@ -159,9 +175,9 @@ caller's environment, not an embedded identity check. An already activated shell
 keeps its old library/CLI until re-sourced. Subsequent provider documentation edits
 do not require refreshing: the installed generation captures refresh-time bytes.
 
-Setup tests: `python3 scripts/test_asic_dependency.py` (16 tests, also in ordinary
-`dune runtest`). Full consumer checks are `dune build @all`, `dune runtest --force`
-and `dune build @acceptance-strict --force`. The
+Setup tests: `python3 scripts/test_asic_dependency.py` (18 tests, also in ordinary
+`dune runtest`). Full consumer checks are `dune build @all -j 20`, `dune runtest --force -j 20`
+and `dune build @acceptance-strict --force -j 20`. The
 [consumer emitter instructions](../../../hardcaml_asic_example/README.md#bundle-and-generated-rtl-acceptance)
 give the real-checkout command with `--require-rtl --real-checkout --work-dir`;
 always choose a fresh work directory. The central plan records the completed

@@ -75,6 +75,11 @@ val create
   -> unit
   -> t Or_error.t
 
+(** Execution recipes are declared separately with [Flow.Recipe]. They do not
+    alter [create]'s flow selection, bundle schema, or input-bundle identity.
+    Emit a bundle here, then pass the recipe JSON to the provider [stages --plan]
+    command; see [docs/guides/ocaml-stage-recipes.md]. *)
+
 (* Of a type t, retrieve a string to be used as a name; *)
 val name : t -> string
 

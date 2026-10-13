@@ -231,8 +231,8 @@ def main():
         root = Path(temporary)
         env = isolated_environment()
         if args.provider_checks:
-            checked("dune", "build", "@install", cwd=repo, env=env)
-            checked("dune", "runtest", "--force", cwd=repo, env=env)
+            checked("dune", "build", "-j", "20", "@install", cwd=repo, env=env)
+            checked("dune", "runtest", "-j", "20", "--force", cwd=repo, env=env)
             checked("python3", "test/check_resolved_flow_api.py", cwd=repo, env=env)
         public_lib = repo / "_build/install/default/lib"
         assert (public_lib / "hardcaml_asic").is_dir(), "run dune build @install first"
@@ -268,7 +268,7 @@ def main():
             oracle = oracle.replace(old, new)
         (consumer / "oracle.ml").write_text(oracle)
         shutil.copy2(repo / "test/project_api_consumer.ml", consumer / "main.ml")
-        checked("dune", "build", "--root", str(consumer), "main.exe", cwd=consumer, env=env)
+        checked("dune", "build", "-j", "20", "--root", str(consumer), "main.exe", cwd=consumer, env=env)
         outputs = root / "outputs"
         outputs.mkdir()
         checked(str(consumer / "_build/default/main.exe"), str(source), str(outputs), env=env)
@@ -287,7 +287,7 @@ def main():
             "update": 'let forge (p : Bundle.Publication.t) = { p with reused = true }',
         }.items():
             (consumer / "main.ml").write_text("open Hardcaml_asic\n" + snippet + "\n")
-            result = subprocess.run(["dune", "build", "--root", str(consumer), "main.exe"],
+            result = subprocess.run(["dune", "build", "-j", "20", "--root", str(consumer), "main.exe"],
                                     cwd=consumer, env=env, text=True, capture_output=True)
             diagnostic = result.stdout + result.stderr
             assert result.returncode != 0, "forged publication compiled"

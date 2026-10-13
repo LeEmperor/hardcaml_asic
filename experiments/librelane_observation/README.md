@@ -1,6 +1,20 @@
 # Bounded LibreLane observation experiment
 
-**Actual result: BLOCKED in the official constructor. Zero sequencing cases ran.**
+**Current result (slice 2, 2026-10-13): PASS in the existing official container.**
+Twelve synthetic official-API lifecycle cases ran, and the sibling consumer passed
+real synthesis → copied checkpoint → fresh floorplan and detailed-placement
+continuations. A separate synthetic-subprocess experiment proves real owned
+container timeout/removal. See [slice 2 evidence and backend strategy](SLICE2.md)
+for exact reproduction, runtime/bridge provenance, artifacts and limitations.
+
+The remainder records the **historical local blocker**, not current capability.
+In particular, its missing-path validation assumption was corrected by execution:
+this version validates view types in `Step.start`, while missing files can fail
+later in final snapshot copying. The corrected probe has twelve cases.
+
+## Historical local result
+
+**Historical result: BLOCKED in the official constructor. Zero sequencing cases ran.**
 The local LibreLane `3.1.0.dev3` imports successfully under venv Python `3.12.3`,
 but its PDK Tcl loader fails on `import tkinter`. This occurs before `Flow.start`.
 The synthetic configuration has therefore **not passed validation** either.

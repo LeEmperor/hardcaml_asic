@@ -93,9 +93,9 @@ not report a source revision or checkout state, and it does not verify that the
 linked OCaml library was built from the same artifact as the command. It says so
 in both its human and `--json` output rather than implying otherwise.
 
-### CLI contract 2 migration
+### CLI contract 3 migration
 
-The current candidate advertises `cli_contract.version = 2` in `--version --json`.
+The current interface advertises `cli_contract.version = 3` in `--version --json`.
 This is distinct from package 0.1.0, record schema 1 and unstamped source identity.
 Human summaries are now the default: active machine calls must explicitly pass
 `--json`. `--verbose` writes diagnostics only to stderr. Run/execute no longer
@@ -103,9 +103,18 @@ require `--runs`: the default is `<caller-cwd>/_flow_results/runs`, with explici
 `--results-root` and `--runs` overrides. Standalone preflight saves an operation
 and report by default; `--output FILE` writes only that file, requiring its parent.
 `collect --json` still writes normal results; legacy `collect --stdout` and report
-remain read-only. Archive JSON list is unsupported. The example validates contract
-2 before dispatch and selects project-relative defaults. See the
-[full command/storage matrix](flow.md#default-result-store-and-cli-contract-2).
+remain read-only. Archive JSON list is unsupported. The example accepts exactly
+contracts 2 and 3 before dispatch and selects project-relative defaults; unknown
+versions remain rejected. Contract 3 extends human defaults to stages, all observation
+queries, checkpoint and finalization inspectors, and finalize. Add `--json` to every
+parsing invocation; observed stages and finalize remain JSONL, including the flushed
+early receipt. This stdout-default change is intentionally not CLI backward compatible.
+See the [full command/storage matrix](flow.md#default-result-store-and-cli-contract-3).
+For development consumers, refresh the private prefix through their existing
+dependency script, then source `current/activate.sh` in the shell running Dune and
+the CLI. Refresh cannot activate its parent shell. The example's recorded pin is
+still historical and lacks the required Project API; use explicit development
+mode until owner adoption. See [integration evidence](../development/human-readable-flow-output.md#slice-3--independent-integration-2026-10-13).
 `scripts/phase4.py` retains its historical development path-only run spelling.
 
 ## Resolve TT/LibreLane collateral

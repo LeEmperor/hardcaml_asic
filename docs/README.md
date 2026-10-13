@@ -5,14 +5,17 @@
 1. **[Phase plan](phase_plan.md)** — current status, what is next, dependencies and
    links to completion evidence. This is the only active implementation queue.
 2. **[Architecture](architecture.md)** — ownership, implemented boundaries and the
-   proposed provider/refactoring direction. Read this before changing an interface.
+   delivered provider boundaries and remaining scope. Read this before changing an interface.
 3. **[User workflow](guides/usage.md)** — how to use the existing library and CLI.
 
-Current checkpoint (2026-10-13): default result store and CLI contract **2**,
+Current checkpoint (2026-10-13): default result store and CLI contract **3** candidate,
 human-default/explicit-JSON output and project `describe|emit|preflight|run` are
 delivered; see [current closeout](phase_plan.md#default-result-store-and-cli-2-closeout)
-and the [command/storage matrix](guides/flow.md#default-result-store-and-cli-contract-2).
-Machine callers must now request `--json`. Role-specific host/container runtime policy,
+and the [command/storage matrix](guides/flow.md#default-result-store-and-cli-contract-3).
+All machine callers request `--json`, including additive stage/checkpoint/observation/
+finalization commands; observed stages and finalize preserve allocation/terminal JSONL.
+See [presentation slices](development/human-readable-flow-output.md); final consumer
+integration is pending. Role-specific host/container runtime policy,
 shared readiness checks and observed image/engine launch binding passed final
 2026-10-12 acceptance; see [closeout evidence](phase_plan.md#hostcontainer-runtime-policy-closeout)
 and [fresh-emission requirements](guides/flow.md#runtime-policy-and-launch-binding).
@@ -26,16 +29,17 @@ are implemented: 50 focused tests and the full provider regression suite pass
 ([evidence](phase_plan.md#provider-observation-fixture-acceptance)). The subsequently
 authorized [LibreLane feasibility probe](../experiments/librelane_observation/README.md)
 was **historically BLOCKED** by missing Tcl/Tk in local Python 3.12.3. Zero of
-eleven official cases executed, and none has yet been rerun; the synthetic
-configuration remains unvalidated ([unchanged evidence](../evidence/librelane-observation/blocked-local.json)).
+eleven official cases executed in that attempt
+([unchanged evidence](../evidence/librelane-observation/blocked-local.json)).
 The [actual managed-runtime evidence](../evidence/managed-python/actual-runtime.json)
 now proves Python 3.11.17/Tcl 9.0.4 and LibreLane Tcl smoke in a disposable venv.
-Next is the bounded observation rerun with that verified scratch venv, separately
-from synthesis/full-flow execution. The final actual read-only bootstrap check,
+Later selected-image official cases and production physical execution succeeded;
+see the explicit-stage closeout below. The final actual read-only bootstrap check,
 including container metadata, exits 0; the earlier five-gap check remains dated
 historical evidence.
-Project run routing is delivered with a required explicit stage. Live catalog, early correlation,
-step updates and incremental result publication remain undelivered.
+Project run routing is delivered with a required explicit stage. The opt-in
+stage provider now delivers early attempt allocation, checkpoints and per-attempt
+inspect/cursor updates; store-wide catalog and fine backend-step updates remain open.
 The owner's [development specimen](../../hardcaml_asic_example/README.md) now has
 the fixed FIFO contract/core, independent scoreboard, TT wrapper/declaration,
 project-centered `describe|emit|preflight|run` CLI and PDK-free generated-RTL acceptance.
@@ -52,8 +56,32 @@ activation, plain builds and real-checkout emitter acceptance; see the
 The recorded `171476...` baseline cannot supply the new API: current recorded
 refresh is refused while development refresh works. A compatible committed
 candidate must be adopted by the owner. Full environment locking, P6 source stamping,
-source-access-denied installation and physical acceptance remain open.
+source-access-denied installation remain open. Later specimen physical/external
+acceptance is recorded separately from committed-pin adoption.
 The old scaf checkout is absent and not required.
+
+**Explicit-stage delivery (2026-10-13):** start with the concise
+[stage quickstart](guides/stage-quickstart.md), then the detailed
+[OCaml/Python recipes guide](guides/ocaml-stage-recipes.md) and
+[execution/reader/finalization contracts](guides/flow.md). The shared coarse runner,
+six sequential physical boundaries, schema-3 recipes, exact-runtime path-bound
+publication/restarts, opt-in observation and separate existing-policy finalization
+passed [full independent checks](phase_plan.md#explicit-stage-refactor-closeout).
+Curated repo JSON records [physical execution](../evidence/librelane-observation/slice4-physical.json),
+[observed execution](../evidence/librelane-observation/slice5-observed.json) and
+[external acceptance](../evidence/librelane-observation/slice6-finalization.json).
+Isolated installed consumer linkage is verified; an adopted committed pin and full
+Workbench application integration are separate remaining work.
+
+For the subsequent ownership and utilization discussion, see
+[ASIC/Workbench execution boundary](development/workbench-execution-boundary.md):
+persisted journals versus live UI events, output locations, human inspector
+formatting preferences, cancellation, and daemon-failure behavior. It distinguishes
+current capabilities from proposed follow-ups.
+
+The [human-readable flow output feature](development/human-readable-flow-output.md)
+records the implementation of readable command summaries and explicit `--json`
+machine output, including consumer migration and verification.
 
 The public lifecycle now uses `Elaborated_project` and `Resolved_flow`; see the
 [source-breaking migration and acceptance](phase_plan.md#public-api-rename-migration-and-evidence).
@@ -80,6 +108,10 @@ Historical records retain their original API names and commands.
   collateral root, separate provider/host/container/Nix/run storage, and dated
    local findings, plus [activate-then-check commands](guides/bootstrap.md#consumer-check).
 - [Execution and results](guides/flow.md): run, postcheck, collect, report, archive.
+- [Stage quickstart](guides/stage-quickstart.md): explicit stages, observation,
+  restart and separate finalization.
+- [OCaml stage recipes](guides/ocaml-stage-recipes.md): typed declarations,
+  schema-3 Python interoperability and installed contract verification.
 
 ## Documentation rules
 

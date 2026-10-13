@@ -178,7 +178,7 @@ class IdentityTest(unittest.TestCase):
         self.assertEqual(described["tool"], "hardcaml-asic-flow")
         self.assertEqual(described["supported_record_schemas"], [1])
         contract = described["cli_contract"]
-        self.assertEqual(contract["version"], 2)
+        self.assertEqual(contract["version"], 3)
         self.assertEqual(contract["default_output"], "human")
         self.assertEqual(contract["json_option"], "--json")
         self.assertEqual(contract["results_defaults"]["root"], "<caller-cwd>/_flow_results")

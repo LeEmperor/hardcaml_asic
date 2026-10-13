@@ -1,7 +1,9 @@
 """Opt-in local LibreLane sequencing experiment; no EDA and no engine overrides."""
 
 import hashlib
+import argparse
 import importlib.metadata
+import importlib.util
 import inspect
 import json
 import platform
@@ -21,7 +23,11 @@ from librelane.flows import Flow, FlowError, FlowException, SequentialFlow
 from librelane.state import DesignFormat
 from librelane.steps import DeferredStepError, Step, StepError
 
-from fixture import build
+# Explicit sibling loading also works with the transport's isolated Python -I.
+spec = importlib.util.spec_from_file_location("observation_fixture", Path(__file__).with_name("fixture.py"))
+fixture = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(fixture)
+build = fixture.build
 
 
 EVENTS = []
@@ -97,6 +103,14 @@ class Invalid(Measure):
     outputs = [DesignFormat.NETLIST]
 
     def run(self, state_in, **kwargs):
+        # A wrong view type is rejected by State.validate in the official image.
+        return {DesignFormat.NETLIST: 42}, {}
+
+
+class MissingView(Invalid):
+    id = "Probe.MissingView"
+
+    def run(self, state_in, **kwargs):
         return {DesignFormat.NETLIST: StatePath(str(Path(self.step_dir) / "missing.v"))}, {}
 
 
@@ -118,7 +132,7 @@ class Interrupt(Measure):
 
 
 WRAPPED = {cls: type("Observed" + cls.__name__, (ObserveBody, cls), {}) for cls in (
-    Measure, Inherit, Hold, Immediate, Deferred, Invalid, RuntimeWriteFault, Interrupt
+    Measure, Inherit, Hold, Immediate, Deferred, Invalid, MissingView, RuntimeWriteFault, Interrupt
 )}
 
 
@@ -227,6 +241,7 @@ def run_cases(root):
         ("immediate", Immediate, FlowError, ["body_entered", "body_returned", "body_entered", "body_exception"]),
         ("deferred", Deferred, FlowError, ["body_entered", "body_returned", "body_entered", "body_exception", "body_entered", "body_returned"]),
         ("validation-after-body", Invalid, FlowException, ["body_entered", "body_returned", "body_entered", "body_returned"]),
+        ("missing-view-at-snapshot", MissingView, FlowException, ["body_entered", "body_returned", "body_entered", "body_returned", "body_entered", "body_returned"]),
         ("runtime-write-after-body", RuntimeWriteFault, IsADirectoryError, ["body_entered", "body_returned", "body_entered", "body_returned"]),
         ("injected-interruption", Interrupt, KeyboardInterrupt, ["body_entered", "body_returned", "body_entered", "body_exception"]),
     ):
@@ -239,6 +254,8 @@ def run_cases(root):
             require(fault["in_memory_state_out"] and not fault["state_out_file"], "validation fails after assignment, before write")
         elif cls is RuntimeWriteFault:
             require(fault["in_memory_state_out"] and fault["state_out_file"] and not fault["runtime_file"], "state_out exists although Step.start failed")
+        elif cls is MissingView:
+            require(fault["state_out_file"] and fault["runtime_file"], "missing path survives step validation; snapshot fails later")
         else:
             require(not fault["in_memory_state_out"] and not fault["state_out_file"], "body failure has no output")
         if cls is Deferred:
@@ -253,7 +270,7 @@ def run_cases(root):
         "config/flow.py", "state/state.py",
     )}
     report = {
-        "designation": "SYNTHETIC Python sequencing, not physical/runtime-container acceptance",
+        "designation": "SYNTHETIC official-API sequencing, not physical EDA acceptance",
         "runtime": {"python": platform.python_version(), "executable": sys.executable,
                     "prefix": sys.prefix, "base_prefix": sys.base_prefix,
                     "librelane": importlib.metadata.version("librelane"), "package": str(package),
@@ -266,7 +283,7 @@ def run_cases(root):
         "source_observations": {
             "flows/flow.py:683-693": "start calls run; step_objects assigned only on success",
             "flows/sequential.py:352-411": "gate/skip outside start; direct step.start; deferred failures collected until final snapshot",
-            "steps/step.py:1165-1199": "body return, metric merge, state assignment, validation, direct state write, direct runtime write, return",
+            "steps/step.py": "body return, metric merge, state assignment, type validation, direct state write, direct runtime write, return; missing path fails later snapshot",
             "config/config.py:306-329": "normal Step construction revalidates through PDK config",
         },
         "unsupported": ["precise full-Step completion event from run hook", "observed gate/skip decision and reason",
@@ -280,7 +297,10 @@ def run_cases(root):
 
 def main():
     require(sys.flags.optimize == 0, "run without -O")
-    root = Path(tempfile.mkdtemp(prefix="librelane-observation-", dir="/tmp/opencode"))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--scratch-parent", type=Path, default=Path("/tmp/opencode"))
+    args = parser.parse_args()
+    root = Path(tempfile.mkdtemp(prefix="librelane-observation-", dir=args.scratch_parent))
     print(f"SCRATCH={root}", flush=True)
     try:
         run_cases(root)
