@@ -392,9 +392,9 @@ def execute(args):
     return outcome.exit_code
 
 
-def check(args):
+def check(args, *, context=None, replay_trace=None):
     run_dir = args.run_dir.resolve()
-    run = read_json(run_dir / "run.json")
+    run = read_json(run_dir / "run.json") if context is None else context
     if run["status"] != "completed" or run["completed_stage"] != "full":
         raise PrerequisiteError("postcheck requires a completed full flow")
     flow = run_dir / run["outputs"]["flow"]
@@ -402,7 +402,7 @@ def check(args):
     gds = flow / "final/gds" / f"{top}.gds"
     netlist = flow / "final/nl" / f"{top}.nl.v"
     for path in (gds, netlist, args.testbench, args.precheck_python,
-                 args.support_tools / "precheck/default.nix"):
+                  args.support_tools / "precheck/default.nix", *([replay_trace] if replay_trace else [])):
         if not path.is_file():
             raise PrerequisiteError(f"missing postcheck input: {path}")
     check_id = uuid.uuid4().hex
@@ -416,7 +416,9 @@ def check(args):
               "inputs": {"gds_sha256": digest(gds), "netlist_sha256": digest(netlist),
                           "testbench_sha256": digest(args.testbench),
                           "testbench_top": args.testbench_top},
-              "logs": ["postcheck.log"], "tools": {}}
+               "logs": ["postcheck.log"], "tools": {}}
+    if context is not None:
+        record["evidence_origin"] = context["evidence_origin"]
     save(record_path, record)
     log = check_dir / "postcheck.log"
     env = execution_transport.environment()
@@ -515,13 +517,20 @@ def check(args):
             raise PrerequisiteError("missing gate-level PDK Verilog models")
         testbench = check_dir / "testbench.v"
         shutil.copy2(args.testbench, testbench)
+        simulation_args = []
+        if replay_trace is not None:
+            trace = check_dir / "replay-trace.txt"
+            shutil.copy2(replay_trace, trace)
+            record["inputs"]["replay_trace_sha256"] = digest(trace)
+            simulation_args = ["+trace=" + str(trace)]
+            save(record_path, record)
         executable = check_dir / "gate.out"
         compile_command = simulator + ["iverilog", "-g2012", "-DFUNCTIONAL", "-DSIM",
                             "-s", args.testbench_top, "-o", str(executable),
                            *(str(path) for path in models), str(netlist), str(testbench)]
         if run_logged(compile_command, check_dir, env, log, record, record_path, cleanup=simulator_cleanup):
             record["checks"]["gate_level"] = "fail"
-        elif run_logged(simulator + ["vvp", str(executable)], check_dir, env, log, record, record_path, cleanup=simulator_cleanup):
+        elif run_logged(simulator + ["vvp", str(executable), *simulation_args], check_dir, env, log, record, record_path, cleanup=simulator_cleanup):
             record["checks"]["gate_level"] = "fail"
         else:
             record["checks"]["gate_level"] = "pass"
@@ -564,8 +573,8 @@ def metric(value, unit, definition, stage, source, corner=None, reason=None):
             "unavailable_reason": reason if value is None else None}
 
 
-def collect(run_dir):
-    record = read_json(run_dir / "run.json")
+def collect(run_dir, *, context=None, synthesis_state=None):
+    record = read_json(run_dir / "run.json") if context is None else context
     flow = run_dir / record["outputs"]["flow"]
     synth = flow / "06-yosys-synthesis/reports/stat.json"
     synth_state = flow / "06-yosys-synthesis/state_out.json"
@@ -600,6 +609,13 @@ def collect(run_dir):
             state_metrics = read_json(synth_state)["metrics"]
         except (ValueError, KeyError, TypeError) as exc:
             errors.append(f"{synth_state.relative_to(run_dir)}: {exc}")
+    if synthesis_state is not None:
+        # Segmented evidence has a published official state, not a Yosys stat
+        # report. Preserve that origin instead of fabricating a stat.json.
+        synth = synth_state = synthesis_state
+        state_metrics = read_json(synthesis_state)["metrics"]
+        stats = {"area": state_metrics.get("design__instance__area"),
+                 "num_cells": state_metrics.get("design__instance__count")}
     # OpenSTA reports this magnitude when a mode has no constrained paths.
     unconstrained_threshold = 1e30
     def number(raw, label):
@@ -627,7 +643,11 @@ def collect(run_dir):
         matches = [(key, raw) for key, raw in values.items() if key.startswith(prefix)]
         parsed = [(key, *number(raw, key)) for key, raw in matches]
         valid = [(key, value) for key, value, _ in parsed if value is not None]
-        key, value = min(valid, key=lambda item: item[1]) if valid else (None, None)
+        # Preserve the worst-slack policy over ALL evidence. Mapped official
+        # states also contain anonymous aggregates: only an equal-value tie may
+        # prefer an actual reported corner, never hide a worse aggregate.
+        key, value = min(valid, key=lambda item: (
+            item[1], synthesis_state is not None and "corner:" not in item[0])) if valid else (None, None)
         corner = key.split("corner:", 1)[1] if key and "corner:" in key else None
         reason = "report absent or metric missing"
         if value is not None and abs(value) >= unconstrained_threshold:

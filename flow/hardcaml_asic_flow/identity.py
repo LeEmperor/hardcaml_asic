@@ -80,7 +80,7 @@ def describe():
         "package_version_source": version_source,
         "supported_record_schemas": list(SUPPORTED_RECORD_SCHEMAS),
         "cli_contract": {
-            "version": 2,
+            "version": 3,
             "default_output": "human",
             "json_option": "--json",
             "results_defaults": {
@@ -90,7 +90,11 @@ def describe():
             },
             "capabilities": {
                 "json_commands": ["preflight", "run", "postcheck", "collect",
-                                  "report", "execute", "archive"],
+                                  "report", "execute", "archive", "stages", "checkpoint-inspect",
+                                  "observation describe", "observation inspect", "observation read-updates",
+                                  "finalize", "finalization-inspect"],
+                "json_lines_commands": ["stages --observation-store", "finalize"],
+                "json_flag_placements": ["global", "command", "observation-query"],
                 "verbose_diagnostics": "stderr",
                 "runs_override": True,
                 "preflight_explicit_output": "file-existing-parent",
@@ -124,7 +128,7 @@ def report(as_json=False, output=print):
            f"library artifact match unverified (P6.5)")
     output(f"record schemas    "
             f"{', '.join(str(v) for v in described['supported_record_schemas'])}")
-    output("CLI contract      2; human output by default, --json for machine output")
+    output("CLI contract      3; human output by default, --json for machine output")
     output(f"modules           {described['module_dir']}")
     output(f"runtime data      {described['data_dir']}")
     return 0

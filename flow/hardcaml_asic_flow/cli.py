@@ -1,8 +1,8 @@
-"""The `hardcaml-asic-flow` command: parsing, dispatch and the fixed sequence.
+"""The `hardcaml-asic-flow` command: parsing, dispatch and presentation.
 
 The dispatcher owns human/explicit-JSON presentation, result-store defaults,
 argument parsing, path and tool-location precedence, exit
-status mapping and the fixed `execute` composition; it owns no operation policy.
+status mapping; the shared runner owns the coarse `execute` composition.
 Every operation below delegates to the runner/collector, the P6.1 reporter, the
 P6.2 archiver or the generic shell provisioner, all of which are siblings in this
 package, so an installed command and a source checkout run the same code.
@@ -17,13 +17,14 @@ says plainly that source identity is unstamped; see `identity`.
 import argparse
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
-import time
 
 from . import MINIMUM_PYTHON, archive as archiver, identity, paths, phase4, result_store
 from . import report as reporter
+from . import execution_plan, runner, presentation
 
 
 PROGRAM = "hardcaml-asic-flow"
@@ -303,6 +304,49 @@ def build_parser():
     execute.add_argument("--testbench-top")
     execute.add_argument("--archive", type=Path)
     execute.add_argument("--force", action="store_true")
+    stages = sub.add_parser("stages", help="opt-in sequential physical recipe (acceptance separate)")
+    add_presentation(stages)
+    stages.add_argument("bundle", type=nonempty_path)
+    for name in ("support-tools", "pdk-root", "python", "workspace", "checkpoint-store"):
+        stages.add_argument("--" + name, type=nonempty_path, required=True)
+    recipe = stages.add_mutually_exclusive_group(required=True)
+    recipe.add_argument("--endpoint", choices=("synthesis", "floorplan", "placement", "cts", "routing", "signoff"),
+                         help="expand contiguous stages through this endpoint")
+    recipe.add_argument("--plan", type=nonempty_path, help="strict version-2 endpoint or version-3 stage sequence JSON")
+    stages.add_argument("--checkpoint", type=nonempty_path, help="published path-bound handoff")
+    stages.add_argument("--timeout", type=int, default=600)
+    stages.add_argument("--observation-store", type=nonempty_path,
+                        help="opt-in attempt journal root outside the workspace")
+    finalize = sub.add_parser("finalize", help="opt-in terminal segmented results and acceptance operation")
+    add_presentation(finalize)
+    finalize.add_argument("execution", type=nonempty_path)
+    finalize.add_argument("--operation-store", type=nonempty_path, required=True)
+    finalize.add_argument("--accept", action="store_true", help="run external postchecks and existing full acceptance policy")
+    for name in ("support-tools", "precheck-python", "testbench", "replay-trace"):
+        finalize.add_argument("--" + name, type=nonempty_path)
+    finalize.add_argument("--testbench-top")
+    receipt = sub.add_parser("finalization-inspect", help="read separate schema-1 operation receipt")
+    add_presentation(receipt)
+    receipt.add_argument("attempt", type=nonempty_path)
+    inspect_checkpoint = sub.add_parser("checkpoint-inspect", help="read-only host checkpoint validation (not runtime readiness)")
+    add_presentation(inspect_checkpoint)
+    inspect_checkpoint.add_argument("checkpoint", type=nonempty_path)
+    inspect_checkpoint.add_argument("--compatibility", type=nonempty_path,
+                                    help="expected compatibility JSON; defaults to recorded compatibility")
+    inspect_checkpoint.add_argument("--restart-to", choices=("synthesis", "floorplan", "placement", "cts", "routing", "signoff"))
+    observation = sub.add_parser("observation", help="read-only structured stage observation API")
+    add_presentation(observation)
+    queries = observation.add_subparsers(dest="query", required=True)
+    describe = queries.add_parser("describe")
+    add_presentation(describe)
+    inspect = queries.add_parser("inspect")
+    add_presentation(inspect)
+    inspect.add_argument("attempt", type=nonempty_path)
+    updates = queries.add_parser("read-updates")
+    add_presentation(updates)
+    updates.add_argument("attempt", type=nonempty_path)
+    updates.add_argument("--stream-id", required=True)
+    updates.add_argument("--after", type=int, required=True)
     return parser
 
 
@@ -404,149 +448,48 @@ def validate_contract(parser, args):
 
 
 def execute_sequence(args, operations):
-    steps = []
-    started = time.monotonic()
-    outcome = operations.run(args)
-    steps.append({"operation": "run", "status": outcome.status,
-                  "exit_code": outcome.exit_code,
-                  "duration_seconds": round(time.monotonic() - started, 6)})
-    result = {"run_id": outcome.run_id, "run_dir": str(outcome.run_dir),
-              "run_record": str(outcome.run_record), "steps": steps}
-
-    def finish(status, exit_code):
-        result.update(status=status, exit_code=exit_code)
-        output = lambda text: print(text, file=sys.stderr if args.json else sys.stdout)
-        for step in steps:
-            output(f"execute: {step['operation']} {step['status']} "
-                   f"({step.get('duration_seconds', 0):.3f}s)")
-            if step.get("error"):
-                print(f"execute: {step['operation']}: {step['error']}", file=sys.stderr)
-        output(f"execute: {status}")
-        if args.json:
-            output(f"execute: run {outcome.run_dir}")
-        else:
-            summarize_outcome(outcome, "run", verbose=args.verbose)
-        if result.get("archive"):
-            output(f"execute: archive {result['archive']}")
-        if args.json:
-            outcome_diagnostics(outcome, "run", args.verbose)
-            print(json.dumps(result, sort_keys=True))
-        return exit_code
-
-    def best_effort_collect():
-        collect_started = time.monotonic()
-        try:
-            collect_args = argparse.Namespace(run_dir=outcome.run_dir,
-                                              output=outcome.run_dir / "results.json",
-                                              stdout=False, quiet=True, json=False,
-                                              verbose=args.verbose)
-            collect_code = operations.collect(collect_args)
-            steps.append({"operation": "collect", "status": "completed",
-                          "exit_code": collect_code, "best_effort": True,
-                          "duration_seconds": round(
-                              time.monotonic() - collect_started, 6)})
-        except Exception as exc:
-            steps.append({"operation": "collect", "status": "failed",
-                          "exit_code": 2, "best_effort": True, "error": str(exc),
-                          "duration_seconds": round(
-                              time.monotonic() - collect_started, 6)})
-
-    if outcome.exit_code:
-        best_effort_collect()
-        return finish(outcome.status, outcome.exit_code)
-
-    if args.stage == "full":
-        args.run_dir = outcome.run_dir
-        check_started = time.monotonic()
-        try:
-            check = operations.postcheck(args)
-        except ContractInterrupted as exc:
-            steps.append({"operation": "postcheck", "status": "interrupted",
-                          "exit_code": 128 + exc.signum,
-                          "duration_seconds": round(time.monotonic() - check_started, 6)})
-            best_effort_collect()
-            return finish("interrupted", 128 + exc.signum)
-        except Exception as exc:
-            steps.append({"operation": "postcheck", "status": "failed",
-                          "exit_code": 2, "error": str(exc),
-                          "duration_seconds": round(time.monotonic() - check_started, 6)})
-            best_effort_collect()
-            return finish("failed", 2)
-        steps.append({"operation": "postcheck", "status": check.status,
-                       "exit_code": check.exit_code,
-                       "duration_seconds": round(time.monotonic() - check_started, 6)})
+    """Render the shared runner's result using the historical CLI contract."""
+    def observe(_action, check):
         if args.json:
             outcome_diagnostics(check, "postcheck", args.verbose)
         else:
             summarize_outcome(check, "postcheck", args.verbose)
-        if check.exit_code:
-            best_effort_collect()
-            return finish(check.status, check.exit_code)
 
-    collect_args = argparse.Namespace(run_dir=outcome.run_dir,
-                                      output=outcome.run_dir / "results.json", stdout=False,
-                                      quiet=True, json=False, verbose=args.verbose)
-    collect_started = time.monotonic()
-    try:
-        code = operations.collect(collect_args)
-    except Exception as exc:
-        signum = getattr(exc, "signum", None)
-        steps.append({"operation": "collect", "status": "failed", "exit_code": 2,
-                      "error": str(exc), "duration_seconds": round(
-                          time.monotonic() - collect_started, 6)})
-        if signum is not None:
-            steps[-1].update(status="interrupted", exit_code=128 + signum)
-            return finish("interrupted", 128 + signum)
-        return finish("failed", 2)
-    steps.append({"operation": "collect", "status": "completed" if code == 0 else "failed",
-                  "exit_code": code, "duration_seconds": round(
-                      time.monotonic() - collect_started, 6)})
-    if code:
-        return finish("failed", code)
-
-    report_args = argparse.Namespace(run_dir=outcome.run_dir, json=False,
-                                     diagnostics_only=True, verbose=args.verbose)
-    report_started = time.monotonic()
-    try:
-        code = operations.report(report_args)
-    except Exception as exc:
-        signum = getattr(exc, "signum", None)
-        steps.append({"operation": "report", "status": "failed", "exit_code": 2,
-                      "error": str(exc), "duration_seconds": round(
-                          time.monotonic() - report_started, 6)})
-        if signum is not None:
-            steps[-1].update(status="interrupted", exit_code=128 + signum)
-            return finish("interrupted", 128 + signum)
-        return finish("failed", 2)
-    steps.append({"operation": "report", "status": "accepted" if code == 0 else "rejected",
-                  "exit_code": code, "duration_seconds": round(
-                      time.monotonic() - report_started, 6)})
-    if code:
-        return finish("rejected", code)
-
-    if args.archive:
-        archive_args = argparse.Namespace(run_dir=outcome.run_dir, output=args.archive,
-                                          list=False, force=args.force, quiet=True)
-        archive_started = time.monotonic()
-        try:
-            code = operations.archive(archive_args)
-        except Exception as exc:
-            signum = getattr(exc, "signum", None)
-            steps.append({"operation": "archive", "status": "failed", "exit_code": 2,
-                          "error": str(exc), "duration_seconds": round(
-                              time.monotonic() - archive_started, 6)})
-            if signum is not None:
-                steps[-1].update(status="interrupted", exit_code=128 + signum)
-                return finish("interrupted", 128 + signum)
-            return finish("failed", 2)
-        steps.append({"operation": "archive", "status": "completed" if code == 0 else "failed",
-                      "exit_code": code, "duration_seconds": round(
-                          time.monotonic() - archive_started, 6)})
-        if code:
-            return finish("failed", code)
-        result["archive"] = str(args.archive)
-
-    return finish("completed", 0)
+    plan = execution_plan.resolve(args.stage, archive=args.archive is not None)
+    execution = runner.execute(plan, runner.ServiceAdapter(args, operations), observe=observe)
+    outcome = execution.run_outcome
+    # Keep the legacy aggregate, including its best-effort collection convention,
+    # separate from the runner's richer occurrence status and acceptance facts.
+    steps = [dict(step) for step in execution.steps]
+    for step in steps:
+        if step.get("best_effort"):
+            step["status"] = "failed" if "error" in step else "completed"
+            if "error" in step:
+                step["exit_code"] = 2
+        if step["operation"] == "postcheck" and step["status"] == "interrupted":
+            step.pop("error", None)
+    result = {"run_id": outcome.run_id, "run_dir": str(outcome.run_dir),
+              "run_record": str(outcome.run_record), "steps": steps,
+              "status": execution.status, "exit_code": execution.exit_code}
+    if execution.archive is not None:
+        result["archive"] = execution.archive
+    output = lambda text: print(text, file=sys.stderr if args.json else sys.stdout)
+    for step in result["steps"]:
+        output(f"execute: {step['operation']} {step['status']} "
+               f"({step.get('duration_seconds', 0):.3f}s)")
+        if step.get("error"):
+            print(f"execute: {step['operation']}: {step['error']}", file=sys.stderr)
+    output(f"execute: {execution.status}")
+    if args.json:
+        output(f"execute: run {outcome.run_dir}")
+    else:
+        summarize_outcome(outcome, "run", verbose=args.verbose)
+    if result.get("archive"):
+        output(f"execute: archive {result['archive']}")
+    if args.json:
+        outcome_diagnostics(outcome, "run", args.verbose)
+        print(json.dumps(result, sort_keys=True))
+    return execution.exit_code
 
 
 def unsupported_python():
@@ -611,14 +554,167 @@ def main(argv=None, operations=None, environ=None, cwd=None):
         return 0
     environ = os.environ if environ is None else environ
     cwd = Path.cwd() if cwd is None else Path(cwd)
+    def allocated(value):
+        if args.json:
+            print(json.dumps(value), flush=True)
+        else:
+            presentation.allocation(value, output=lambda line: print(line, flush=True))
+
+    if args.command == "checkpoint-inspect":
+        from . import checkpoint
+        try:
+            path = absolute(args.checkpoint, cwd)
+            expected = (checkpoint.read(absolute(args.compatibility, cwd)) if args.compatibility else
+                        checkpoint.read(path / "manifest.json")["compatibility"])
+            manifest = checkpoint.validate(path, compatibility=expected, restart_to=args.restart_to)
+            value = {"validation": "host_only", "runtime_closure_validated": False,
+                              "compatibility_source": "expected" if args.compatibility else "recorded",
+                              "manifest": manifest}
+            if args.json:
+                print(json.dumps(value, sort_keys=True, allow_nan=False))
+            else:
+                presentation.checkpoint(value, path=path, restart_to=args.restart_to)
+            return 0
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            value = {"validation": "host_only", "error": str(exc)}
+            print(f"checkpoint-inspect: {exc}", file=sys.stderr)
+            if args.json:
+                print(json.dumps(value, sort_keys=True))
+            else:
+                presentation.inspection_error("checkpoint", absolute(args.checkpoint, cwd), value)
+            return 2
+    if args.command in ("finalize", "finalization-inspect"):
+        from . import finalization, checkpoint
+        try:
+            if args.command == "finalization-inspect":
+                value = finalization.inspect(absolute(args.attempt, cwd))
+                if args.json:
+                    print(json.dumps(value, sort_keys=True, allow_nan=False))
+                else:
+                    presentation.finalization(value, path=absolute(args.attempt, cwd))
+                return 0
+            directory, value = finalization.finalize(execution=absolute(args.execution, cwd),
+                store=absolute(args.operation_store, cwd), accept=args.accept,
+                support_tools=absolute(args.support_tools, cwd),
+                precheck_python=interpreter_absolute(args.precheck_python, cwd),
+                testbench=absolute(args.testbench, cwd), testbench_top=args.testbench_top,
+                replay_trace=absolute(args.replay_trace, cwd),
+                allocated=lambda directory, attempt: allocated({"contract": finalization.CONTRACT,
+                    "schema_version": 1, "event": "allocated", "attempt": str(directory), "attempt_id": attempt}))
+            if args.json:
+                print(json.dumps({"attempt": str(directory), **value}, sort_keys=True, allow_nan=False))
+            else:
+                presentation.finalization(value, path=directory)
+            if value.get("error"):
+                print(f"finalize: {value['error']}", file=sys.stderr)
+            elif value["exit_code"]:
+                print(f"finalize: {value['status']} (exit {value['exit_code']}); "
+                      f"acceptance {value['acceptance']}", file=sys.stderr)
+            return value["exit_code"]
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            value = {"contract": finalization.CONTRACT, "schema_version": 1, "error": str(exc)}
+            print(f"{args.command}: {exc}", file=sys.stderr)
+            if args.json:
+                print(json.dumps(value, sort_keys=True))
+            else:
+                presentation.inspection_error("finalization", absolute(
+                    args.attempt if args.command == "finalization-inspect" else args.execution, cwd), value)
+            return 2
+    if args.command == "observation":
+        from . import flow_observation
+        try:
+            value = (flow_observation.describe() if args.query == "describe" else
+                     flow_observation.inspect(absolute(args.attempt, cwd)) if args.query == "inspect" else
+                     flow_observation.read_updates(absolute(args.attempt, cwd), stream_id=args.stream_id, after=args.after))
+            if args.json:
+                print(json.dumps(value, sort_keys=True, allow_nan=False))
+            elif args.query == "describe":
+                presentation.observation_description(value)
+            elif args.query == "read-updates":
+                presentation.observation_updates(value, path=absolute(args.attempt, cwd))
+            else:
+                presentation.observation(value, path=absolute(args.attempt, cwd))
+            return 0
+        except (flow_observation.ObservationError, OSError, ValueError, TypeError) as exc:
+            value = {"contract": flow_observation.CONTRACT, "schema_version": 1,
+                     "error": {"code": getattr(exc, "code", "INVALID_RECORD"), "detail": str(exc)}}
+            print(f"observation {args.query}: {exc}", file=sys.stderr)
+            if not args.json:
+                presentation.inspection_error("observation", absolute(args.attempt, cwd)
+                    if hasattr(args, "attempt") else "describe", value)
+            else:
+                print(json.dumps(value))
+            return 2
+    if args.command == "stages":
+        writer = None
+        try:
+            from . import stages, execution_plan, runner, flow_observation
+            if args.observation_store is not None:
+                writer = flow_observation.Writer(absolute(args.observation_store, cwd),
+                    workspace=absolute(args.workspace, cwd), checkpoint_store=absolute(args.checkpoint_store, cwd),
+                    request={"caller_cwd": str(cwd.resolve()), **{k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}})
+                allocated({"contract": flow_observation.CONTRACT, "schema_version": 1,
+                                   "event": "observation_allocated", "stream_id": writer.stream_id,
+                                   "attempt": str(writer.directory)})
+            def resolve_plan():
+                initial = absolute(args.checkpoint, cwd)
+                source_boundary = None
+                if initial is not None:
+                    from . import checkpoint
+                    source_boundary = checkpoint.read(initial / "manifest.json")["boundary"]
+                plan = (execution_plan.StagePlan.from_dict(flow_observation.strict_read(absolute(args.plan, cwd)))
+                        if args.plan else execution_plan.resolve_stages(args.endpoint, initial_boundary=source_boundary))
+                if plan.resume != (args.checkpoint is not None):
+                    raise ValueError("stage plan resume must match the supplied checkpoint")
+                return plan
+            def prepare():
+                return stages.prepare(
+                bundle=absolute(args.bundle, cwd), support_tools=absolute(args.support_tools, cwd),
+                pdk_root=absolute(args.pdk_root, cwd), python=interpreter_absolute(args.python, cwd),
+                workspace=absolute(args.workspace, cwd),
+                checkpoint_store=absolute(args.checkpoint_store, cwd),
+                initial_checkpoint=absolute(args.checkpoint, cwd), timeout=args.timeout,
+                preflight_output=writer.directory / "preflight.json" if writer else None)
+            def persist(execution):
+                path = absolute(args.workspace, cwd) / ("execution-" + execution.attempt_id + ".json")
+                result_store.save_json(path, execution.as_dict())
+            execution = (writer.run(resolve_plan, prepare, finalize=persist) if writer else
+                         runner.execute(resolve_plan(), prepare()))
+            value = execution.as_dict()
+            if writer is None:
+                persist(execution)
+            if args.json:
+                print(json.dumps(value, sort_keys=True, allow_nan=False))
+            else:
+                presentation.stage_execution(value, workspace=absolute(args.workspace, cwd))
+            for occurrence in value.get("occurrences", []):
+                if occurrence.get("error"):
+                    print(f"stages: {occurrence['action_key']}: {occurrence['error']}", file=sys.stderr)
+            if execution.exit_code:
+                print(f"stages: {execution.status} (exit {execution.exit_code})", file=sys.stderr)
+            return execution.exit_code
+        except (OSError, ValueError, KeyError, TypeError, ImportError) as exc:
+            if args.observation_store is not None and args.json:
+                print(json.dumps({"contract": flow_observation.CONTRACT, "schema_version": 1,
+                                  "error": {"code": getattr(exc, "code", "EXECUTION_FAILED"), "detail": str(exc)}}))
+            print(f"hardcaml-asic-flow: {exc}", file=sys.stderr)
+            if not args.json:
+                presentation.inspection_error("stage execution", absolute(args.workspace, cwd), {"error": str(exc)})
+            return 2
+        except (result_store.FlowInterrupted, KeyboardInterrupt) as exc:
+            print(f"stages: interrupted: {exc}", file=sys.stderr)
+            if not args.json:
+                print("Stage execution interrupted; no terminal result is available here.\n"
+                      "Inspect the allocated observation if present; acceptance is not established.")
+            return 128 + getattr(exc, "signum", signal.SIGINT)
+        finally:
+            if writer is not None:
+                writer.close()
     resolve_paths(parser, args, environ, cwd)
     validate_contract(parser, args)
     operations = operations or Operations()
     try:
         if args.command == "execute":
-            if isinstance(operations, Operations):
-                with operations.phase4.interruption_handlers():
-                    return execute_sequence(args, operations)
             return execute_sequence(args, operations)
         result = getattr(operations, args.command)(args)
         if args.command in ("run", "postcheck"):

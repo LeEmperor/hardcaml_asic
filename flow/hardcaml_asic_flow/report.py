@@ -130,11 +130,11 @@ def numeric(value, *, count=False, nonnegative=False):
     return not count or float(value).is_integer()
 
 
-def report(run_dir, results, source, output=print):
+def report(run_dir, results, source, output=print, *, context=None):
     problems = []
     out = output
 
-    record = json.loads((run_dir / "run.json").read_text())
+    record = json.loads((run_dir / "run.json").read_text()) if context is None else context
     out(f"run        {results.get('run_id')}  ({run_dir})")
     out(f"bundle     {record.get('bundle')}")
     out(f"status     {results.get('process_status')}"
