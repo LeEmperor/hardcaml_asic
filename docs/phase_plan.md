@@ -75,6 +75,9 @@ completed bounded tool-environment slices.
   retains logs, path inventory and preservation snapshots. Final review corrected
   directory symlink-parent/`..` misrouting; focused example build and **9 routing
   tests** passed. Accepted full suites were not repeated for this closeout.
+- Non-Git closeout helper passed **9 docs / 212 local links/anchors**, whitespace
+  and final LF; eight unavailable links are historical scaf references. It reverified
+  all 21 bundle files/hashes, 29 metadata entries, operation/run evidence and pin.
 
 This is storage/CLI ergonomics, not live event catalog/internal step observation,
 autoexecution, full postcheck or signoff. P6 identity/installation and live

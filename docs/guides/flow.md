@@ -47,7 +47,7 @@ archive, full acceptance or project `execute` operation.
 | --- | --- | --- |
 | Project `describe` | Local declaration S-expression, no storage | `--json` wraps the S-expression and project name; not Workbench data |
 | Project `emit` | Verified immutable `ROOT/_flow_results/bundles/<identity>`; human created/reused path and identity | `--output-dir DIR` retains new/empty-directory writing; `--json` prints identity/output_dir |
-| Project `preflight` | Emit/reuse current source bundle, save a separate operation and readiness report | `--bundle DIR` bypasses emission; `--output FILE` writes only that report file, whose parent must exist |
+| Project `preflight` | Emit/reuse current source bundle, save a separate operation and readiness report | `--bundle DIR` bypasses emission; `--output FILE` selects an exact report file (existing parent), with no operation receipt |
 | Installed `preflight BUNDLE` | `<results-root>/operations/<UTC-timestamp>_<id-prefix>/{operation,preflight}.json` | `--results-root DIR`, `--output FILE`, `--json` |
 | Project/installed `run` | New `<results-root>/runs/<UTC-timestamp>_<id-prefix>` with full random run ID in `run.json` | Required `--stage synthesis\|full`; `--runs DIR` overrides the run store |
 | Installed `collect RUN` | Writes `RUN/results.json`, prints its path | `--output FILE`; `--json` still writes normally; legacy `--stdout` emits read-only JSON |
@@ -60,6 +60,8 @@ root. The project default is `ROOT/_flow_results`; its tool default is separatel
 `ROOT/_flow_tools`, selected by `--toolchain` > nonempty `TOOLCHAIN` > default.
 `--results-root`, `--runs`, `--source-root`/`--project-root`, `--output-dir` and
 explicit tool overrides remain available. Relative overrides mean caller cwd.
+An explicit preflight report destination does not suppress project automatic bundle
+emission; use `--bundle` to select an already emitted bundle.
 Project discovery walks upward for `dune-project` plus `asic-dependency.json`,
 checks declared inputs, and refuses automatic discovery in `_build`, `_flow_results`
 or `.dev`; use an explicit root there. Explicit paths retain symlink-parent/`..`
