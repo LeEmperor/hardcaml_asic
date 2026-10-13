@@ -80,20 +80,30 @@ def describe():
         "package_version_source": version_source,
         "supported_record_schemas": list(SUPPORTED_RECORD_SCHEMAS),
         "cli_contract": {
-            "version": 3,
+            "version": 4,
             "default_output": "human",
             "json_option": "--json",
             "results_defaults": {
                 "root": "<caller-cwd>/_flow_results",
                 "operations": "<results-root>/operations",
                 "runs": "<results-root>/runs",
+                "stage_observations": "<resolved-workspace-parent>/observations",
             },
             "capabilities": {
                 "json_commands": ["preflight", "run", "postcheck", "collect",
                                   "report", "execute", "archive", "stages", "checkpoint-inspect",
-                                  "observation describe", "observation inspect", "observation read-updates",
+                                   "observation describe", "observation inspect", "observation read-updates", "observation watch",
                                   "finalize", "finalization-inspect"],
-                "json_lines_commands": ["stages --observation-store", "finalize"],
+                "json_lines_commands": ["stages", "finalize", "observation watch"],
+                "observation_watch": {"incremental": True, "interval_seconds": 0.5,
+                                      "envelopes": ["updates", "status"], "records_flushed": True,
+                                      "reconnect": "stream-id_and_after_together",
+                                      "exit_codes": {"terminal": 0, "writer_lost_or_unknown": 3,
+                                                     "query_error": 2, "reader_interrupt": 130}},
+                "stage_observation_default": True,
+                "stage_observation_opt_out": "--no-observation",
+                "stage_terminal_error_event": "observation_terminal",
+                "stage_json_records_flushed": True,
                 "json_flag_placements": ["global", "command", "observation-query"],
                 "verbose_diagnostics": "stderr",
                 "runs_override": True,
@@ -128,7 +138,7 @@ def report(as_json=False, output=print):
            f"library artifact match unverified (P6.5)")
     output(f"record schemas    "
             f"{', '.join(str(v) for v in described['supported_record_schemas'])}")
-    output("CLI contract      3; human output by default, --json for machine output")
+    output("CLI contract      4; human output by default, --json for machine output")
     output(f"modules           {described['module_dir']}")
     output(f"runtime data      {described['data_dir']}")
     return 0

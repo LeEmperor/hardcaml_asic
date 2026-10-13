@@ -2,7 +2,9 @@
 
 Status: all three slices delivered; independent integration, full provider tests,
 installed-prefix suite, private consumer refresh and retained-output inspection
-passed, 2026-10-13. Current CLI contract: **3**.
+passed, 2026-10-13. CLI contract at this closeout: **3**. This record preserves
+contract-3 history; [default flow journal and foreground watch](flow-journal.md)
+subsequently delivered current contract **4** without changing these persisted schemas.
 
 ## Request and goal
 

@@ -1,6 +1,24 @@
 ; P0 lifecycle, registration and selection tests.
 
 (rule
+ (alias observation-watch)
+ (deps test_observation_watch.py test_stages.py (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:test_observation_watch.py})))
+
+(alias
+ (name runtest)
+ (deps (alias observation-watch)))
+
+(rule
+ (alias default-journal)
+ (deps test_default_journal.py test_stages.py (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:test_default_journal.py})))
+
+(alias
+ (name runtest)
+ (deps (alias default-journal)))
+
+(rule
  (alias related-presentation)
  (deps test_related_presentation.py test_stages.py (source_tree ../flow) ../toolchain.lock)
  (action (run python3 -B %{dep:test_related_presentation.py})))

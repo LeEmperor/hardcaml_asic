@@ -193,7 +193,7 @@ still ASIC P6.5/P6.6 work; these instructions do not close those gates.
 
 These development examples use scripts from `$ASIC_SOURCE`. They delegate to the
 installed package's source implementation but retain some historical output and
-option spellings. Installed CLI contract **3** defaults to human summaries;
+option spellings. Current provider CLI contract **4** defaults to human summaries;
 machine callers must request `--json` (raw payload, diagnostics on stderr).
 Its run/execute store defaults to `<caller-cwd>/_flow_results/runs`;
 `--runs` remains an override. The project CLI

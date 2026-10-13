@@ -102,7 +102,10 @@ exit 2. It needs no project root, bundle, PDK or Docker. It is separate from the
 specimen's declared design source inventory and existing `project` commands.
 For a fresh implementation, select an existing published bundle and explicit
 toolchain roots, then request a new workspace whose parent already exists.
-Keep the observation store outside that workspace:
+CLI journaling defaults to `<resolved-workspace-parent>/observations`. Keep an
+explicit override outside that workspace; `--no-observation` is a mutually
+exclusive single-object-output escape hatch. Python adapter/runner APIs still
+choose no store implicitly:
 
 ```sh
 BUNDLE=/absolute/path/to/published/bundle
@@ -126,12 +129,17 @@ hardcaml-asic-flow observation describe
 hardcaml-asic-flow observation describe --json
 hardcaml-asic-flow observation inspect /absolute/path/to/observation-attempt
 hardcaml-asic-flow observation inspect /absolute/path/to/observation-attempt --json
+hardcaml-asic-flow observation watch /absolute/path/to/observation-attempt
+hardcaml-asic-flow observation watch /absolute/path/to/observation-attempt --stream-id STREAM_ID --after CURSOR --json
 hardcaml-asic-flow observation read-updates /absolute/path/to/observation-attempt --stream-id STREAM_ID --after 0
 hardcaml-asic-flow observation read-updates /absolute/path/to/observation-attempt --stream-id STREAM_ID --after 0 --json
 hardcaml-asic-flow checkpoint-inspect /absolute/path/to/floorplan-checkpoint --restart-to placement
 hardcaml-asic-flow checkpoint-inspect /absolute/path/to/floorplan-checkpoint --restart-to placement --json
 ```
 
+Watch follows in-process and read-only; reconnect stream/cursor must be supplied
+together. Machine delivery is complete flushed updates/status JSONL; reader Ctrl-C
+does not interrupt execution. See [envelopes, exits and limits](flow.md#foreground-incremental-watch).
 Both inspectors default to readable plain-text reports; machine readers must add
 `--json` for the full unchanged payload. With `--json`, checkpoint success (exit 0) returns
 `validation: "host_only"`, `runtime_closure_validated: false`,

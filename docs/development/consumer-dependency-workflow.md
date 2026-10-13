@@ -138,8 +138,9 @@ python3 scripts/asic_dependency.py status --json
 
 `--mode recorded` selects the committed baseline in `asic-dependency.json`.
 Refresh bounds its provider build/install and external Dune link probe to `-j 20`.
-Current provider CLI contract is 3; consumer refresh and dispatch accept exactly
-integer contracts 2 or 3, rejecting unknown versions before publication/emission.
+Current provider CLI contract is 4; consumer refresh and Classic dispatch accept exactly
+integer contracts 2, 3 or 4, rejecting unknown versions before publication/emission.
+Explicit-stage `project run --endpoint` requires 4; see the [journal closeout](flow-journal.md).
 Parsing callers explicitly request `--json`, with per-line parsing for observed
 stages/finalize. See [integration evidence](human-readable-flow-output.md#slice-3--independent-integration-2026-10-13).
 Refresh and bootstrap cannot activate their calling shell: source the activation

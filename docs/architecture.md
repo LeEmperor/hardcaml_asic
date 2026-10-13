@@ -22,11 +22,12 @@ Implemented: project declaration inspection and shared emission entry point,
 project elaboration, target/constraint resolution, immutable bundles,
 installed Python dispatcher, separate execution IDs, `run.json`, `results.json`,
 postcheck attempts, operation-aware acceptance and integrity-checked archives;
-default result stores, standalone preflight receipts, human/explicit-JSON CLI 3,
+default result stores, standalone preflight receipts, human/explicit-JSON CLI 4,
 and project preflight/implementation-run routing.
-Opt-in delivery adds six sequential physical boundaries, schema-3 OCaml/Python
+Explicit-stage delivery adds six sequential physical boundaries, schema-3 OCaml/Python
 recipes, exact-runtime path-bound checkpoints, early per-attempt allocation and
-stage inspect/cursor updates, plus separate terminal-results/acceptance operations.
+stage inspect/cursor updates and foreground watch, plus separate terminal-results/acceptance operations.
+CLI stages journal by default; independent runner/adapter APIs remain explicit.
 Missing: store-wide catalog/idempotency, fine backend-step updates, execution
 recovery and full Workbench application integration. Source-artifact stamping remains ASIC P6.5a.
 The provisional synthetic [observation fixtures](../test/fixtures/provider_observation/v1/README.md)
@@ -287,9 +288,14 @@ roots and bridge/image; copied views remove producer-run dependencies, not input
 dependencies. `checkpoint-inspect` is host-only validation, not runtime readiness.
 Older schema-1 physical checkpoints are not upgraded.
 
-Opt-in `flow_observation` supplies early allocation, per-attempt hash-chained atomic
-records, advisory observed-writer locks, `describe`, `inspect`, and cursor
-`read-updates`. Publication precedes stage finish; physical completion, outer
+CLI `stages` composes `flow_observation` by default for fresh/resumed attempts at
+`<resolved-workspace-parent>/observations`, outside the workspace. The parent must
+exist; `--observation-store` overrides and `--no-observation` opts out. It supplies
+early allocation, per-attempt hash-chained atomic records, advisory observed-writer
+locks, `describe`, `inspect`, cursor `read-updates` and foreground incremental
+`watch`. Warm polls reparse only new content but list/stat the whole prefix under a
+trusted local immutable-record convention; liveness is best-effort filesystem/flock
+evidence. Writer release triggers a final-tail drain. Publication precedes stage finish; physical completion, outer
 outcome and acceptance remain distinct. Readers can reconnect after process exit;
 writer loss leaves unresolved facts, never invented recovery/completion. This is
 not the provisional store-wide fixture protocol, fsync durability, request
@@ -342,12 +348,15 @@ Broader proposed contract: describe capabilities/versions; list/inspect explicit
 correlate a request with an early allocated operation/run; inspect step occurrences;
 replay recorded updates; read versioned snapshots and evidence references.
 Events describe allocation, lifecycle, publication and operation outcomes, never
-UI refresh actions. CLI contract 3 requires explicit `--json` for machine payloads,
+UI refresh actions. CLI contract 4 requires explicit `--json` for machine payloads,
 including additive stage/checkpoint/observation/finalization commands. Presentation
 consumes existing results without new probes or policy changes; observed stages and
-finalization preserve flushed allocation/terminal JSONL. The example's contract-2
-gate needs final integration review before provider refresh. Per-attempt inspect/cursor reads are delivered; store-wide reads and
-blocking watch remain separate scope.
+finalization preserve flushed allocation/terminal JSONL. Watch uses separate reader
+`updates`/`status` envelopes; reader exit 0 means a recorded terminal outcome, not
+flow acceptance. The example accepts exact integer contracts 2/3/4 for Classic,
+requires 4 for `project run --endpoint`, validates modes before emission and selects
+a unique workspace without precreating it. Store-wide reads and Workbench cancellation
+remain separate scope. See [review and limits](development/flow-journal.md).
 
 One build may have two runs. Each run has identified operation attempts and step
 occurrences; display names or numbered directories are not identities. Collecting
@@ -447,8 +456,9 @@ now implements a fixed single-clock 16 × 8 controlled FIFO with explicit regist
 storage, a pure list-based scoreboard, directed/seeded regressions, a consumer-owned
 TT wrapper/declaration and a project-centered `describe|emit|preflight|run` CLI. Its public facade
 exposes `project ()` plus `Tt_wrapper`; shared emission belongs to the provider.
-Project run requires a stage and invokes implementation only; no project execute
-or live inspect interface is delivered. Its source root is discovered or explicit,
+Project run requires Classic `--stage synthesis|full` or explicit-stage `--endpoint`
+and invokes implementation only. The installed provider owns inspect/watch; no project
+execute interface is delivered. Its source root is discovered or explicit,
 not a required hardcoded sibling path. Owner initial ref
 `8e4577f6c72cc689cbc92daeb5f8ae083cf970e0` now exists; it alone does not establish
 a clean tree or a dependency pin. The specimen now has a recorded ASIC baseline

@@ -3,7 +3,11 @@
 Discussion record: 2026-10-13. This records the architectural direction and user
 preferences discussed after the explicit-stage implementation. Workbench integration
 remains proposed. Human-default CLI rendering was subsequently delivered as
-contract 3; see [completion evidence](human-readable-flow-output.md).
+contract 3; see [completion evidence](human-readable-flow-output.md). The optional
+journal and future-watch wording described that historical baseline. Contract 4
+subsequently delivered default CLI-stage journaling and foreground incremental watch;
+see [current feature closeout](flow-journal.md). Workbench cancellation and daemon
+crash-survival behavior remain proposed, not supplied by the reader.
 
 ## Ownership boundary
 
@@ -32,7 +36,7 @@ implement a second version of ASIC sequencing and acceptance policy.
 An event sequence does not require a daemon. The distinction is between an
 **ASIC execution journal** (persisted domain facts) and a **Workbench event
 stream** (live delivery to clients, including Workbench-owned job/UI facts).
-The existing optional per-attempt observation journal is sufficient groundwork;
+The default CLI-stage per-attempt observation journal is sufficient groundwork;
 a larger service or event bus is not a prerequisite.
 
 ## Runs, attempts, and output locations
@@ -42,14 +46,20 @@ the current Classic and segmented interfaces use different records:
 
 - Classic `run`: run directory, `run.json`, collected `results.json`, `report`.
 - Segmented `stages`: explicit workspace, execution-attempt JSON, published
-  checkpoints, and optional observation-attempt directory.
+  checkpoints, and default observation-attempt directory (`--no-observation` opts out).
 
 Unifying user-facing run/report terminology is a desired follow-up, not a claim
 that Classic `collect`/`report` accept segmented workspaces today. Keep an
 observation `ATTEMPT` variable distinct from a Classic `RUN` variable.
 
 The segmented caller supplies `--workspace`, `--checkpoint-store` (inside the
-workspace), and optionally `--observation-store`. A typical consumer layout is:
+workspace), and optionally `--observation-store`.
+The default observation root is `<resolved-workspace-parent>/observations`; the
+workspace parent must exist. Example `project run --endpoint` creates only that
+results parent and selects a unique nonexistent workspace; preparation creates it.
+Classic `project run --stage` does not acquire the stage journal.
+
+A typical consumer layout is:
 
 ```text
 _flow_results/
@@ -82,11 +92,13 @@ endpoint completion, and full acceptance are different facts.
 The user prefers the existing `report` formatting: compact labeled fields,
 stage/metric tables and explicit verdicts, rather than default JSON dumps.
 
-Delivered presentation behavior (CLI contract 3):
+Delivered presentation behavior (introduced in CLI contract 3, retained in 4):
 
 ```sh
 hardcaml-asic-flow observation inspect "$ATTEMPT"          # human summary
 hardcaml-asic-flow observation inspect "$ATTEMPT" --json   # machine representation
+hardcaml-asic-flow observation watch "$ATTEMPT"           # foreground; reader Ctrl-C is safe
+hardcaml-asic-flow observation watch "$ATTEMPT" --stream-id "$STREAM_ID" --after "$CURSOR" --json
 hardcaml-asic-flow checkpoint-inspect "$PLACEMENT" --restart-to cts
 hardcaml-asic-flow checkpoint-inspect "$PLACEMENT" --restart-to cts --json
 ```
@@ -165,8 +177,11 @@ Recommended requirements:
 - Workbench can inspect terminal-launched runs and reconnect to persisted facts.
 - Daemon-crash process survival and reattachment/control are explicitly specified
   and tested before advertised.
-- Start with cursor-based polling. A future foreground `watch` process can offer
-  streaming delivery without becoming the source of truth or requiring a daemon.
+- Foreground `watch` now offers streaming delivery without becoming the source of
+  truth or requiring a daemon. It emits separate reader updates/status, validates
+  the retained prefix, drains final publication after lock release, and supports
+  stream/cursor reconnection. Reader exit 0 includes failed/interrupted execution;
+  it is not acceptance. Reader Ctrl-C and stdout failure never signal the writer.
 
 ## Related implementation and remaining work
 
@@ -175,7 +190,10 @@ See [explicit-stage implementation record](explicit-stage-refactor.md),
 and [flow interfaces](../guides/flow.md).
 
 Delivered: human-default inspectors and related segmented execution/finalization
-presentation, with explicit complete machine output. Follow-ups: typed Workbench
+presentation, default CLI-stage journaling and foreground watch with explicit
+complete machine output. Local trusted immutable-record metadata and advisory-lock
+liveness are best-effort filesystem assumptions, not hostile-owner protection.
+Follow-ups: typed Workbench
 provider adapter; supervised cancellation tests;
 explicit daemon-failure behavior. Existing observation is per-attempt and does
 not promise store-wide subscriptions/idempotency, execution recovery, writer

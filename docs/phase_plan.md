@@ -3,10 +3,10 @@
 Current checkpoint: 2026-10-13 bounded explicit-stage implementation, independent
 review and documentation closeout delivered. Coarse runner, six sequential physical
 boundaries, schema-3 OCaml/Python recipes, exact-runtime path-bound checkpoints,
-opt-in per-attempt observation and separate existing-policy finalization passed.
+default CLI per-attempt observation, foreground watch and separate existing-policy finalization passed.
 Actual physical and external acceptance evidence is retained as curated repo JSON.
 The earlier blocked probe remains history; later official cases succeeded.
-Default stores, human/explicit-JSON CLI 3, project entrypoint, role-specific runtime policy, managed
+Default stores, human/explicit-JSON CLI 4, project endpoint routing, role-specific runtime policy, managed
 Python/Tcl and thin bootstrap remain delivered. ASIC P6.5c is partially addressed;
 broader P6.5/P6.6 identity/installation gates and committed-pin adoption remain open.
 This is the **only active queue**. [Architecture](architecture.md) owns boundaries;
@@ -27,7 +27,7 @@ and exact delivery evidence. Proposed new work below awaits design discussion.
     before adopting this provider. The [project-centered entrypoint](#project-centered-entrypoint-acceptance)
     is delivered: consumer `Fifo_asic.project ()`, shared `Project.emit_bundle`, and
      project `describe|emit|preflight|run`; run is implementation only and requires
-     a stage. Current recorded refresh rejects the old API;
+     Classic `--stage` or explicit-stage `--endpoint`. Current recorded refresh rejects the old API;
     development refresh works pending owner adoption of a committed candidate.
 3. The provisional provider observation fixtures/model are accepted with
     [evidence below](#provider-observation-fixture-acceptance). The authorized
@@ -39,6 +39,30 @@ and exact delivery evidence. Proposed new work below awaits design discussion.
 This queue records future ordering, not authorization to proceed beyond the
 completed bounded implementation. The [quickstart](guides/stage-quickstart.md) and
 [detailed recipes](guides/ocaml-stage-recipes.md) describe the delivered interfaces.
+
+### Default flow journal closeout
+
+2026-10-13: [feature and independent review](development/flow-journal.md#final-independent-review-and-closeout)
+delivered. Fresh/resumed CLI `stages` allocate before plan/preflight by default;
+contract 4 advertises flushed allocation/terminal JSONL. Explicit store override and
+`--no-observation` remain available; standalone APIs and Classic do not default-journal.
+The example's mutually exclusive `project run --endpoint` route requires contract 4,
+validates before emission and selects a nonexistent workspace under results.
+
+Foreground incremental watch validates cold prefixes, checks cached record metadata,
+validates only new content and drains the terminal publication/release race. Independent
+readers can stop/reconnect without controlling execution. Reader exit 0 is query
+success for any recorded terminal outcome, not acceptance. Review fixed non-pipe
+stdout delivery failure; comprehensive forced provider and fresh installed-prefix
+suites passed, followed by one private refresh and activated example checks.
+Exact commands/current generation and retained compatibility checks are in the feature record.
+[Existing real synthesis/watch/Ctrl-C/reconnect evidence](../evidence/librelane-observation/flow-journal-slice3.json)
+remains valid; no additional EDA was needed.
+
+Remaining: trusted local immutable-prefix/filesystem advisory-lock assumptions,
+O(prefix) metadata work and cached memory, caller-owned cursors/retention, no
+fsync/power-loss guarantee, daemon-crash process-survival promise, Workbench cancellation,
+store-wide service, backend-step progress or execution takeover/recovery.
 
 ### Explicit-stage refactor closeout
 
@@ -108,7 +132,7 @@ evidence. This final slice checked documentation links/commands and whitespace o
 ### Default result store and CLI 2 closeout
 
 Historical CLI-contract-2 closeout, 2026-10-13; completed implementation acceptance
-and independent review. Current interface is contract 3:
+and independent review. Current interface is contract 4; this section preserves contract-2/3 history:
 
 - Delivered default `_flow_results/{bundles,runs,operations}`, verified immutable
   identity publication/reuse, durable bounded readiness diagnostics, human defaults,
@@ -338,7 +362,7 @@ recorded below; later bounded live stage observation is delivered in the
 | Provider observation / explicit stages | Bounded per-attempt journal/readers, checkpoint restarts and separate finalization delivered; full checks and real physical/external acceptance passed; store-wide/fine-step/Workbench scope remains open | [Current closeout](#explicit-stage-refactor-closeout), [historical probe](#librelane-feasibility-probe-review), [fixture acceptance](#provider-observation-fixture-acceptance), [architecture](architecture.md#8-provider-observation-direction) |
 | Resolved-build boundary hardening | Implemented; full runtest passes | [Evidence below](#resolved-build-boundary-hardening-evidence) |
 | Public API rename | Implemented; provider and FIFO acceptance passed, active documentation migrated | [Migration and evidence below](#public-api-rename-migration-and-evidence) |
-| Project-centered entrypoint | Delivered: declaration/inventory, immutable emission, `describe|emit|preflight|run`; run is implementation only, explicit stage; current CLI contract 3 | [Presentation completion](development/human-readable-flow-output.md), [historical CLI-2 closeout](#default-result-store-and-cli-2-closeout), [original acceptance](#project-centered-entrypoint-acceptance) |
+| Project-centered entrypoint | Delivered: declaration/inventory, immutable emission, `describe|emit|preflight|run`; run is implementation only, Classic stage or explicit-stage endpoint; current CLI contract 4 | [Journal closeout](#default-flow-journal-closeout), [presentation history](development/human-readable-flow-output.md), [original acceptance](#project-centered-entrypoint-acceptance) |
 | Controlled-FIFO development specimen | Contract/core, scoreboard, TT wrapper/declaration and emitter delivered; PDK-free acceptance | [Original evidence](#controlled-fifo-development-specimen-evidence), [consumer README](../../hardcaml_asic_example/README.md) |
 | Consumer dependency refresh / emitter | Delivered: isolated library/CLI, activation and real-checkout acceptance; development works, old recorded API refused pending owner candidate adoption | [Original closeout](#consumer-refresh-and-real-checkout-emitter-closeout), [current acceptance](#project-centered-entrypoint-acceptance), [commands](development/consumer-dependency-workflow.md#implemented-commands) |
 

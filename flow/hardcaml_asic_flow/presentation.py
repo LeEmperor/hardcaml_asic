@@ -30,7 +30,7 @@ def observation_description(payload, output=print):
     output("\nUse --json for the complete event and response schemas.")
 
 
-def observation_updates(payload, *, path, output=print):
+def observation_updates(payload, *, path, output=print, elide=True):
     report = Report(output)
     report.field("observation", path)
     report.field("stream", payload.get("stream_id"))
@@ -43,9 +43,9 @@ def observation_updates(payload, *, path, output=print):
         output("  none after the requested cursor; no new outcome is implied")
     # Preserve chronological order while bounding human logs. The cursor refers
     # to the complete returned prefix, including events omitted from this view.
-    selected = events if len(events) <= 20 else events[:10] + events[-10:]
+    selected = events if not elide or len(events) <= 20 else events[:10] + events[-10:]
     for index, event in enumerate(selected):
-        if len(events) > 20 and index == 10:
+        if elide and len(events) > 20 and index == 10:
             output(f"  ... {len(events) - 20} events omitted; use --json for all events")
         data = event.get("data") or {}
         occurrence = data.get("occurrence") or {}
@@ -65,6 +65,26 @@ def observation_updates(payload, *, path, output=print):
             output(f"       error: {text(data.get('error') or occurrence.get('error'))}")
     output("\nCursor covers all returned events. Use this stream and cursor for the next read;\n"
            "a recorded interruption is not an acceptance rejection.")
+
+
+def observation_status(payload, output=print):
+    report = Report(output)
+    for label, key in (("stream", "stream_id"), ("cursor", "cursor"),
+                       ("reader status", "observation_status"), ("writer active", "writer_active")):
+        report.field(label, payload[key])
+    outcome = payload["outcome"]
+    if outcome:
+        report.field("recorded outcome", outcome["status"])
+        report.field("execution exit code", outcome["exit_code"])
+        if outcome["error"]:
+            report.field("execution error", outcome["error"])
+    for key, value in payload["final_results"].items():
+        if key != "checkpoint_refs":
+            report.field(key, value)
+    refs = payload["final_results"]["checkpoint_refs"]
+    report.field("recorded checkpoints", len(refs))
+    for ref in refs:
+        output(f"  {text(ref['boundary'])}: {text(ref['path'])}")
 
 
 def stage_execution(payload, *, workspace, output=print):

@@ -150,7 +150,7 @@ class RelatedPresentationTest(unittest.TestCase):
         command = ["stages", str(self.root / "bundle"), "--endpoint", "placement",
                    "--workspace", str(self.root / "workspace"), "--checkpoint-store", str(self.fixture.store),
                    "--support-tools", str(self.root / "tt"), "--pdk-root", str(self.root / "pdk"),
-                   "--python", sys.executable]
+                    "--python", sys.executable, "--no-observation"]
         for failure in (2, KeyboardInterrupt()):
             for machine in (False, True):
                 adapter = self.fixture.adapter(code=2)
@@ -236,8 +236,11 @@ class RelatedPresentationTest(unittest.TestCase):
             code, stdout, stderr = self.invoke([*command, "--json"])
             allocation, error = [json.loads(line) for line in stdout.splitlines()]
             self.assertEqual(allocation["event"], "observation_allocated")
-            self.assertEqual(error, {"contract": flow_observation.CONTRACT, "schema_version": 1,
-                                    "error": {"code": "EXECUTION_FAILED", "detail": "preparation rejected"}})
+            self.assertEqual(error["error"], {"code": "EXECUTION_FAILED", "detail": "preparation rejected"})
+            self.assertEqual(error["event"], "observation_terminal")
+            self.assertEqual(error["attempt"], allocation["attempt"])
+            self.assertIsNone(error["execution_file"])
+            self.assertEqual(error["observation"], flow_observation.inspect(allocation["attempt"]))
             self.assertEqual(code, 2)
             self.assertTrue(stderr)
             operation.assert_called_once()

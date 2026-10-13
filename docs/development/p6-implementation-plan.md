@@ -7,9 +7,12 @@ audit sections describe their original baseline, not the current checkout.
 The [central phase plan](../phase_plan.md) owns priority; this is the detailed
 P6 specification and evidence, not a second active queue. Historical scaf
 inventories do not require that checkout to exist.
-Current 2026-10-13 amendment: [CLI contract 3 and default result storage](../guides/flow.md#default-result-store-and-cli-contract-3)
+Current 2026-10-13 amendment: [CLI contract 4 and default result storage](../guides/flow.md#default-result-store-and-cli-contract-3)
 supersede the earlier JSON-default/required-`--runs` presentation contract below.
 Historical specification, commands and completion evidence retain their original text.
+The [default journal/foreground watch closeout](flow-journal.md) adds default
+explicit-stage CLI allocation, foreground reader delivery and consumer endpoint
+routing; it does not close broader P6 identity/independent-installation gates.
 The package installs a `hardcaml-asic-flow` command that runs its own modules and
 data from a prefix. Identity stamping, provisioning authority and independent
 acceptance are not implemented.

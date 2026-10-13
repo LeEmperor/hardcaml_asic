@@ -93,9 +93,9 @@ not report a source revision or checkout state, and it does not verify that the
 linked OCaml library was built from the same artifact as the command. It says so
 in both its human and `--json` output rather than implying otherwise.
 
-### CLI contract 3 migration
+### CLI contract 4 migration
 
-The current interface advertises `cli_contract.version = 3` in `--version --json`.
+The current provider advertises `cli_contract.version = 4` in `--version --json`.
 This is distinct from package 0.1.0, record schema 1 and unstamped source identity.
 Human summaries are now the default: active machine calls must explicitly pass
 `--json`. `--verbose` writes diagnostics only to stderr. Run/execute no longer
@@ -110,7 +110,14 @@ queries, checkpoint and finalization inspectors, and finalize. Add `--json` to e
 parsing invocation; observed stages and finalize remain JSONL, including the flushed
 early receipt. This stdout-default change is intentionally not CLI backward compatible.
 See the [full command/storage matrix](flow.md#default-result-store-and-cli-contract-3).
-For development consumers, refresh the private prefix through their existing
+Contract 4 makes fresh/resumed `stages` journal by default under
+`<resolved-workspace-parent>/observations`. Parse allocation/terminal JSONL or
+explicitly use `--no-observation`; `--observation-store` remains an override.
+Caught preparation failures/interruption now deliver the defined terminal envelope
+with recorded observation facts and a result path only when actually published.
+The example's contract-2/3 gates must migrate to 4 in flow-journal slice 3 before
+refreshing; slice 1 does not refresh the sibling installation.
+After that migration, development consumers refresh the private prefix through their existing
 dependency script, then source `current/activate.sh` in the shell running Dune and
 the CLI. Refresh cannot activate its parent shell. The example's recorded pin is
 still historical and lacks the required Project API; use explicit development

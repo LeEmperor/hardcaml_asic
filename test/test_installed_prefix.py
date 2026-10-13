@@ -421,10 +421,13 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
             failed = self.invoke("stages", "--json", str(root / "missing-bundle"), "--endpoint", "floorplan",
                 "--support-tools", str(root / "tt"), "--pdk-root", str(root / "pdk"),
                 "--python", sys.executable, "--workspace", str(root / "workspace"),
-                "--checkpoint-store", str(root / "workspace/checkpoints"),
-                "--observation-store", str(root / "observations"))
+                "--checkpoint-store", str(root / "workspace/checkpoints"))
             self.assertEqual(failed.returncode, 2, failed.stderr)
             receipt = json.loads(failed.stdout.splitlines()[0])
+            terminal = json.loads(failed.stdout.splitlines()[1])
+            self.assertEqual(Path(receipt["attempt"]).parent, root / "observations")
+            self.assertEqual(terminal["event"], "observation_terminal")
+            self.assertIsNone(terminal["execution_file"])
             inspected = self.invoke("observation", "inspect", receipt["attempt"], "--json")
             self.assertEqual(inspected.returncode, 0, inspected.stdout)
             state = json.loads(inspected.stdout)
@@ -437,6 +440,39 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
             reset = self.invoke("observation", "read-updates", "--json", receipt["attempt"],
                                 "--stream-id", "other", "--after", "0")
             self.assertEqual(json.loads(reset.stdout)["error"]["code"], "RESET_REQUIRED")
+            for argv in (("--json", "observation", "watch", receipt["attempt"]),
+                         ("observation", "--json", "watch", receipt["attempt"]),
+                         ("observation", "watch", receipt["attempt"], "--json")):
+                watched = self.invoke(*argv)
+                self.assertEqual(watched.returncode, 0, watched.stderr)
+                envelopes = [json.loads(line) for line in watched.stdout.splitlines()]
+                self.assertEqual(envelopes[0]["event"], "updates")
+                self.assertEqual({k: v for k, v in envelopes[0].items() if k != "event"}, json.loads(update.stdout))
+                self.assertEqual(envelopes[-1]["event"], "status")
+                self.assertEqual(envelopes[-1]["outcome"]["status"], "failed")
+            watched = self.invoke("observation", "watch", receipt["attempt"])
+            self.assertEqual(watched.returncode, 0, watched.stderr)
+            self.assertIn("recorded outcome", watched.stdout)
+
+    def test_installed_incremental_watch_suite(self):
+        completed = subprocess.run(
+            [sys.executable, "-I", "-B", str(REPO / "test/test_observation_watch.py")],
+            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin",
+                                    "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
+            text=True, capture_output=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Ran 10 tests", completed.stderr)
+        descriptor = json.loads(self.invoke("observation", "describe", "--json").stdout)
+        self.assertTrue(descriptor["capabilities"]["incremental_reader"])
+
+    def test_installed_default_journal_lifecycle_suite(self):
+        completed = subprocess.run(
+            [sys.executable, "-I", "-B", str(REPO / "test/test_default_journal.py")],
+            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin",
+                                    "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
+            text=True, capture_output=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Ran 10 tests", completed.stderr)
 
     def test_managed_python_assets_and_isolated_internal_entry(self):
         self.assertTrue((self.package / "managed_python.py").is_file())
@@ -704,7 +740,7 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
 
     def test_installed_shared_cli_contract_version_is_separate_from_records(self):
         described = json.loads(self.invoke("--version", "--json").stdout)
-        self.assertEqual(described["cli_contract"]["version"], 3)
+        self.assertEqual(described["cli_contract"]["version"], 4)
         self.assertEqual(described["cli_contract"]["default_output"], "human")
         self.assertEqual(described["supported_record_schemas"], [1])
         self.assertEqual(described["package_version"], "0.1.0")

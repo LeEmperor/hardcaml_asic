@@ -8,14 +8,16 @@
    delivered provider boundaries and remaining scope. Read this before changing an interface.
 3. **[User workflow](guides/usage.md)** — how to use the existing library and CLI.
 
-Current checkpoint (2026-10-13): default result store and CLI contract **3** candidate,
+Current checkpoint (2026-10-13): default result store and CLI contract **4**,
 human-default/explicit-JSON output and project `describe|emit|preflight|run` are
 delivered; see [current closeout](phase_plan.md#default-result-store-and-cli-2-closeout)
 and the [command/storage matrix](guides/flow.md#default-result-store-and-cli-contract-3).
 All machine callers request `--json`, including additive stage/checkpoint/observation/
-finalization commands; observed stages and finalize preserve allocation/terminal JSONL.
-See [presentation slices](development/human-readable-flow-output.md); final consumer
-integration is pending. Role-specific host/container runtime policy,
+finalization commands; stages journal by default and emit allocation/terminal JSONL.
+Foreground watch delivers reader updates/status JSONL. Independent review and consumer
+integration are complete; see [flow journal closeout](development/flow-journal.md)
+and the historical [contract-3 presentation slices](development/human-readable-flow-output.md).
+Role-specific host/container runtime policy,
 shared readiness checks and observed image/engine launch binding passed final
 2026-10-12 acceptance; see [closeout evidence](phase_plan.md#hostcontainer-runtime-policy-closeout)
 and [fresh-emission requirements](guides/flow.md#runtime-policy-and-launch-binding).
@@ -37,9 +39,10 @@ Later selected-image official cases and production physical execution succeeded;
 see the explicit-stage closeout below. The final actual read-only bootstrap check,
 including container metadata, exits 0; the earlier five-gap check remains dated
 historical evidence.
-Project run routing is delivered with a required explicit stage. The opt-in
-stage provider now delivers early attempt allocation, checkpoints and per-attempt
-inspect/cursor updates; store-wide catalog and fine backend-step updates remain open.
+Project run requires mutually exclusive Classic `--stage` or explicit-stage `--endpoint`.
+The explicit-stage route delivers default early allocation, checkpoints, per-attempt
+inspect/cursor updates and foreground watch; Classic has no stage journal.
+Store-wide catalog and fine backend-step updates remain open.
 The owner's [development specimen](../../hardcaml_asic_example/README.md) now has
 the fixed FIFO contract/core, independent scoreboard, TT wrapper/declaration,
 project-centered `describe|emit|preflight|run` CLI and PDK-free generated-RTL acceptance.
@@ -67,6 +70,8 @@ The old scaf checkout is absent and not required.
 six sequential physical boundaries, schema-3 recipes, exact-runtime path-bound
 publication/restarts, opt-in observation and separate existing-policy finalization
 passed [full independent checks](phase_plan.md#explicit-stage-refactor-closeout).
+Subsequent [default journal/foreground watch closeout](phase_plan.md#default-flow-journal-closeout)
+adds contract 4, consumer endpoint routing and real synthesis/watch/reconnect evidence.
 Curated repo JSON records [physical execution](../evidence/librelane-observation/slice4-physical.json),
 [observed execution](../evidence/librelane-observation/slice5-observed.json) and
 [external acceptance](../evidence/librelane-observation/slice6-finalization.json).

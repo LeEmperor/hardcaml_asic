@@ -23,23 +23,24 @@ unique run directory for each attempt, executes LibreLane, and collects results
 from either new or existing run directories. It does not install tools or change
 `manifest.json`.
 
-## Default result store and CLI contract 3
+<a id="default-result-store-and-cli-contract-3"></a>
+## Default result store and CLI contract 4
 
 Current interface, 2026-10-13: the installed CLI defaults to concise human
 output. **All machine callers request `--json`**; this intentional presentation
-break is advertised as `cli_contract.version = 3` by `--version --json`, separately
+contract is advertised as `cli_contract.version = 4` by `--version --json`, separately
 from package version 0.1.0 and record schema 1. JSON stdout is the command's raw
 payload, with paths, issues and verbose diagnostics on stderr. `--verbose` expands
 stderr diagnostics; it does not change the payload or enable execution.
 The additive `stages`, `checkpoint-inspect`, `observation`, `finalize` and
 `finalization-inspect` interfaces also default to human summaries. With `--json`,
-observed execution and finalization emit allocation and terminal JSON lines, not
-one aggregate object. Persisted schemas and complete JSON payloads are unchanged.
-This is not stdout backward compatibility: migrate parsing callers to `--json`.
-CLI contract 3 advertises the additive JSON commands, JSON-lines commands and flag
-placements. The example accepts exactly contracts 2 and 3; unknown versions remain
-rejected. Refresh and re-source its private development installation for contract 3;
-see [integration evidence](../development/human-readable-flow-output.md#slice-3--independent-integration-2026-10-13).
+stage execution and finalization emit allocation and terminal JSON lines, not
+one aggregate object. Stage journaling is now the default for fresh and resumed
+CLI attempts. Persisted schemas and successful execution payloads are unchanged.
+Machine callers must parse JSONL or explicitly select `stages --no-observation`.
+The example accepts exact integer contracts 2/3/4 for existing Classic operations;
+`project run --endpoint` requires 4. Consumer migration/private refresh and independent
+review are complete; see [journal closeout](../development/flow-journal.md).
 
 `--json` works before the command, anywhere after the command, and at either
 observation parser level. An omitted inner flag never resets an outer flag:
@@ -56,7 +57,7 @@ hardcaml-asic-flow observation read-updates "$ATTEMPT" --stream-id "$STREAM_ID" 
 
 Observed `stages --json` and `finalize --json` are JSONL: parse each line separately,
 retain the early allocation receipt, and handle either terminal results or errors.
-Unobserved `stages --json` returns one execution object. Unsupported combinations
+`stages --no-observation --json` returns one execution object. Unsupported combinations
 (for example `archive --list --json`, `provision --json`, `describe --after`, or
 `finalization-inspect --accept`) remain parser errors. `--verbose` selects stderr
 diagnostics, not an alternate payload.
@@ -73,9 +74,12 @@ dune exec -j 20 bin/project.exe -- run --stage synthesis
 ```
 
 The project CLI owns root discovery and emission; the installed provider owns
-readiness and implementation. It checks supported provider contracts 2 or 3 before automatic
+readiness and implementation. It checks supported provider contracts 2/3/4 before automatic
 emission for preflight/run, then dispatches with `execv`, preserving provider exits
-and signals. Missing/invalid `--stage` is rejected before emission or dispatch.
+and signals. Missing/invalid or mixed `--stage`/`--endpoint` is rejected before
+emission or dispatch. The explicit-stage endpoint route requires contract 4, creates
+only the results parent and selects a new workspace with checkpoints inside and
+the default observation store outside; see [example commands](stage-quickstart.md#run-and-observe).
 Project `run` is **implementation only**: no implicit collect, postcheck, report,
 archive, full acceptance or project `execute` operation.
 
@@ -119,7 +123,7 @@ save interrupted diagnostics where storage permits. Run records precede readines
 probes; failed readiness leaves no staged project or implementation commands.
 Run status describes implementation, not report acceptance. Atomic JSON replacement
 does not promise fsync or power-loss recovery. Classic commands have no live event
-journal; opt-in stage observation is a separate bounded interface below.
+journal; default CLI-stage observation is a separate bounded interface below.
 
 ## Explicit sequential stages and checkpoints
 
@@ -187,11 +191,12 @@ reuse, exclusive no-clobber publication and race behavior are documented in
 `scripts/phase4.py` retains its historical path-only run contract and development
 preflight JSON spelling; it is not the installed CLI presentation contract.
 
-### Opt-in persistent stage observation (schema 1)
+### Default persistent stage observation (schema 1)
 
 The installed provider exposes a separate structured API for Workbench and other
-machine readers. It observes the opt-in `stages` production path; the default
-Classic `run`/`execute` path keeps its existing behavior. Locations are explicit:
+machine readers. CLI `stages` journals by default; standalone Python adapters and
+runner APIs still require explicit Writer composition. Classic `run`/`execute`
+keeps its existing behavior. An explicit store override remains available:
 
 ```sh
 hardcaml-asic-flow stages "$BUNDLE" --support-tools "$TT" --pdk-root "$PDK" --python "$FLOW_PYTHON" --workspace "$NEW_WORKSPACE" --checkpoint-store "$NEW_WORKSPACE/checkpoints" --endpoint floorplan --observation-store "$OBSERVATIONS"
@@ -203,20 +208,45 @@ hardcaml-asic-flow checkpoint-inspect "$CHECKPOINT" --restart-to cts --json
 hardcaml-asic-flow observation read-updates "$ATTEMPT_DIRECTORY" --stream-id "$STREAM_ID" --after 5
 ```
 
-`OBSERVATIONS` must be outside the workspace. The workspace's parent must exist.
+Default root: `<resolved-workspace-parent>/observations`, outside the workspace.
+`--observation-store ROOT` overrides it; `--no-observation` disables journaling.
+These options are mutually exclusive. `OBSERVATIONS` must be outside the workspace.
+The workspace's parent must exist; it is not created to make allocation succeed.
 Fresh execution still requires a new workspace; resumed execution requires the
 original retained workspace and an explicit `--checkpoint`; `--plan` only supplies
 the recipe and does not replace that checkpoint path.
+Every resume allocates a new stream and never reopens the source attempt.
 Each observation attempt is exclusively allocated under the chosen root. Before
 recipe/checkpoint reading, preflight or tool execution, the observed `stages`
 command flushes an early human allocation receipt. With `--json`, it flushes one
 JSON-line receipt with `contract`, `schema_version`,
 `event: observation_allocated`, `stream_id`, and absolute `attempt` directory.
-With `--json`, on success the next line is the existing execution JSON. Ordinary caught failures
-emit an error JSON line and exit 2; caught interruption exits `128 + signal`.
-Inspect the attempt for its persisted outcome. Allocation conflicts have no receipt
-and return a structured `BUSY` error. Argument parsing/allocation I/O failures may
-precede allocation, so there need not be an attempt to inspect.
+With `--json`, when execution returns, the next line is the complete existing
+execution JSON (also for runner-returned failure/interruption). Its execution file
+is published before the journal outcome. Both stdout records are explicitly flushed.
+
+Caught preparation/plan/storage/output failures use a CLI delivery envelope, not a
+new journal event or persisted schema:
+
+| Field | Meaning |
+| --- | --- |
+| `contract`, `schema_version` | `hardcaml-asic.stage-observation`, 1 |
+| `event` | `observation_terminal` |
+| `status`, `exit_code` | CLI `failed`, 2; or `interrupted`, `128 + signal` |
+| `attempt`, `stream_id` | Allocated absolute path and full identity, or null if Writer allocation did not succeed |
+| `execution_file` | Absolute execution JSON path only after successful publication, otherwise null |
+| `observation` | Complete read-only inspector payload after releasing locks, or null if unavailable |
+| `recording_error` | Additional journal publication/inspection error, or null |
+| `error` | `{code, detail}`; `BUSY`, `INTERRUPTED`, `EXECUTION_FAILED`, or existing observation error code |
+
+Allocation failure emits only this terminal envelope, without invented attempt or
+result identity. Parser errors remain argparse diagnostics, not JSON envelopes.
+After allocation, failures normally record an outer outcome even if delivering the
+receipt fails. Storage failure can leave no outcome; completed/published stage facts
+are preserved. Abrupt exit or broken stdout cannot promise a terminal line. Writer
+locks and scoped signal handlers cover allocation, receipt, preparation, execution,
+aggregate publication and terminal delivery. A recorded interruption does not prove
+external cleanup; consult the referenced transport evidence.
 
 All observation queries and `checkpoint-inspect` default to labeled plain-text
 reports. Add `--json` for their complete unchanged machine payloads, including
@@ -232,11 +262,77 @@ need no tools, a PDK, or original producer process. `describe` returns the contr
 `hardcaml-asic.stage-observation`, `schema_version: 1`, capabilities, closed field
 descriptions under `schemas`, writer and retention policies. Python callers can use
 the installed `hardcaml_asic_flow.flow_observation.describe()`, `inspect(directory)`
-and `read_updates(directory, stream_id=..., after=...)` directly. There is no
-blocking watch command: poll `read-updates`, save its cursor, and reconnect with
-the same stream ID and cursor. `inspect` supplies a consistent recorded prefix and
+and `read_updates(directory, stream_id=..., after=...)` directly. For an efficient
+foreground follow use `observation watch` below. `inspect` supplies a consistent recorded prefix and
 its cursor; concurrent later events can be fetched after that cursor. Reader calls
 do not acknowledge execution, append events, repair records, or acquire ownership.
+
+#### Foreground incremental watch
+
+```sh
+hardcaml-asic-flow observation watch "$ATTEMPT_DIRECTORY"
+hardcaml-asic-flow observation watch "$ATTEMPT_DIRECTORY" --interval 0.5 --json
+hardcaml-asic-flow observation watch "$ATTEMPT_DIRECTORY" --stream-id "$STREAM_ID" --after "$CURSOR" --json
+```
+
+This is a separate foreground reader process, with no daemon, provider subprocess,
+reader state file or execution control. Human output prints **every** delivered
+event chronologically (no 20-event elision), then labeled reader status and recorded
+results. `--json` at the global, observation or watch level selects flushed JSONL;
+each stdout line is one complete object. Diagnostics go to stderr.
+
+| Envelope | Exact top-level fields |
+| --- | --- |
+| `updates` | `event: "updates"`, `contract`, `schema_version`, `stream_id`, `after`, `cursor`, `events` |
+| `status` | `event: "status"`, `contract`, `schema_version`, `stream_id`, `cursor`, `writer_active`, `observation_status`, `outcome`, `final_results` |
+
+The contract is `hardcaml-asic.stage-observation`, schema 1. `updates` contains
+the unchanged complete `read_updates` payload plus its envelope discriminator;
+`events` contains full journal records, including hashes and event-specific data.
+It is emitted only for a nonempty suffix. `after` is the supplied cursor on first
+delivery, then the last delivered cursor; `cursor` covers **all** delivered events.
+`status` has boolean/null writer activity, `live|final|writer_lost_or_unknown`,
+the recorded `{status, exit_code, error}` outcome or null, and the same
+`final_results` summary as inspect. Status is emitted on attachment and changes,
+including final status before stopping; identical idle status is suppressed.
+These envelopes are reader delivery, never new journal events.
+
+Without reconnect arguments the reader validates the full prefix and delivers
+from zero. `--stream-id` and `--after` must be supplied **together**; wrong stream,
+negative/noninteger or beyond-head cursor requires reset (query error 2;
+`RESET_REQUIRED`, except argparse syntax errors). Cursor zero is valid; a cursor
+at the current head delivers only status until more events arrive. A cold reconnect
+still validates the entire retained prefix, including records before the cursor.
+Persist your own stream/cursor only after processing an entire updates envelope;
+delivery is cursor-based, without acknowledgements or an exactly-once promise.
+
+`--interval` must be positive and finite, defaults to 0.5 seconds and controls idle
+polling. Python API: `IncrementalReader(directory, *, stream_id=None, after=None)`;
+`poll()` returns `(updates, status)` dictionaries **without** envelope `event`
+fields. Each poll returns updates even when empty; the CLI suppresses empty updates.
+The constructor fully validates once; polls stat the cached prefix and read/hash/
+reduce only newly promoted records with the same strict validator as cold replay.
+Retained deletion, replacement or metadata change, gaps, promoted truncation,
+hash/stream/grammar corruption fail closed. Discard a failed reader and reconnect
+explicitly. Hidden temporary tails are ignored. Idle polls still check the attempt
+activity lock; after absent/unknown writer activity the reader drains the committed
+tail again before deciding loss, avoiding the final-publication/release race.
+
+Reader exit codes are **0 for any recorded terminal outcome**, **3** for unresolved
+writer loss/unknown activity, **2** for corruption/cursor/query errors (also broken
+stdout), and **130** for reader Ctrl-C. The recorded execution `outcome.exit_code`
+is independent: a failed or interrupted execution is still a successful terminal
+query. Disconnect, broken stdout, Ctrl-C and a slow reader affect only delivery;
+they never cancel, write to, or take the workspace lock of the executor. Broken
+stdout exits without a Python traceback. Lost writers imply neither cleanup nor
+invented interruption; runtime cleanup evidence remains at its recorded reference.
+
+Efficiency is bounded: polls list/stat O(prefix length) metadata and retain events/
+reduced state in memory; only new content is parsed. Integrity metadata is device,
+inode, size, nanosecond mtime/ctime under a trusted local immutable-file convention,
+not hostile-owner tamper protection. Atomic visibility is not fsync/power-loss
+durability. No store-wide subscription, heartbeat, relocation, repair, writer
+takeover, backend-step lifecycle or execution recovery is introduced.
 
 **Journal and lifecycle schema.** An attempt contains atomically promoted
 `000000000001.json`, `000000000002.json`, … records plus `writer.lock` and, when

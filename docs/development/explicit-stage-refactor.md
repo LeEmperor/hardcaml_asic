@@ -11,6 +11,10 @@ opt-in per-attempt inspect/cursor observation, and separate fresh-six-stage
 finalization using the existing acceptance policy. Implementation is modules in
 the existing package, not a backend directory rewrite. Full checks, actual physical
 and external acceptance evidence, and isolated installed consumer linkage passed.
+The subsequent [flow journal closeout](flow-journal.md) supersedes this record's
+opt-in-observation/future-watch baseline with default CLI-stage journaling,
+foreground watch and consumer endpoint routing under contract 4. Dated slices and
+their executed commands below remain historical evidence.
 
 Remaining scope: committed consumer-pin adoption, full Workbench application
 integration, store-wide journal/catalog/idempotency/fsync, fine backend-step events,

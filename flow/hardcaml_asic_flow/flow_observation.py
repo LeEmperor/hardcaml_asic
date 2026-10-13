@@ -12,6 +12,7 @@ import json
 import math
 from pathlib import Path
 import signal
+import stat
 
 from . import result_store
 from .execution_plan import StagePlan, boundary_capabilities
@@ -61,7 +62,8 @@ def describe():
     return {"contract": CONTRACT, "schema_version": VERSION,
             "scope": "one_path_bound_stage_attempt", "cursor": "stream_id_and_sequence",
             "events": ["allocated", "planned", "prepared", "started", "published", "finished", "outcome"],
-            "capabilities": {"inspect": True, "read_updates": True, "reader_mutations": False,
+            "capabilities": {"inspect": True, "read_updates": True, "watch": True,
+                             "incremental_reader": True, "reader_mutations": False,
                              "stage_lifecycle": True, "backend_step_lifecycle": False,
                              "runtime_observation": False, "execution_resume": False,
                              "request_idempotency": False, "store_wide_journal": False,
@@ -69,6 +71,15 @@ def describe():
             "writer_policy": "nonblocking_advisory_workspace_flock; conflict=BUSY; no_takeover",
             "retention": "caller_retains_store_workspace_checkpoints_and_external_roots",
             "lost_writer": "last_recorded_facts_preserved; outer_outcome_unknown",
+            "watch": {"mode": "foreground_in_process_read_only", "interval_seconds": 0.5,
+                      "interval_rule": "positive_finite", "reconnect": "stream_id_and_after_required_together",
+                      "initial_replay": "validate_complete_prefix; deliver_events_after_cursor",
+                      "idle": "metadata_checks_and_liveness; no_record_reparse; suppress_duplicate_status",
+                      "release": "drain_committed_tail_after_inactive_or_unknown_lock",
+                      "prefix_integrity": "dev_inode_size_mtime_ns_ctime_ns; trusted_local_immutable_convention",
+                      "exit_codes": {"recorded_terminal": 0, "writer_lost_or_unknown": 3,
+                                     "query_error": 2, "reader_sigint": 130},
+                      "delivery": "flushed_JSONL; updates_only_when_nonempty; changed_status_and_final_status"},
             "schemas": {
                 "record": {"contract": CONTRACT, "schema_version": VERSION, "stream_id": "32_lowercase_hex",
                            "sequence": "positive_integer", "previous_sha256": "sha256_or_null_at_1",
@@ -97,7 +108,14 @@ def describe():
                 "final_results": {"physical_completion": "completed|not_recorded", "checkpoint_refs": "checkpoint_reference_array",
                                   "acceptance": "not_evaluated", "external_postcheck": "not_evaluated"},
                 "read_updates": {"contract": CONTRACT, "schema_version": VERSION, "stream_id": "32_lowercase_hex",
-                                 "after": "requested_cursor", "cursor": "prefix_length", "events": "record_array"},
+                                  "after": "requested_cursor", "cursor": "prefix_length", "events": "record_array"},
+                "watch_updates": {"event": "updates", "contract": CONTRACT, "schema_version": VERSION,
+                                  "stream_id": "32_lowercase_hex", "after": "requested_or_last_delivered_cursor",
+                                  "cursor": "validated_prefix_length", "events": "complete_record_array_after_cursor"},
+                "watch_status": {"event": "status", "contract": CONTRACT, "schema_version": VERSION,
+                                 "stream_id": "32_lowercase_hex", "cursor": "validated_prefix_length",
+                                 "writer_active": "boolean_or_null", "observation_status": "final|live|writer_lost_or_unknown",
+                                 "outcome": "outcome_data_or_null", "final_results": "final_results"},
                 "error": {"contract": CONTRACT, "schema_version": VERSION,
                           "error": {"code": "INVALID_RECORD|RESET_REQUIRED|BUSY|EXECUTION_FAILED", "detail": "string"}}}}
 
@@ -187,6 +205,9 @@ class Writer:
         except BlockingIOError as exc:
             self.lock.close()
             raise ObservationError("BUSY", "workspace already has an observation writer") from exc
+        except BaseException:
+            self.lock.close()
+            raise
         try:
             allocation = result_store.allocate(root)
             self.directory, self.stream_id = allocation.directory, allocation.identity
@@ -241,30 +262,85 @@ class Writer:
                 raise
 
 
+def validate_record(value, *, sequence, stream, previous, state):
+    """Shared strict record and transition validator for cold and warm readers."""
+    require(isinstance(value, dict) and set(value) == {"contract", "schema_version", "stream_id", "sequence", "previous_sha256", "event", "data", "sha256"}, "invalid record fields")
+    require(value["contract"] == CONTRACT and type(value["schema_version"]) is int and value["schema_version"] == VERSION
+            and type(value["sequence"]) is int and value["sequence"] == sequence, "unsupported record")
+    if stream is None:
+        stream = value["stream_id"]
+        require(isinstance(stream, str) and len(stream) == 32 and all(c in "0123456789abcdef" for c in stream), "invalid stream identity")
+    require(value["stream_id"] == stream and value["previous_sha256"] == previous
+            and value["sha256"] == digest({k: v for k, v in value.items() if k != "sha256"}), "record chain mismatch")
+    try:
+        state = reduce_event(state, value["event"], value["data"], stream)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ObservationError("INVALID_RECORD", str(exc)) from exc
+    return state, stream
+
+
+def record_metadata(path):
+    info = path.lstat()
+    require(stat.S_ISREG(info.st_mode), "record must be a regular non-symlink file")
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+class IncrementalReader:
+    """Read-only local immutable-prefix reader. Idle polls stat, never reparse.
+
+    Metadata detection is not protection against a hostile filesystem owner.
+    A failed reader must be discarded; reconnect validates the full prefix again.
+    """
+    def __init__(self, directory, *, stream_id=None, after=None):
+        if (stream_id is None) != (after is None):
+            raise ObservationError("RESET_REQUIRED", "stream-id and after are required together")
+        self.directory = Path(directory).resolve()
+        self.state, self.stream_id, self.previous = None, None, None
+        self.events, self.metadata = [], []
+        self._refresh()
+        after = 0 if after is None else after
+        if (stream_id is not None and stream_id != self.stream_id) or type(after) is not int or not 0 <= after <= len(self.events):
+            raise ObservationError("RESET_REQUIRED", "wrong stream or cursor outside retained prefix")
+        self.after = after
+
+    def _refresh(self):
+        records = sorted(self.directory.glob("[0-9]*.json"))
+        require(bool(records), "missing allocation record")
+        require(len(records) >= len(self.metadata), "retained prefix deleted")
+        for sequence, path in enumerate(records, 1):
+            require(path.name == f"{sequence:012d}.json", "journal gap or malformed record name")
+            before = record_metadata(path)
+            if sequence <= len(self.metadata):
+                require(before == self.metadata[sequence - 1], "retained prefix changed or replaced")
+                continue
+            value = strict_read(path)
+            state, stream = validate_record(value, sequence=sequence, stream=self.stream_id,
+                                            previous=self.previous, state=self.state)
+            require(record_metadata(path) == before, "record changed during read")
+            self.state, self.stream_id, self.previous = state, stream, value["sha256"]
+            self.events.append(value)
+            self.metadata.append(before)
+
+    def poll(self):
+        """Return (complete updates payload, reader status); drain after release."""
+        self._refresh()
+        active = writer_active(self.state["lock_path"])
+        if active is not True:
+            # A writer can promote its final record between listing and unlocking.
+            self._refresh()
+        updates = {"contract": CONTRACT, "schema_version": VERSION, "stream_id": self.stream_id,
+                   "after": self.after, "cursor": len(self.events), "events": deepcopy(self.events[self.after:])}
+        self.after = len(self.events)
+        snapshot = observation_snapshot(self.state, len(self.events), active)
+        status = {k: snapshot[k] for k in ("contract", "schema_version", "stream_id", "cursor",
+                                          "writer_active", "observation_status", "final_results")}
+        status["outcome"] = deepcopy(self.state["outcome"])
+        return updates, status
+
+
 def load(directory):
-    directory = Path(directory).resolve()
-    records = sorted(directory.glob("[0-9]*.json"))
-    require(bool(records), "missing allocation record")
-    state, previous, stream, events = None, None, None, []
-    for sequence, path in enumerate(records, 1):
-        require(path.name == f"{sequence:012d}.json", "journal gap or malformed record name")
-        require(path.is_file() and not path.is_symlink(), "record must be a regular non-symlink file")
-        value = strict_read(path)
-        require(isinstance(value, dict) and set(value) == {"contract", "schema_version", "stream_id", "sequence", "previous_sha256", "event", "data", "sha256"}, "invalid record fields")
-        require(value["contract"] == CONTRACT and type(value["schema_version"]) is int and value["schema_version"] == VERSION
-                and type(value["sequence"]) is int and value["sequence"] == sequence, "unsupported record")
-        if stream is None:
-            stream = value["stream_id"]
-            require(isinstance(stream, str) and len(stream) == 32 and all(c in "0123456789abcdef" for c in stream), "invalid stream identity")
-        require(value["stream_id"] == stream and value["previous_sha256"] == previous
-                and value["sha256"] == digest({k: v for k, v in value.items() if k != "sha256"}), "record chain mismatch")
-        try:
-            state = reduce_event(state, value["event"], value["data"], stream)
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ObservationError("INVALID_RECORD", str(exc)) from exc
-        events.append(value)
-        previous = value["sha256"]
-    return state, events
+    reader = IncrementalReader(directory)
+    return reader.state, reader.events
 
 
 def writer_active(lock_path):
@@ -282,14 +358,18 @@ def writer_active(lock_path):
 def inspect(directory):
     state, events = load(directory)
     active = writer_active(state["lock_path"])
+    return observation_snapshot(state, len(events), active)
+
+
+def observation_snapshot(state, cursor, active):
     outcome = state["outcome"]
     physical = any(a["boundary"] == "signoff" for a in state["artifacts"]) and any(
         o["action_key"] == "implementation.signoff" and o["status"] == "completed" for o in state["occurrences"])
     return {"contract": CONTRACT, "schema_version": VERSION, "stream_id": state["attempt_id"],
-            "cursor": len(events), "state": state, "writer_active": active,
+            "cursor": cursor, "state": deepcopy(state), "writer_active": active,
             "observation_status": "final" if outcome else "live" if active else "writer_lost_or_unknown",
             "final_results": {"physical_completion": "completed" if physical else "not_recorded",
-                              "checkpoint_refs": state["artifacts"], "acceptance": "not_evaluated",
+                              "checkpoint_refs": deepcopy(state["artifacts"]), "acceptance": "not_evaluated",
                               "external_postcheck": "not_evaluated"}}
 
 

@@ -1,11 +1,31 @@
 # Explicit-stage quickstart
 
-The opt-in installed provider runs six sequential boundaries: synthesis → floorplan
+The explicitly selected stage provider runs six sequential boundaries: synthesis → floorplan
 → placement → cts → routing → signoff. The existing coarse `run`/`execute` path is
 also supported. See [detailed OCaml/Python recipes](ocaml-stage-recipes.md) for typed
 construction/composition and [flow contracts](flow.md) for complete reader schemas.
 
 ## Run and observe
+
+The example consumer exposes fresh explicit stages through its ordinary command
+after activating a contract-4 installation:
+
+```sh
+# From hardcaml_asic_example, with existing provisioned _flow_tools:
+. .dev/asic/current/activate.sh
+dune exec -j 20 bin/project.exe -- run --endpoint synthesis --json
+```
+
+Endpoints are synthesis, floorplan, placement, cts, routing and signoff. The
+consumer emits/reuses a bundle, resolves source/results/tools using its existing
+rules, selects a unique nonexistent workspace in results with checkpoints inside,
+and execs provider `stages`. Default journals live in results/`observations`.
+`--stage synthesis|full` remains Classic and is mutually exclusive with endpoint;
+`--native`/`--runs` fail before emission for endpoints. `--bundle` bypasses emission,
+and human/JSON provider output is forwarded unchanged, including early allocation.
+Use that receipt with the watch commands below. See the
+[consumer quickstart](../../../hardcaml_asic_example/README.md#explicit-stage-run-and-independent-progress-reader)
+and [actual integration evidence](../development/flow-journal.md).
 
 Use a published physical-capable bundle and provisioned tool roots. The candidate
 library/CLI must be installed; activating an older consumer pin does not upgrade it.
@@ -20,11 +40,10 @@ TT=/absolute/path/to/support-tools
 PDK=/absolute/path/to/pdk
 FLOW_PYTHON=/absolute/path/to/flow-venv/bin/python
 WORKSPACE=/absolute/path/to/new-workspace
-OBSERVATIONS=/absolute/path/to/observations
 hardcaml-asic-flow stages "$BUNDLE" --endpoint signoff \
   --support-tools "$TT" --pdk-root "$PDK" --python "$FLOW_PYTHON" \
   --workspace "$WORKSPACE" --checkpoint-store "$WORKSPACE/checkpoints" \
-  --timeout 7200 --observation-store "$OBSERVATIONS"
+  --timeout 7200
 ```
 
 This is an explicit expensive implementation request. For a short first run, use
@@ -35,9 +54,15 @@ with `--plan RECIPE.json`, containing exactly:
 {"schema_version":3,"stages":["synthesis","floorplan","placement","cts","routing","signoff"],"initial_boundary":null}
 ```
 
-The observed command flushes an early human allocation receipt, then a stage and
+Journaling defaults to `$(dirname "$WORKSPACE")/observations` after resolving the
+workspace. Override with `--observation-store ROOT`, or opt out with the mutually
+exclusive `--no-observation`. Fresh and resumed commands both allocate new streams.
+The command flushes an early human allocation receipt, then a stage and
 publication summary, and retains `WORKSPACE/execution-<attempt>.json`. Add `--json`
-to the stages invocation for unchanged allocation/terminal JSONL. Use the receipt's
+to the stages invocation for contract-4 allocation/terminal JSONL. Successful
+terminal execution payloads are unchanged; caught preparation/storage/interruption
+errors use the [defined terminal envelope](flow.md#default-persistent-stage-observation-schema-1).
+Use the receipt's
 explicit attempt path and stream ID; the readers below default to human reports:
 
 ```sh
@@ -45,13 +70,19 @@ hardcaml-asic-flow observation describe
 hardcaml-asic-flow observation describe --json  # complete contract/schema
 hardcaml-asic-flow observation inspect "$ATTEMPT"
 hardcaml-asic-flow observation inspect "$ATTEMPT" --json  # machine readers
+hardcaml-asic-flow observation watch "$ATTEMPT"  # foreground; Ctrl-C stops only this reader
+hardcaml-asic-flow observation watch "$ATTEMPT" --stream-id "$STREAM_ID" --after "$CURSOR" --json
 hardcaml-asic-flow observation read-updates "$ATTEMPT" --stream-id "$STREAM_ID" --after 0
 hardcaml-asic-flow observation read-updates "$ATTEMPT" --stream-id "$STREAM_ID" --after 0 --json  # cursor polling clients
 hardcaml-asic-flow checkpoint-inspect "$FLOORPLAN_CHECKPOINT" --restart-to placement
 hardcaml-asic-flow checkpoint-inspect "$FLOORPLAN_CHECKPOINT" --restart-to placement --json
 ```
 
-Save the returned cursor and poll after it to reconnect. Inspection reports
+Save each completely processed updates cursor and reconnect with stream/cursor
+together. Watch JSON is flushed `updates`/`status` JSONL, interval defaults to 0.5s;
+query exit 0 means any recorded terminal (including failed), 3 unresolved writer
+loss, 2 query/corruption errors and 130 reader Ctrl-C. See the
+[complete watch protocol](flow.md#foreground-incremental-watch). Inspection reports
 historical publication facts. `checkpoint-inspect` validates host closure only;
 execution separately validates image-only closure and compatibility. Publication,
 stage completion, outer outcome and acceptance are distinct facts.
@@ -65,7 +96,7 @@ hardcaml-asic-flow stages "$BUNDLE" --endpoint signoff \
   --checkpoint "$FLOORPLAN_CHECKPOINT" \
   --support-tools "$TT" --pdk-root "$PDK" --python "$FLOW_PYTHON" \
   --workspace "$WORKSPACE" --checkpoint-store "$WORKSPACE/checkpoints" \
-  --timeout 7200 --observation-store "$OBSERVATIONS"
+  --timeout 7200
 ```
 
 Use the **retained original workspace**, bundle/tool/PDK roots and compatible
