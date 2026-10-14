@@ -30,6 +30,9 @@ def audit(event, args):
         if Path(os.fsdecode(args[0])).resolve().is_relative_to(Path(denied)):
             raise RuntimeError("checkout read denied")
 sys.addaudithook(audit)
+if os.environ.get("PUBLIC_FLOW_CLI"):
+    sys.argv.pop(1)
+    os.execv(os.environ["PUBLIC_FLOW_CLI"], [os.environ["PUBLIC_FLOW_CLI"], *sys.argv[1:]])
 sys.path.insert(0, sys.argv.pop(1))
 from hardcaml_asic_flow.cli import main
 sys.exit(main())

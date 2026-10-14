@@ -8,6 +8,9 @@ import sys
 from importlib.metadata import distribution
 
 role = sys.argv[-1]
+coarse = role == "metadata-container"
+if coarse:
+    role = "container"
 if role not in ("host", "container"):
     raise ValueError("expected host or container")
 result = {"python_version": ".".join(map(str, sys.version_info[:3])),
@@ -18,7 +21,7 @@ try:
                   requires_python=dist.metadata.get("Requires-Python"))
 except Exception as exc:
     result["metadata_error"] = str(exc)
-if role == "container" and result["metadata_error"] is None:
+if role == "container" and not coarse and result["metadata_error"] is None:
     # Import-only: no Config/State/Flow construction or physical tool invocation.
     from librelane.flows.classic import Classic
     from librelane.common import Filter

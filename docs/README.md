@@ -97,12 +97,18 @@ Historical records retain their original API names and commands.
 
 ## Where things live
 
+For human-readable synthesis metrics and cell inventories from existing checkpoints
+or stage workspaces, see [checkpoint and stage reporting](development/checkpoint-reporting.md).
+`hardcaml-asic-flow report TARGET` also retains the existing coarse-run report mode.
+
 For the OCaml-first execution refactor and stage/step decomposition, see
 [Flow infrastructure refactor](flow-infrastructure-refactor.md) and its
 [implementation record](development/flow-infrastructure-progress.md). Public
-explicit-stage execution, checkpoints, observation and watch now use OCaml, with
-fresh full-flow/external-acceptance evidence. The broader migration remains in
-progress; **modularized flow** files/profiles remain a later feature. The
+CLI, explicit/coarse execution, results/acceptance/archive services, checkpoints,
+observation and watch now use OCaml. Installed Python is limited to backend,
+probe and bootstrap resources; installed Python service imports are retired.
+Physical-flow and reduced-install evidence are recorded separately. Finer step
+execution and **modularized flow** files/profiles remain later work. The
 [phase plan](phase_plan.md#ocaml-first-flow-infrastructure) owns the remaining queue.
 
 | Area | Purpose | Start here |

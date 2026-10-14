@@ -18,13 +18,18 @@ let present = function J.Null | J.String "" -> false | _ -> true
 let output s = output_string stdout (s ^ "\n"); flush stdout
 let field label value = output (Printf.sprintf "%-22s %s" label (text value))
 let fields value pairs = List.iter (fun (label,key) -> field label (get value key)) pairs
-let updates directory value =
+let updates ?(elide=false) directory value =
   field "observation" (str directory);
   fields value ["stream","stream_id"; "requested after","after"; "cursor","cursor"];
   let events = items (get value "events") in
-  field "updates returned" (integer (List.length events));
+  let count=List.length events in
+  field "updates returned" (integer count);
   output "\nUPDATES (recorded events; not a current readiness check)";
-  List.iter (fun event ->
+  if events=[] then output "  none after the requested cursor; no new outcome is implied";
+  List.iteri (fun index event ->
+    if elide && count>20 && index=10 then
+      output (Printf.sprintf "  ... %d events omitted; use --json for all events" (count-20));
+    if not elide || count<=20 || index<10 || index>=count-10 then (
     let data = get event "data" in
     let occurrence = get data "occurrence" and artifact = get data "artifact" in
     let name = text (get event "event") in
@@ -46,7 +51,7 @@ let updates directory value =
       (text (get artifact "boundary")) (text (get artifact "path")));
     let error = get data "error" in
     let error = if present error then error else get occurrence "error" in
-    if present error then output ("       error: " ^ text error)) events;
+    if present error then output ("       error: " ^ text error))) events;
   output "\nCursor covers all returned events. Use this stream and cursor for the next read;\na recorded interruption is not an acceptance rejection."
 let status value =
   fields value ["stream","stream_id"; "cursor","cursor"; "reader status","observation_status"; "writer active","writer_active"];

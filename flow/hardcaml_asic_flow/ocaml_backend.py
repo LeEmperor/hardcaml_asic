@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import signal
+import sys
 
 
 PACKAGE = Path(__file__).resolve().parent
@@ -66,6 +68,193 @@ def stages(args, cwd, absolute, interpreter_absolute):
     os.execv(str(executable), command)
 
 
+def preflight(args):
+    executable = binary("preflight")
+    command = [str(executable), "--resources", str(PACKAGE)]
+    for name in ("bundle", "support_tools", "pdk_root", "python", "results_root", "output"):
+        value = getattr(args, name)
+        if value is not None:
+            command += ["--" + name.replace("_", "-"), str(value)]
+    for name in ("native", "json", "verbose"):
+        if getattr(args, name):
+            command.append("--" + name)
+    os.execv(str(executable), command)
+
+
+def run_command(args):
+    command = [str(binary("run")), "--resources", str(PACKAGE), "--json"]
+    for name in ("bundle", "support_tools", "pdk_root", "python", "runs", "stage"):
+        command += ["--" + name.replace("_", "-"), str(getattr(args, name))]
+    if args.native:
+        command.append("--native")
+    return command
+
+
+def run(args):
+    """Typed callback for the retained Python execute runner; no fallback."""
+    from .phase4 import RunOutcome, FlowInterrupted
+    process = subprocess.Popen(run_command(args), stdout=subprocess.PIPE, text=True)
+    previous = {}
+    try:
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            previous[signum] = signal.signal(signum, lambda n, _: process.send_signal(n))
+        stdout, _ = process.communicate()
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+    try:
+        value = json.loads(stdout)
+        outcome = RunOutcome(value["run_id"], Path(value["run_dir"]), Path(value["run_record"]),
+                             value["status"], value["exit_code"])
+        if process.returncode != outcome.exit_code:
+            raise ValueError("outcome exit code differs from helper")
+        return outcome
+    except (ValueError, KeyError, TypeError) as exc:
+        if process.returncode in (130, 143):
+            raise FlowInterrupted(process.returncode - 128) from exc
+        raise OSError(f"OCaml run returned no valid outcome (exit {process.returncode})") from exc
+
+
+def postcheck_command(args):
+    command = [str(binary("postcheck")), "--json"]
+    for name in ("run_dir", "support_tools", "pdk_root", "precheck_python", "testbench", "testbench_top"):
+        command += ["--" + name.replace("_", "-"), str(getattr(args, name))]
+    for name in ("replay_trace", "timeout"):
+        value = getattr(args, name, None)
+        if value is not None:
+            command += ["--" + name.replace("_", "-"), str(value)]
+    return command
+
+
+def postcheck(args):
+    """Native provider callback retaining Python CheckOutcome and signal delivery."""
+    from .phase4 import CheckOutcome, FlowInterrupted
+    process = subprocess.Popen(postcheck_command(args), stdout=subprocess.PIPE, text=True)
+    previous = {}
+    try:
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            previous[signum] = signal.signal(signum, lambda n, _: process.send_signal(n))
+        stdout, _ = process.communicate()
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+    try:
+        value = json.loads(stdout)
+        outcome = CheckOutcome(value["check_id"], Path(value["check_dir"]), Path(value["check_record"]),
+                               value["status"], value["exit_code"])
+        if process.returncode != outcome.exit_code:
+            raise ValueError("outcome exit code differs from helper")
+        return outcome
+    except (ValueError, KeyError, TypeError) as exc:
+        if process.returncode in (130, 143):
+            raise FlowInterrupted(process.returncode - 128) from exc
+        raise OSError(f"OCaml postcheck returned no valid outcome (exit {process.returncode})") from exc
+
+
+def public_postcheck(args):
+    command = postcheck_command(args)
+    if not args.json:
+        command.remove("--json")
+    command.append("--public-cli4")
+    if args.verbose:
+        command.append("--verbose")
+    os.execv(command[0], command)
+
+
+def public_execute(args):
+    command = [str(binary("execute")), "--resources", str(PACKAGE)]
+    for name in ("bundle", "support_tools", "pdk_root", "python", "runs", "stage",
+                 "precheck_python", "testbench", "testbench_top", "archive"):
+        value = getattr(args, name, None)
+        if value is not None:
+            command += ["--" + name.replace("_", "-"), str(value)]
+    for name in ("native", "json", "verbose", "force"):
+        if getattr(args, name, False):
+            command.append("--" + name)
+    os.execv(command[0], command)
+
+
+def public_run(args):
+    command = run_command(args)
+    if not args.json:
+        command.remove("--json")
+    command.append("--public-cli4")
+    if args.verbose:
+        command.append("--verbose")
+    os.execv(command[0], command)
+
+
+def collect_command(args):
+    command = [str(binary("collect")), "--run-dir", str(args.run_dir)]
+    if args.stdout:
+        command.append("--stdout")
+    else:
+        command += ["--output", str(args.output)]
+    for name in ("json", "quiet", "verbose"):
+        if getattr(args, name, False):
+            command.append("--" + name)
+    return command
+
+
+def collect(args):
+    """Compatibility callback for transitional Python execute; authoritative native writer."""
+    result = subprocess.run(collect_command(args), check=False, capture_output=True, text=True)
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    if result.returncode != 0:
+        raise OSError(f"OCaml collect exited {result.returncode}")
+    return 0
+
+
+def public_collect(args):
+    command = collect_command(args)
+    os.execv(command[0], command)
+
+
+def report_command(args):
+    command = [str(binary("report")), "--run-dir", str(args.run_dir)]
+    for name in ("json", "diagnostics_only", "verbose"):
+        if getattr(args, name, False):
+            command.append("--" + name.replace("_", "-"))
+    return command
+
+
+def report(args):
+    """Transitional execute callback; preserve all three native acceptance exits."""
+    result = subprocess.run(report_command(args), check=False, capture_output=True, text=True)
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    return result.returncode
+
+
+def public_report(args):
+    command = report_command(args)
+    os.execv(command[0], command)
+
+
+def archive_command(args):
+    command = [str(binary("archive")), "--run-dir", str(args.run_dir)]
+    if args.output is not None:
+        command += ["--output", str(args.output)]
+    for name in ("list", "force", "json", "quiet", "verbose"):
+        if getattr(args, name, False):
+            command.append("--" + name)
+    return command
+
+
+def archive(args):
+    """Transitional aggregate execute callback; native policy/publication only."""
+    result = subprocess.run(archive_command(args), check=False, capture_output=True, text=True)
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    return result.returncode
+
+
+def public_archive(args):
+    command = archive_command(args)
+    os.execv(command[0], command)
+
+
 def watch(args, directory):
     executable = binary("observation_read")
     command = [str(executable), "watch", str(directory), "--interval", str(args.interval)]
@@ -76,3 +265,25 @@ def watch(args, directory):
         if value is not None:
             command += [flag, str(value)]
     os.execv(str(executable), command)
+
+
+def public_finalization(args, cwd, absolute, interpreter_absolute):
+    command = [str(binary("finalization")), "--public-cli4"]
+    if args.command == "finalization-inspect":
+        command += ["--inspect", "--directory", str(absolute(args.attempt, cwd))]
+    else:
+        command += ["--execution", str(absolute(args.execution, cwd)),
+                    "--store", str(absolute(args.operation_store, cwd))]
+        for name in ("support_tools", "precheck_python", "testbench", "replay_trace"):
+            value = getattr(args, name)
+            if value is not None:
+                resolve = interpreter_absolute if name == "precheck_python" else absolute
+                command += ["--" + name.replace("_", "-"), str(resolve(value, cwd))]
+        if args.testbench_top is not None:
+            command += ["--testbench-top", args.testbench_top]
+        if args.accept:
+            command.append("--accept")
+    for name in ("json", "verbose"):
+        if getattr(args, name, False):
+            command.append("--" + name)
+    os.execv(command[0], command)

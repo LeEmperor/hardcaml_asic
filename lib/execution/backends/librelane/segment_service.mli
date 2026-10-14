@@ -13,6 +13,9 @@ type segment = private
   }
 val bridge_sha256 : string
 val protocol_sha256 : string
+val verify_reply : Backend_protocol.request -> Backend_protocol.reply
+(* Correlated protocol-v1 reply and actual regular artifact hashes/lengths.
+    Raises [Runner.Callback_error] on invalid evidence. *)
 val create : binding:Execution_transport.binding -> workspace:string -> project:string -> pdk_root:string
   -> checkpoint_store:string -> compatibility:Identity_json.t
   -> environment:string list -> timeout:float
@@ -21,6 +24,8 @@ val create : binding:Execution_transport.binding -> workspace:string -> project:
    -> unit -> (t, Runner.error) result
 
 val process_error : Execution_transport.result -> Runner.error
+val signal : int -> int
+val process_json : Process_supervisor.result -> Identity_json.t
 (** Shared outcome/cleanup mapping for supervised runtime probes and execution. *)
 
 (** [failure_exit_code] optionally maps a failed transport's reported status at

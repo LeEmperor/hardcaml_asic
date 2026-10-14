@@ -396,8 +396,8 @@ def main():
             verify(args.cli.resolve(), args.consumer.resolve(), repo / 'flow', root, args.historical)
             return
         prefix = root / 'prefix'
-        subprocess.run(['dune', 'install', '-j20', '--prefix', str(prefix)], cwd=repo,
-                       check=True, stdout=subprocess.DEVNULL)
+        from reference_harness import installed_prefix
+        installed_prefix(repo, prefix)
         consumer = root / 'consumer'
         consumer.mkdir()
         shutil.copyfile(repo / 'test/observation_consumer.ml', consumer / 'observation_consumer.ml')

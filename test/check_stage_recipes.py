@@ -122,14 +122,18 @@ def main():
     parser.add_argument("--provider-prefix", type=Path)
     parser.add_argument("--consumer-executable", type=Path)
     args = parser.parse_args()
-    package_root = (args.provider_prefix.resolve() / "lib/hardcaml_asic/flow" if args.provider_prefix
-                    else Path(__file__).resolve().parents[1] / "flow")
+    if args.provider_prefix:
+        from reference_harness import activate
+        package_root = activate(runtime_root=args.provider_prefix.resolve() / "lib/hardcaml_asic/flow")
+    else:
+        package_root = Path(__file__).resolve().parents[1] / "flow"
     sys.path.insert(0, str(package_root))
     from hardcaml_asic_flow import execution_plan as plans
     assert Path(plans.__file__).resolve().is_relative_to(package_root.resolve())
     payload = strict(subprocess.check_output([str(args.emitter.resolve())], text=True))
     bridge_path = Path(plans.__file__).with_name("librelane_bridge.py")
-    assert bridge_path.resolve().is_relative_to(package_root.resolve())
+    runtime_root = args.provider_prefix.resolve() / "lib/hardcaml_asic/flow" if args.provider_prefix else package_root
+    assert bridge_path.resolve().is_relative_to(runtime_root.resolve())
     bridge_text = bridge_path.read_text()
     bridge = bridge_literals(bridge_text)
     check_capabilities(payload["capabilities"], payload["stage_order"],

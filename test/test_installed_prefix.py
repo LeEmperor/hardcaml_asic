@@ -1,21 +1,21 @@
 """Install into a throwaway prefix and check the command behaves like one.
 
-Deliberately not part of `dune runtest`: it calls `dune build @install` and
-`dune install`, and an alias that did that would make an ordinary test run
+Deliberately not part of `dune runtest`: it calls `dune build @install`, and
+an alias that did that would make an ordinary test run
 recursive. Run it explicitly:
 
     python3 test/test_installed_prefix.py
 
-It builds and installs into a fresh temporary prefix, never into an opam switch
+It builds and hardlinks Dune install staging into a fresh temporary prefix, never into an opam switch
 or any shared environment, and removes the prefix afterwards. It invokes no PDK,
 container, EDA tool, provisioner or network; every operation it exercises is a
 pure record operation over a synthetic fixture.
 
-Scope note: this is P6.4a *packaging* evidence -- the installed command finds its
-own modules and data and runs them. It is not P6.6's independent-installation
-gate. The checks below deny the checkout through cwd, PATH and PYTHONPATH and
-prove where imports actually came from, but they do not make the source tree
-unreadable to the process; a filesystem sandbox is P6.6's job.
+The private prefix has the sixteen retired Python modules unlinked. Reference
+fixtures use a small copied source oracle outside both checkout and prefix;
+runtime modules and bridge resources resolve to the installed package. Copied
+Python drivers deny checkout reads through audit hooks. Native subprocesses use
+the public installed executable; this is packaging evidence, not an OS sandbox.
 """
 
 import hashlib
@@ -44,6 +44,7 @@ from test_report import FULL_RESULTS, synthesis_results  # noqa: E402
 # module is imported, not its TestCase: a name bound here would make this suite
 # run the archive suite's own twenty tests a second time.
 import test_archive  # noqa: E402
+from reference_harness import copy_reference, hardlink_prefix, thin_prefix, ENTRY, RETIRED
 
 
 # -- deterministic stand-ins for the external processes ------------------
@@ -85,12 +86,16 @@ DOCKER_STUB = r"""#!/bin/sh
 if [ -n "${STUB_DOCKER_LOG:-}" ]; then printf '%s\n' "$*" >> "$STUB_DOCKER_LOG"; fi
 case "$*" in
     "rm -f hardcaml-asic-execution-"*)
-        if [ "${STUB_CLEANUP_FAIL:-0}" = 1 ]; then echo 'fixture cleanup failure' >&2; exit 1; fi
+        if [ "${STUB_CLEANUP_FAIL:-0}" = 1 ] && [ -f "${STUB_LOG:-}" ] && grep -q -- '-m librelane' "$STUB_LOG"; then echo 'fixture cleanup failure' >&2; exit 1; fi
         exit 0 ;;
     "info --format {{json .}}") echo '{"ServerVersion":"27.0.0-fixture","SecurityOptions":["name=rootless"]}'; exit 0 ;;
     "image inspect --format"*) echo "sha256:1111111111111111111111111111111111111111111111111111111111111111"; exit 0 ;;
     "image inspect"*) echo '[{"Id":"sha256:1111111111111111111111111111111111111111111111111111111111111111","RepoDigests":["fixture@sha256:2222222222222222222222222222222222222222222222222222222222222222"],"Os":"linux","Architecture":"amd64"}]'; exit 0 ;;
-    *"--entrypoint python3"*" -c "*) printf '{"python_version":"%s","librelane_version":"%s","requires_python":">=3.10","metadata_error":null}\n' "${STUB_CONTAINER_PYTHON:-${STUB_PYTHON_VERSION:-3.11.9}}" "${STUB_CONTAINER_LL:-1.2.3}"; exit 0 ;;
+    *"--entrypoint python3"*" -c "*)
+        case "$*" in *stage_runtime_metadata*) printf '{"protocol_version":1,"kind":"stage_runtime_metadata","role":"container","metadata":' ;; esac
+        printf '{"python_version":"%s","librelane_version":"%s","requires_python":">=3.10","metadata_error":null}' "${STUB_CONTAINER_PYTHON:-${STUB_PYTHON_VERSION:-3.11.9}}" "${STUB_CONTAINER_LL:-1.2.3}"
+        case "$*" in *stage_runtime_metadata*) printf '}' ;; esac
+        printf '\n'; exit 0 ;;
     *"--entrypoint python3"*" -m librelane"*)
         while [ "$1" != -m ]; do shift; done
         exec "$(dirname "$0")/../flow-python" -I -B "$@" ;;
@@ -138,7 +143,10 @@ FLOW_PYTHON_STUB = r"""#!/bin/sh
 if [ -n "${STUB_LOG:-}" ]; then printf '%s\n' "$*" >> "$STUB_LOG"; fi
 if [ "$1" = -I ] && [ "$2" = -B ]; then
     if [ "$3" = -c ]; then
-    printf '{"python_version":"%s","librelane_version":"%s","requires_python":">=3.10","metadata_error":null,"tcl":{"ready":true,"version":"8.6.16","error":null}}\n' "${STUB_PYTHON_VERSION:-3.11.9}" "${STUB_LIBRELANE:-1.2.3}"
+    case "$4" in *stage_runtime_metadata*) printf '{"protocol_version":1,"kind":"stage_runtime_metadata","role":"host","metadata":' ;; esac
+    printf '{"python_version":"%s","librelane_version":"%s","requires_python":">=3.10","metadata_error":null,"tcl":{"ready":true,"version":"8.6.16","error":null}}' "${STUB_PYTHON_VERSION:-3.11.9}" "${STUB_LIBRELANE:-1.2.3}"
+    case "$4" in *stage_runtime_metadata*) printf '}' ;; esac
+    printf '\n'
     exit 0
     fi
     shift 2
@@ -277,10 +285,9 @@ def write_bundle(bundle, librelane=STUB_LIBRELANE, python=STUB_PYTHON_MINOR):
 
 
 def build_prefix(prefix):
-    for command in (["dune", "build", "-j", "20", "@install", "test/stage_recipe_contract.exe",
-                     "test/backend_protocol_driver.exe", "test/observation_writer_consumer.exe"],
-                    ["dune", "install", "-j", "20", "--prefix", str(prefix), "hardcaml_asic"]):
-        subprocess.run(command, cwd=REPO, check=True)
+    subprocess.run(["dune", "build", "-j20", "@install", "test/stage_recipe_contract.exe",
+                    "test/backend_protocol_driver.exe", "test/observation_writer_consumer.exe"], cwd=REPO, check=True)
+    hardlink_prefix(REPO / '_build/install/default', prefix)
 
 
 class InstalledPrefixTest(unittest.TestCase):
@@ -288,7 +295,7 @@ class InstalledPrefixTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.temporary = tempfile.TemporaryDirectory(prefix="hardcaml-asic-p64a.")
+        cls.temporary = tempfile.TemporaryDirectory(prefix="hardcaml-asic-p64a.", dir="/tmp/opencode")
         root = Path(cls.temporary.name)
         cls.prefix = root / "prefix"
         cls.elsewhere = root / "unrelated-cwd"
@@ -296,6 +303,25 @@ class InstalledPrefixTest(unittest.TestCase):
         build_prefix(cls.prefix)
         cls.command = cls.prefix / "bin/hardcaml-asic-flow"
         cls.package = cls.prefix / "lib/hardcaml_asic/flow/hardcaml_asic_flow"
+        cls.reference = copy_reference(REPO / "flow", root / "oracle", cls.package.parent)
+        thin_prefix(cls.prefix)
+        cls.drivers = root / "drivers"
+        cls.drivers.mkdir()
+        for driver in (REPO / "test").glob("*.py"):
+            shutil.copy2(driver, cls.drivers / driver.name)
+        for name in ("stage_recipe_contract", "backend_protocol_driver", "observation_writer_consumer"):
+            os.link(REPO / "_build/default/test" / (name + ".exe"), cls.drivers / (name + ".exe"))
+
+    def reference_env(self):
+        return {"PATH": "/usr/bin:/bin", "FLOW_TEST_REFERENCE_ROOT": str(self.reference),
+                "FLOW_TEST_RUNTIME_ROOT": str(self.package.parent),
+                "STAGE_TEST_PACKAGE_ROOT": str(self.reference),
+                "PUBLIC_FLOW_CLI": str(self.command), "WATCH_DENY_CHECKOUT": str(REPO)}
+
+    def run_reference(self, name, *arguments):
+        return subprocess.run([sys.executable, "-I", "-B", "-c", ENTRY, str(REPO),
+                               str(self.drivers / name), *map(str, arguments)],
+                              cwd=self.elsewhere, env=self.reference_env(), text=True, capture_output=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -322,10 +348,10 @@ class InstalledPrefixTest(unittest.TestCase):
         # The child denies every checkout read, not merely source imports/cwd.
         with tempfile.TemporaryDirectory(dir=self.elsewhere) as temporary:
             root = Path(temporary)
-            for name in ("check_stage_recipes.py", "test_stages.py"):
+            for name in ("check_stage_recipes.py", "test_stages.py", "reference_harness.py"):
                 shutil.copy2(REPO / "test" / name, root / name)
             emitter = root / "stage_recipe_contract.exe"
-            shutil.copy2(REPO / "_build/default/test/stage_recipe_contract.exe", emitter)
+            os.link(REPO / "_build/default/test/stage_recipe_contract.exe", emitter)
             entry = '''import os, runpy, sys
 from pathlib import Path
 checkout, driver = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
@@ -338,6 +364,8 @@ def deny_checkout(event, args):
         raise RuntimeError("runtime bridge import denied")
 sys.addaudithook(deny_checkout)
 sys.path.insert(0, str(driver.parent))
+from reference_harness import activate
+activate()
 sys.argv = [str(driver), *sys.argv[3:]]
 runpy.run_path(str(driver), run_name="__main__")
 '''
@@ -345,7 +373,7 @@ runpy.run_path(str(driver), run_name="__main__")
                 [sys.executable, "-I", "-B", "-c", entry, str(REPO),
                  str(root / "check_stage_recipes.py"), "--emitter", str(emitter),
                  "--provider-prefix", str(self.prefix)],
-                cwd=root, env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(REPO / "flow")},
+                cwd=root, env=self.reference_env(),
                 text=True, capture_output=True)
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             self.assertIn("OCaml/planner/bridge agree", completed.stdout)
@@ -354,12 +382,8 @@ runpy.run_path(str(driver), run_name="__main__")
             self.assertIn("Installed checkpoint-inspect:", completed.stdout)
 
     def test_installed_inspector_presentation_suite(self):
-        self.assertTrue((self.package / "presentation.py").is_file())
-        completed = subprocess.run(
-            [sys.executable, "-I", "-B", str(REPO / "test/test_inspector_presentation.py")],
-            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin",
-                                     "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
-            text=True, capture_output=True)
+        self.assertFalse((self.package / "presentation.py").exists())
+        completed = self.run_reference("test_inspector_presentation.py")
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("Ran 11 tests", completed.stderr)
         missing = self.invoke("checkpoint-inspect", "/missing-checkpoint")
@@ -370,10 +394,10 @@ runpy.run_path(str(driver), run_name="__main__")
     def test_installed_backend_protocol_and_isolated_bridge_without_checkout_reads(self):
         with tempfile.TemporaryDirectory(dir=self.elsewhere) as temporary:
             root = Path(temporary)
-            for name in ("check_backend_protocol.py", "bridge_protocol_fixture.py"):
+            for name in ("check_backend_protocol.py", "bridge_protocol_fixture.py", "reference_harness.py"):
                 shutil.copy2(REPO / "test" / name, root / name)
             emitter = root / "backend_protocol_driver.exe"
-            shutil.copy2(REPO / "_build/default/test/backend_protocol_driver.exe", emitter)
+            os.link(REPO / "_build/default/test/backend_protocol_driver.exe", emitter)
             entry = '''import os, runpy, sys
 from pathlib import Path
 checkout, driver = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
@@ -382,6 +406,9 @@ def deny_checkout(event, args):
         if Path(os.fsdecode(args[0])).resolve().is_relative_to(checkout):
             raise RuntimeError("checkout read denied: " + str(args[0]))
 sys.addaudithook(deny_checkout)
+sys.path.insert(0, str(driver.parent))
+from reference_harness import activate
+activate()
 sys.argv = [str(driver), *sys.argv[3:]]
 runpy.run_path(str(driver), run_name="__main__")
 '''
@@ -389,7 +416,7 @@ runpy.run_path(str(driver), run_name="__main__")
                 [sys.executable, "-I", "-B", "-c", entry, str(REPO),
                  str(root / "check_backend_protocol.py"), "--emitter", str(emitter),
                  "--provider-prefix", str(self.prefix)],
-                cwd=root, env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(REPO / "flow")},
+                cwd=root, env=self.reference_env(),
                 text=True, capture_output=True)
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             self.assertIn("actual bridge and no-publication checks passed", completed.stdout)
@@ -405,13 +432,14 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
                   "plan": execution_plan.resolve_stages("placement").as_dict()}))
 '''
         completed = subprocess.run(
-            [sys.executable, "-I", "-B", "-c", entry, str(self.package.parent)],
+            [sys.executable, "-I", "-B", "-c", entry, str(self.reference)],
             cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(REPO / "flow")},
             text=True, capture_output=True)
         self.assertEqual(completed.returncode, 0, completed.stderr)
         raw = json.loads(completed.stdout)
-        self.assertTrue(all(Path(p).parent == self.package for p in raw["modules"]))
-        self.assertEqual(Path(raw["bridge"]).parent, self.package)
+        self.assertTrue(all(Path(p).parent == self.reference / "hardcaml_asic_flow" for p in raw["modules"]))
+        self.assertTrue(all(not (self.package / (name + ".py")).exists() for name in RETIRED))
+        self.assertEqual(Path(raw["bridge"]).resolve().parent, self.package)
         self.assertEqual(len(raw["hash"]), 64)
         self.assertEqual(raw["plan"], {"schema_version": 2, "endpoint": "placement", "resume": False})
         help_result = self.invoke("stages", "--help")
@@ -420,24 +448,15 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
         self.assertIn("--plan", help_result.stdout)
 
     def test_installed_stage_checkpoint_negative_and_composed_suite(self):
-        completed = subprocess.run(
-            [sys.executable, "-I", "-B", str(REPO / "test/test_stages.py")],
-            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin",
-                                     "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent),
-                                     "PYTHONPATH": str(REPO / "flow")},
-            text=True, capture_output=True)
+        completed = self.run_reference("test_stages.py")
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("Ran 34 tests", completed.stderr)
 
     def test_installed_finalization_suite_and_receipt_cli(self):
-        completed = subprocess.run(
-            [sys.executable, "-I", "-B", str(REPO / "test/test_finalization.py")],
-            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin",
-                                     "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
-            text=True, capture_output=True)
+        completed = self.run_reference("test_finalization.py")
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("OK", completed.stderr)
-        self.assertTrue((self.package / "finalization.py").is_file())
+        self.assertFalse((self.package / "finalization.py").exists())
         with tempfile.TemporaryDirectory(dir=self.elsewhere) as root:
             root = Path(root)
             failed = self.invoke("finalize", "--json", str(root / "missing-execution.json"),
@@ -457,12 +476,7 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
             self.assertFalse((attempt / "run.json").exists())
 
     def test_installed_related_presentation_suite(self):
-        completed = subprocess.run(
-            [sys.executable, "-I", "-B", str(REPO / "test/test_related_presentation.py")],
-            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin",
-                                     "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent),
-                                     "PUBLIC_FLOW_CLI": str(self.prefix / "bin/hardcaml-asic-flow")},
-            text=True, capture_output=True)
+        completed = self.run_reference("test_related_presentation.py")
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("Ran 8 tests", completed.stderr)
         human = self.invoke("observation", "describe")
@@ -471,11 +485,7 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
         self.assertNotIn('"schemas"', human.stdout)
 
     def test_installed_flow_observation_suite_and_public_cli(self):
-        completed = subprocess.run(
-            [sys.executable, "-I", "-B", str(REPO / "test/test_flow_observation.py")],
-            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin",
-                                    "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
-            text=True, capture_output=True)
+        completed = self.run_reference("test_flow_observation.py")
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("Ran 20 tests", completed.stderr)
         descriptor = self.invoke("observation", "describe", "--json")
@@ -522,14 +532,13 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
     def test_installed_incremental_watch_suite(self):
         with tempfile.TemporaryDirectory(dir=self.elsewhere) as temporary:
             root = Path(temporary)
-            for name in ("test_observation_watch.py", "test_stages.py"):
+            for name in ("test_observation_watch.py", "test_stages.py", "reference_harness.py"):
                 shutil.copy2(REPO / "test" / name, root / name)
-            shutil.copy2(REPO / "_build/default/test/observation_writer_consumer.exe",
-                         root / "observation_writer_consumer.exe")
+            os.link(REPO / "_build/default/test/observation_writer_consumer.exe",
+                    root / "observation_writer_consumer.exe")
             completed = subprocess.run(
-                [sys.executable, "-I", "-B", str(root / "test_observation_watch.py")],
-                cwd=root, env={"PATH": "/usr/bin:/bin", "WATCH_DENY_CHECKOUT": str(REPO),
-                              "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
+                [sys.executable, "-I", "-B", "-c", ENTRY, str(REPO), str(root / "test_observation_watch.py")],
+                cwd=root, env=self.reference_env(),
                 text=True, capture_output=True)
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("Ran 16 tests", completed.stderr)
@@ -542,7 +551,7 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
         with tempfile.TemporaryDirectory(dir=self.elsewhere) as tmp:
             root = Path(tmp)
             for name in ("test_default_journal.py", "public_cli_fixture.py", "stage_preparation_engine.py",
-                         "segment_service_engine.py", "segment_service_fixture.py", "bridge_protocol_fixture.py"):
+                         "segment_service_engine.py", "segment_service_fixture.py", "bridge_protocol_fixture.py", "reference_harness.py"):
                 shutil.copy2(REPO / "test" / name, root / name)
             entry = '''import os, runpy, sys
 from pathlib import Path
@@ -556,10 +565,8 @@ sys.argv = [str(driver)]
 runpy.run_path(str(driver), run_name="__main__")
 '''
             completed = subprocess.run(
-                [sys.executable, "-I", "-B", "-c", entry, str(REPO), str(root / "test_default_journal.py")],
-                cwd=root, env={"PATH": "/usr/bin:/bin",
-                              "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent),
-                              "PUBLIC_FLOW_CLI": str(self.prefix / "bin/hardcaml-asic-flow")},
+                [sys.executable, "-I", "-B", "-c", ENTRY, str(REPO), str(root / "test_default_journal.py")],
+                cwd=root, env=self.reference_env(),
                 text=True, capture_output=True)
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn("Ran 12 tests", completed.stderr)
@@ -587,10 +594,7 @@ runpy.run_path(str(driver), run_name="__main__")
                          before)
 
     def test_help_needs_no_git_ocaml_pdk_docker_or_provisioning(self):
-        # An empty PATH leaves the process without git, docker, nix, dune or
-        # opam; only the launcher's own python3 is provided.
-        python3 = shutil.which("python3")
-        completed = self.invoke("--help", path=str(Path(python3).parent))
+        completed = self.invoke("--help", path="/nonexistent")
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("usage: hardcaml-asic-flow", completed.stdout)
 
@@ -649,16 +653,27 @@ runpy.run_path(str(driver), run_name="__main__")
         lonely.mkdir(parents=True, exist_ok=True)
         copy = lonely / "hardcaml-asic-flow"
         shutil.copy2(self.command, copy)
-        completed = self.invoke("--version", command=copy)
+        self.assertEqual(self.invoke("--version", command=copy).returncode, 0)
+        completed = self.invoke("report", "/missing", command=copy)
         self.assertEqual(completed.returncode, 2)
-        self.assertIn("installed flow modules are missing", completed.stderr)
-        self.assertIn("no source checkout is searched", completed.stderr)
+        self.assertIn("OCaml backend is missing", completed.stderr)
+        self.assertIn("Reinstall", completed.stderr)
 
     # -- read-only prefix ------------------------------------------------
 
     def test_read_only_prefix_runs_and_gains_no_bytecode(self):
         modes = {}
         for path in sorted(self.prefix.rglob("*"), reverse=True):
+            # Avoid chmod of shared Dune staging inodes in a hardlinked install.
+            if path.is_file():
+                if path.stat().st_mode & 0o222:
+                    mode, contents = path.stat().st_mode, path.read_bytes()
+                    path.unlink()
+                    path.write_bytes(contents)
+                    modes[path] = mode
+                    path.chmod(mode & ~0o222)
+                self.assertFalse(path.stat().st_mode & 0o222, str(path))
+                continue
             modes[path] = path.stat().st_mode
             path.chmod(path.stat().st_mode & ~0o222)
         try:
@@ -1044,17 +1059,22 @@ runpy.run_path(str(driver), run_name="__main__")
         self.assertEqual(record["environment"], json.loads((run / "preflight.json").read_text()))
 
     def test_installed_required_transport_module_absence_fails_closed(self):
-        scratch = Path(self.temporary.name) / "incomplete-transport-prefix"
-        shutil.copytree(self.prefix, scratch)
+        scratch = self.prefix
         for module in ("ocaml_backend", "execution_transport", "runtime_contract", "runtime_observation"):
             path = scratch / "lib/hardcaml_asic/flow/hardcaml_asic_flow" / f"{module}.py"
-            saved = path.read_bytes()
-            path.unlink()
-            completed = self.invoke("--version", command=scratch / "bin/hardcaml-asic-flow")
-            self.assertEqual(completed.returncode, 2)
-            self.assertEqual(completed.stdout, "")
-            self.assertIn(f"{module}.py", completed.stderr)
-            path.write_bytes(saved)
+            saved = path.with_suffix(".retained")
+            present = path.exists()
+            if present:
+                path.rename(saved)
+            else:
+                self.assertIn(module, RETIRED)
+            try:
+                completed = self.invoke("--version", command=scratch / "bin/hardcaml-asic-flow")
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertIn("source identity", completed.stdout)
+            finally:
+                if present:
+                    saved.rename(path)
         for helper, arguments in (
                 ("observation-read", ("observation", "describe", "--json")),
                 ("observation-read", ("observation", "watch", "/missing", "--json")),
@@ -1412,7 +1432,7 @@ runpy.run_path(str(driver), run_name="__main__")
                               "--native", "--archive", str(evidence),
                               *self.locations(fixture))
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(len(completed.stdout.splitlines()), 1)
+        json.loads(completed.stdout)  # One payload; native formatting may be multiline.
         outcome = json.loads(completed.stdout)
         self.assertEqual(outcome["status"], "completed")
         self.assertEqual([step["operation"] for step in outcome["steps"]],

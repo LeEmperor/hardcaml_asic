@@ -190,8 +190,8 @@ def main():
             verify(args.command.resolve(), args.consumer.resolve(), repo / 'flow', root)
             return
         prefix = root / 'prefix'
-        subprocess.run(['dune', 'install', '-j', '20', '--prefix', str(prefix)], cwd=repo,
-                       check=True, stdout=subprocess.DEVNULL)
+        from reference_harness import installed_prefix
+        installed_prefix(repo, prefix)
         consumer = root / 'consumer'
         consumer.mkdir()
         shutil.copyfile(repo / 'test/execution_plan_consumer.ml', consumer / 'execution_plan_consumer.ml')
@@ -203,7 +203,7 @@ def main():
                        env=env, check=True)
         meta = (prefix / 'lib/hardcaml_asic/META').read_text()
         execution = meta.split('package "execution" (', 1)[1].split('\n)', 1)[0]
-        assert 'requires = "cryptokit hardcaml_asic spawn unix zarith"' in execution, execution
+        assert 'requires = "cryptokit hardcaml_asic spawn str unix yojson zarith"' in execution, execution
         hardware = meta.split('package "execution" (', 1)[0]
         assert 'hardcaml_asic.execution' not in hardware
         auditing = True

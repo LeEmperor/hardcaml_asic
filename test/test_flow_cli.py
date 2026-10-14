@@ -1,6 +1,7 @@
 """P6.3 command-boundary tests with real scratch venvs; no EDA tools executed."""
 
 import contextlib
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -20,6 +21,23 @@ sys.dont_write_bytecode = True
 # installed implementation rather than a checkout-only copy of it.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "flow"))
 from hardcaml_asic_flow import cli as flow_cli  # noqa: E402
+
+
+def archive_fixture(run):
+    """Real byte-pinned immutable inputs for native archive presentation tests."""
+    project = run / "project"
+    (project / "src").mkdir(parents=True, exist_ok=True)
+    config = project / "src/config.json"
+    config.write_text("{}\n")
+    manifest = project / "manifest.json"
+    manifest.write_text(json.dumps({"schema_version": 1, "adapter": "LibreLane", "identity": "build",
+        "top_module": "fixture", "files": [{"path": "src/config.json",
+        "sha256": hashlib.sha256(config.read_bytes()).hexdigest()}],
+        "synthesis_sources": [], "simulation_sources": [], "source_inputs": []}))
+    record = json.loads((run / "run.json").read_text())
+    record.update(bundle=str(project), manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest())
+    record["outputs"]["project"] = "project"
+    (run / "run.json").write_text(json.dumps(record))
 
 
 class Outcome(SimpleNamespace):
@@ -410,7 +428,7 @@ class FlowCliTest(unittest.TestCase):
         (run / "run.json").write_text("[]\n")
         stdout, stderr = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            code = flow_cli.main(["collect", str(run)], environ={}, cwd=self.cwd)
+            code = flow_cli.main(["collect", str(run)], operations=flow_cli.Operations(), environ={}, cwd=self.cwd)
         self.assertEqual(code, 2)
         self.assertNotIn("Traceback", stderr.getvalue())
 
@@ -560,8 +578,12 @@ class PresentationTest(unittest.TestCase):
     def test_collect_json_writes_and_stdout_is_read_only(self):
         run = self.cwd / "run"
         run.mkdir()
-        payload = {"schema_version": 1, "run_id": "fixture"}
-        with mock.patch.object(flow_cli.phase4, "collect", return_value=payload):
+        (run / "run.json").write_text(json.dumps({
+            "run_id": "fixture", "build_identity": "build", "status": "failed",
+            "requested_stage": "synthesis", "completed_stage": None,
+            "outputs": {"flow": "project/runs/asic"}}))
+        payload = flow_cli.phase4.collect(run)
+        with mock.patch.object(flow_cli.phase4, "collect", side_effect=AssertionError("native boundary required")):
             code, stdout, _ = self.invoke(["collect", "run"])
             self.assertEqual(code, 0)
             self.assertIn(str(run / "results.json"), stdout)
@@ -586,12 +608,21 @@ class PresentationTest(unittest.TestCase):
         run = self.cwd / "run"
         run.mkdir()
         outcome = flow_cli.phase4.RunOutcome("full-identity", run, run / "run.json", "completed", 0)
+        (run / "run.json").write_text(json.dumps({
+            "run_id": "full-identity", "build_identity": "build", "status": "completed",
+            "requested_stage": "synthesis", "completed_stage": "synthesis",
+            "outputs": {"flow": "project/runs/asic"}}))
+        synth = run / "project/runs/asic/06-yosys-synthesis"
+        (synth / "reports").mkdir(parents=True)
+        (synth / "reports/stat.json").write_text(json.dumps({"design": {"area": 1, "num_cells": 1}}))
+        (synth / "state_out.json").write_text(json.dumps({"metrics": {
+            "design__instance_unmapped__count": 0, "synthesis__check_error__count": 0,
+            "design__inferred_latch__count": 0}}))
+        archive_fixture(run)
         with mock.patch.object(self.operations, "run", return_value=outcome), \
-                mock.patch.object(flow_cli.phase4, "collect", return_value={"run_id": "full-identity"}), \
-                mock.patch.object(flow_cli.reporter, "results_for", return_value=({}, "fixture")), \
-                mock.patch.object(flow_cli.reporter, "report", side_effect=lambda *a, **kw:
-                                  (kw["output"]("report details"), 0)[1]), \
-                mock.patch.object(flow_cli.archiver, "archive", return_value=(run / "reports.tgz", [], [])):
+                mock.patch.object(flow_cli.phase4, "collect", side_effect=AssertionError("native boundary required")), \
+                mock.patch.object(flow_cli.reporter, "report", side_effect=AssertionError("native report required")), \
+                mock.patch.object(flow_cli.archiver, "archive", side_effect=AssertionError("native archive required")):
             code, stdout, stderr = self.invoke(["execute", "bundle", "--stage", "synthesis",
                 "--toolchain", "tools", "--json", "--verbose", "--archive", "evidence"])
         self.assertEqual(code, 0, stderr)
@@ -600,8 +631,8 @@ class PresentationTest(unittest.TestCase):
         self.assertEqual(aggregate["run_id"], "full-identity")
         self.assertEqual([step["operation"] for step in aggregate["steps"]],
                          ["run", "collect", "report", "archive"])
-        self.assertEqual(json.loads((run / "results.json").read_text()), {"run_id": "full-identity"})
-        self.assertIn("report details", stderr)
+        self.assertEqual(json.loads((run / "results.json").read_text())["run_id"], "full-identity")
+        self.assertIn("synthesis acceptance passed", stderr)
 
     def test_postcheck_summary_names_existing_attempt(self):
         fake = FakeOperations()
@@ -635,15 +666,20 @@ class PresentationTest(unittest.TestCase):
                 self.assertNotIn("execution.log", stdout)
 
     def test_archive_creation_human_and_json_payload(self):
-        with mock.patch.object(flow_cli.archiver, "archive", return_value=(self.cwd / "reports.tgz", [], [])):
+        run = self.cwd / "run"
+        run.mkdir()
+        (run / "run.json").write_text(json.dumps({"run_id": "archive-fixture", "build_identity": "build",
+            "status": "completed", "outputs": {"flow": "project/runs/asic"}}))
+        archive_fixture(run)
+        with mock.patch.object(flow_cli.archiver, "archive", side_effect=AssertionError("native archive required")):
             code, stdout, _ = self.invoke(["archive", "run", "--output", "evidence"])
             self.assertEqual(code, 0)
             self.assertIn("archive: created", stdout)
             self.assertNotIn('"archive"', stdout)
-            code, stdout, _ = self.invoke(["archive", "run", "--output", "evidence", "--json"])
+            code, stdout, _ = self.invoke(["archive", "run", "--output", "evidence", "--json", "--force"])
             self.assertEqual(code, 0)
             self.assertEqual(json.loads(stdout), {"archive": str(self.cwd / "evidence"),
-                                                 "reports": str(self.cwd / "reports.tgz")})
+                                                  "reports": str(self.cwd / "evidence/reports.tar.gz")})
 
     def test_read_only_commands_and_unsupported_formats_do_not_allocate(self):
         fake = FakeOperations()
@@ -701,14 +737,25 @@ class RepositoryDriverTest(unittest.TestCase):
         self.precheck_python.chmod(0o755)
         self.out = self.root / "out"
         self.runs = self.out / "runs"
-        # A stub python3 ahead of the real one: the driver's job is to invoke the
-        # shared CLI with the right arguments, and that is all these record.
+        # Private copied driver with a recording native-owner stand-in. Never
+        # replace a live build artifact or use PATH to select production owners.
         stub = self.root / "bin"
         stub.mkdir()
         (stub / "python3").write_text(
             '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$FLOW_CLI_LOG"\n')
         (stub / "python3").chmod(0o755)
         self.stub_bin = stub
+        self.real_driver = self.DRIVER
+        self.fixture_owner = stub / "flow_cli.exe"
+        self.fixture_owner.write_text('#!/bin/sh\nprintf \'%s %s\\n\' "$0" "$*" >> "$FLOW_CLI_LOG"\n')
+        self.fixture_owner.chmod(0o755)
+        private_scripts = self.root / "repo/scripts"
+        private_scripts.mkdir(parents=True)
+        self.DRIVER = private_scripts / "flow.sh"
+        text = self.real_driver.read_text()
+        text = text.replace('flow=("$repo_root/_build/default/bin/flow_cli.exe")',
+                            f'flow=("{self.fixture_owner}")')
+        self.DRIVER.write_text(text)
 
     def environment(self, *, stub_python=True, **extra):
         environment = {
@@ -723,7 +770,8 @@ class RepositoryDriverTest(unittest.TestCase):
         return environment
 
     def drive(self, *arguments, cwd=None, **environment):
-        return subprocess.run(["bash", str(self.DRIVER), *arguments],
+        driver = self.DRIVER if environment.get("stub_python", True) else self.real_driver
+        return subprocess.run(["bash", str(driver), *arguments],
                               env=self.environment(**environment),
                               cwd=str(cwd or self.root), text=True,
                               capture_output=True, check=False)
@@ -733,7 +781,7 @@ class RepositoryDriverTest(unittest.TestCase):
         lines = self.log.read_text().splitlines() if self.log.exists() else []
         self.assertEqual(len(lines), 1, lines)
         self.assertTrue(lines[0].startswith(
-            f"{self.REPO / 'scripts/flow_cli.py'} "), lines[0])
+            f"{self.fixture_owner} "), lines[0])
         return lines[0]
 
     # -- help, arguments and removed spellings ---------------------------

@@ -8,10 +8,12 @@ let get j k = match j with J.Object xs -> (match List.assoc_opt k xs with Some x
 let read p = let ic = open_in_bin p in Fun.protect ~finally:(fun () -> close_in_noerr ic)
   (fun () -> let n = in_channel_length ic in if n > 1048576 then failwith "probe output exceeds 1 MiB";
     really_input_string ic n)
-type t = { directory:string; environment:string list; timeout:float; mutable serial:int }
-let create ~directory ~environment ~timeout =
+type t = { directory:string; environment:string list; timeout:float; cancel:unit -> int option; mutable serial:int }
+let create_cancellable ~cancel ~directory ~environment ~timeout =
   if not (Float.is_finite timeout) || timeout <= 0. then invalid_arg "finite positive probe timeout required";
-  {directory;environment=T.clean_environment environment;timeout;serial=0}
+  {directory;environment=T.clean_environment environment;timeout;cancel;serial=0}
+let create ~directory ~environment ~timeout =
+  create_cancellable ~cancel:(fun () -> None) ~directory ~environment ~timeout
 let paths t = t.serial <- t.serial + 1; let base = t.directory ^ "/probe-" ^ string_of_int t.serial in
   base,base ^ ".stdout",base ^ ".stderr"
 let record_result base argv (result:T.result) =
@@ -26,15 +28,26 @@ let record_result base argv (result:T.result) =
     "process_error",(match result.process.outcome with Failed x -> s x | _ -> J.null);
     "process_cleanup_error",(match result.process.cleanup_error with Some x -> s x | None -> J.null);
     "cleanup_error",(match result.cleanup with Some c -> (match c.error with Some x -> s x | None -> J.null) | None -> J.null)])
-let ensure result = if not (Process_supervisor.succeeded result) then
-  raise (Runner.Callback_error (Segment_service.process_error {T.process=result;cleanup=None}))
+let finish base argv result =
+  let storage = try record_result base argv result; [] with e ->
+    ["runtime probe evidence write failed: " ^ Printexc.to_string e] in
+  if not (T.succeeded result) then (
+    let e = Segment_service.process_error result in
+    let secondary = e.secondary @ storage in
+    let e = match e.kind with
+      | Runner.Cancellation signal -> Runner.cancellation ~secondary ~signal e.message
+      | Runner.Failure -> Runner.failure ~exit_code:e.exit_code ~secondary e.message in
+    raise (Runner.Callback_error e));
+  match storage with [] -> () | xs -> raise (Runner.Callback_error (Runner.failure (String.concat "; " xs)))
 let command t ~prog ~arguments =
+  (match t.cancel () with None -> () | Some signal ->
+    raise (Runner.Callback_error (Runner.cancellation ~signal:(if signal=Sys.sigint then 2 else 15) "runtime probe interrupted")));
   let base,out,err = paths t in
   Result_store.save_json (base ^ ".json") (obj ["argv",J.array (List.map s (prog::arguments))]);
   let process = Process.make ~prog ~argv:(prog::arguments) ~cwd:"/" ~environment:t.environment
     ~stdout:(Process.File out) ~stderr:(Process.File err) in
-  let result = Process_supervisor.run ~timeout:t.timeout process in
-  record_result base process.argv {T.process=result;cleanup=None}; ensure result; String.trim (read out)
+  let result = Process_supervisor.run ~cancel:t.cancel ~timeout:t.timeout process in
+  finish base process.argv {T.process=result;cleanup=None}; String.trim (read out)
 let find_executable ~environment name =
   let path = match List.find_opt (String.starts_with ~prefix:"PATH=") environment with
     | Some x -> String.sub x 5 (String.length x - 5) | None -> "" in
@@ -48,6 +61,33 @@ let metadata ~host output =
     || get j "role" <> s (if host then "host" else "container") then failwith "metadata probe protocol mismatch";
   let m = get j "metadata" in ignore (checked (Runtime_evidence.metadata ~host m)); m
 let flags f = J.array (List.map s (match f with T.Isolated -> ["-I";"-B"] | T.Bytecode_disabled -> ["-B"]))
+let observe_host t ~python ~payload =
+  let host = metadata ~host:true (command t ~prog:python ~arguments:["-I";"-B";"-c";read payload;"host"]) in
+  match host with J.Object xs -> obj (xs @ ["interpreter",s python;"interpreter_flags",flags T.Isolated]) | _ -> assert false
+let observe_container t ~docker ~payload policy =
+  let info = codec (J.parse (command t ~prog:docker ~arguments:["info";"--format";"{{json .}}"])) in
+  let inspection = codec (J.parse (command t ~prog:docker ~arguments:["image";"inspect";Runtime_contract.image_ref policy])) in
+  let probe flag =
+    let binding = checked (Runtime_evidence.docker_binding ~declared_ref:(Runtime_contract.image_ref policy)
+      ~executable:docker ~info ~inspection ~observation:(obj ["interpreter_flags",flags flag])) in
+    let d = match binding with T.Docker d -> d | _ -> assert false in
+    let base,out,err = paths t in
+    let invocation = T.metadata_invocation d ~arguments:["-c";read payload;"metadata-container"]
+      ~environment:t.environment ~stdout:(Process.File out) ~stderr:(Process.File err) in
+    let spec = T.process_specification invocation in
+    Result_store.save_json (base ^ ".json") (obj ["argv",J.array (List.map s spec.argv)]);
+    let result = T.run ~cancel:t.cancel ~timeout:t.timeout invocation in
+    finish base spec.argv result;
+    metadata ~host:false (read out),binding in
+  let observed,binding = probe T.Isolated in
+  let observed,binding = if get observed "metadata_error" <> J.null then probe T.Bytecode_disabled else observed,binding in
+  if get observed "metadata_error" <> J.null || get observed "librelane_version" = J.null
+    || get observed "requires_python" = J.null then failwith "missing container distribution metadata";
+  let b = T.to_json binding in
+  match observed with J.Object xs -> obj (xs @ ["interpreter",s "python3";
+    "interpreter_flags",get b "interpreter_flags";
+    "packaging_path",s (if get b "interpreter_flags" = flags T.Isolated then "isolated" else "image-owned-environment");
+    "image_identity",get b "image_identity";"engine_identity",get b "engine_identity"]) | _ -> assert false
 let observe t ~python ~docker ~payload ~pdk_root policy =
   let code = read payload in
   let host = metadata ~host:true (command t ~prog:python ~arguments:["-I";"-B";"-c";code;"host"]) in
@@ -63,9 +103,8 @@ let observe t ~python ~docker ~payload ~pdk_root policy =
       ~arguments:["-c";code;"container"] ~cwd:"/" ~environment:t.environment ~stdout:(Process.File out) ~stderr:(Process.File err) () in
     let spec = T.process_specification invocation in
     Result_store.save_json (base ^ ".json") (obj ["argv",J.array (List.map s spec.argv)]);
-    let result = T.run ~timeout:t.timeout invocation in
-    record_result base spec.argv result;
-    if not (T.succeeded result) then raise (Runner.Callback_error (Segment_service.process_error result));
+    let result = T.run ~cancel:t.cancel ~timeout:t.timeout invocation in
+    finish base spec.argv result;
     metadata ~host:false (read out),binding in
   let observed,binding = probe T.Isolated in
   let observed,binding = if get observed "metadata_error" <> J.null then probe T.Bytecode_disabled else observed,binding in

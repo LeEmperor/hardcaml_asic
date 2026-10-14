@@ -142,7 +142,10 @@ done
 
 # The shared dispatcher, through the checkout's adapter: same parser, same
 # operations and same exit statuses as the installed hardcaml-asic-flow.
-flow=(python3 "$repo_root/scripts/flow_cli.py")
+flow=("$repo_root/_build/default/bin/flow_cli.exe")
+if [ "$(basename "$repo_root")" = default ] && [ "$(basename "$(dirname "$repo_root")")" = _build ]; then
+  flow=("$repo_root/bin/flow_cli.exe")
+fi
 
 tools=(--support-tools "$TT" --pdk-root "$PDK")
 

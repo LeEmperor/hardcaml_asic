@@ -109,7 +109,7 @@ class FinalizationTest(unittest.TestCase):
                 with patch("sys.stdout", output_stream):
                     code = cli.main(["finalize", "--json", str(self.execution), "--operation-store", str(self.root / "operations"),
                         "--accept", "--support-tools", str(self.support), "--precheck-python", str(self.python),
-                        "--testbench", str(self.bench), "--testbench-top", "replay", "--replay-trace", str(self.trace)])
+                         "--testbench", str(self.bench), "--testbench-top", "replay", "--replay-trace", str(self.trace)], operations=cli.Operations())
                 allocation, value = [json.loads(line) for line in output_stream.getvalue().splitlines()]
                 self.assertEqual(allocation["event"], "allocated")
                 self.assertEqual(code, value["exit_code"])

@@ -27,7 +27,7 @@ class RelatedPresentationTest(unittest.TestCase):
         stdout, stderr = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             try:
-                code = cli.main(args)
+                code = cli.main(args, operations=cli.Operations())
             except SystemExit as exc:
                 code = exc.code
         return code, stdout.getvalue(), stderr.getvalue()
@@ -178,7 +178,7 @@ class RelatedPresentationTest(unittest.TestCase):
             kwargs["allocated"](directory, "attempt")
             return directory, value
         with patch.object(finalization, "finalize", side_effect=allocated_operation), patch("builtins.print") as output:
-            cli.main([*command, "--json"])
+            cli.main([*command, "--json"], operations=cli.Operations())
         self.assertTrue(output.call_args_list[0].kwargs["flush"])
 
     def test_errors_rejected_combinations_and_single_operation(self):

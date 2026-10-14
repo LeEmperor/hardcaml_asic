@@ -1,5 +1,7 @@
+(include_subdirs unqualified)
+
 (library
  (name hardcaml_asic_execution)
  (public_name hardcaml_asic.execution)
- (libraries cryptokit zarith hardcaml_asic unix spawn)
- (foreign_stubs (language c) (names process_stubs observation_stubs)))
+ (libraries cryptokit zarith hardcaml_asic unix spawn yojson str)
+ (foreign_stubs (language c) (names process_stubs observation_stubs postcheck_affinity_stubs)))

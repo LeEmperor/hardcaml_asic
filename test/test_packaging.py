@@ -27,13 +27,14 @@ REPO = Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = REPO / "flow"
 sys.path.insert(0, str(PACKAGE_ROOT))
 from hardcaml_asic_flow import archive, cli, identity, managed_python, paths, phase4, probe, report, runtime_contract, runtime_observation, execution_transport, result_store  # noqa: E402
+from hardcaml_asic_flow import backend_protocol  # noqa: E402
 
 
 class LayoutTest(unittest.TestCase):
     def test_every_installed_module_resolves_inside_the_package(self):
         # A module that still loaded itself from `scripts/` would pass its own
         # unit tests in a checkout and then be missing from a prefix.
-        for module in (archive, cli, identity, managed_python, paths, phase4, probe, report, runtime_contract, runtime_observation, execution_transport, result_store):
+        for module in (backend_protocol, managed_python, paths, probe, runtime_contract, runtime_observation):
             with self.subTest(module=module.__name__):
                 self.assertEqual(
                     Path(module.__file__).resolve().parent, paths.PACKAGE_DIR)
@@ -55,13 +56,14 @@ class LayoutTest(unittest.TestCase):
 
     def test_dune_installs_exactly_the_package_files(self):
         stanzas = (PACKAGE_ROOT / "dune").read_text()
-        on_disk = {path.relative_to(PACKAGE_ROOT).as_posix()
-                   for path in PACKAGE_ROOT.rglob("*.py")}
-        for relative in on_disk:
-            with self.subTest(relative=relative):
-                self.assertIn(f"({relative} as flow/{relative})", stanzas)
-        self.assertIn("(section bin)", stanzas)
-        self.assertIn("hardcaml-asic-flow", stanzas)
+        runtime = {"__init__", "backend_protocol", "librelane_bridge", "stage_metadata_probe",
+                   "probe", "runtime_observation", "runtime_contract", "managed_python", "paths"}
+        installed = set(re.findall(r"\(hardcaml_asic_flow/(\w+)\.py as flow/hardcaml_asic_flow/\w+\.py\)", stanzas))
+        self.assertEqual(installed, runtime)
+        data = set(re.findall(r"as flow/hardcaml_asic_flow/data/([^\s)]+)", stanzas))
+        self.assertEqual(data, {"toolchain.sh", "toolchain.lock", "managed-python.json", "version.txt"})
+        native = re.sub(r";[^\n]*", "", (REPO / "bin/dune").read_text())
+        self.assertRegex(native, r"\(executable\s+\(name flow_cli\)(?:(?!\(executable)[\s\S])*?\(public_name hardcaml-asic-flow\)")
         self.assertIn("(hardcaml_asic_flow/data/managed-python.json as "
                       "flow/hardcaml_asic_flow/data/managed-python.json)", stanzas)
 
@@ -208,11 +210,11 @@ class IdentityTest(unittest.TestCase):
 class LauncherTest(unittest.TestCase):
     LAUNCHER = PACKAGE_ROOT / "hardcaml-asic-flow"
 
-    def test_launcher_isolates_the_interpreter(self):
+    def test_launcher_routes_to_native_owner(self):
         script = self.LAUNCHER.read_text()
-        # -I keeps $PYTHONPATH and the cwd off sys.path; -B keeps a read-only
-        # prefix from being asked to write __pycache__.
-        self.assertIn("python3 -I -B -c", script)
+        # The source adapter invokes the native owner directly.
+        self.assertIn('exec "$binary" "$@"', script)
+        self.assertIn("bin/flow_cli.exe", script)
         self.assertTrue(os.access(self.LAUNCHER, os.X_OK))
 
     def test_launcher_diagnoses_a_missing_install_without_falling_back(self):
@@ -225,22 +227,20 @@ class LauncherTest(unittest.TestCase):
             completed = subprocess.run([str(copy), "--version"], text=True,
                                        capture_output=True, check=False)
         self.assertEqual(completed.returncode, 2)
-        self.assertIn("installed flow modules are missing", completed.stderr)
-        self.assertIn("no source checkout is searched", completed.stderr)
+        self.assertIn("missing native CLI", completed.stderr)
         self.assertEqual(completed.stdout, "")
 
-    def test_launcher_resolves_itself_through_a_symlink(self):
+    def test_development_adapter_diagnoses_missing_build_at_unrelated_symlink(self):
         with tempfile.TemporaryDirectory() as temporary:
             link = Path(temporary) / "renamed-flow"
             link.symlink_to(self.LAUNCHER)
             completed = subprocess.run([str(link), "--version"], text=True,
                                        capture_output=True, check=False)
-        # The checkout has no ../lib/hardcaml_asic/flow beside flow/, so this
-        # proves the resolution reached the real file's directory rather than
-        # the link's, without needing a prefix.
+        # This development-only shell adapter cannot discover a build from an
+        # unrelated symlink directory. Installed native symlink discovery is
+        # exercised by the installed-prefix suite.
         self.assertEqual(completed.returncode, 2)
-        self.assertIn(str(PACKAGE_ROOT.parent / "lib/hardcaml_asic/flow"),
-                      completed.stderr.replace("/flow/../", "/"))
+        self.assertIn("missing native CLI", completed.stderr)
 
 
 if __name__ == "__main__":

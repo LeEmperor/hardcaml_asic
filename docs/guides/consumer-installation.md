@@ -66,20 +66,39 @@ Since P6.4a the same package installs the flow tooling beside the library, so a
 consumer pins one revision for both:
 
 ```text
-$PREFIX/bin/hardcaml-asic-flow                            the command
-$PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/        its private modules
-$PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/data/   toolchain.sh, toolchain.lock, managed-python.json
+$PREFIX/bin/hardcaml-asic-flow                            native OCaml command
+$PREFIX/bin/hardcaml-asic-experimental-*                  native service helpers
+$PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/        nine private runtime modules
+$PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/data/   toolchain.sh, toolchain.lock, managed-python.json, version.txt
 ```
 
 The command works through `PATH` and through a symlink to it. It finds its
 modules and data relative to its own installed location only; it does not search
 for a source checkout, and an incomplete installation is reported rather than
 worked around. `--help` and `--version` need no Git, OCaml toolchain, PDK,
-container or provisioning.
+container, Python or provisioning.
 
-Host requirements: Python 3.9 or newer (declared as `conf-python-3`; the minor
-bound is checked by the command, since the conf package cannot express it) and a
-POSIX shell. Provisioning also needs Bash, Git and the usual Unix utilities.
+The runtime-nine allowlist is `__init__`, `backend_protocol`, `librelane_bridge`,
+`stage_metadata_probe`, `probe`, `runtime_observation`, `runtime_contract`,
+`managed_python`, `paths`. The consumer validator requires all nine, all four data
+files and executable native CLI/helpers. Source validation checks the actual
+`bin/dune` `flow_cli` executable/public name, not a comment in `flow/dune`.
+
+**Python API break:** installed `execution_plan`, `flow_observation`,
+`IncrementalReader`, service/collector/report/archive and compatibility CLI imports
+are retired. Use the native CLI or typed `hardcaml_asic.execution` OCaml library.
+Optional `PYTHONPATH=/path/to/checkout/flow` exposes retained deprecated SOURCE-only
+references, not the installed public implementation or equivalent support.
+Package 0.1.0 and CLI4 stay unchanged only because CLI contracts stay unchanged.
+The sixteen retired install entries are `__main__`, `archive`, `cli`,
+`ocaml_backend`, `checkpoint`, `stages`, `identity`, `execution_transport`,
+`execution_plan`, `phase4`, `report`, `presentation`, `result_store`, `runner`,
+`flow_observation`, `finalization`; their sources remain in the checkout.
+The recorded dependency pin and normal refresh/activation workflow are preserved;
+this cleanup does not adopt a revision or select a global development generation.
+
+Provisioning/host-probe requirements: Python 3.9 or newer (declared as
+`conf-python-3`) and a POSIX shell. Provisioning also needs Bash, Git and the usual Unix utilities.
 Running and postchecking a design need Docker, LibreLane and Nix. Installing the
 package fetches none of those, and `--version`, `--help`, `collect`, `report` and
 `archive` need none of them.

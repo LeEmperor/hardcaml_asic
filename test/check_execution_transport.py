@@ -279,8 +279,8 @@ def main():
             verify(args.consumer.resolve(), fixture, root, execution_transport)
             return
         prefix = root / "prefix"
-        subprocess.run(["dune", "install", "-j20", "--prefix", str(prefix)], cwd=repo,
-                       check=True, stdout=subprocess.DEVNULL)
+        from reference_harness import installed_prefix
+        installed_prefix(repo, prefix)
         consumer = root / "consumer"
         consumer.mkdir()
         shutil.copyfile(repo / "test/execution_transport_consumer.ml", consumer / "execution_transport_consumer.ml")

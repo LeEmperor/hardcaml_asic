@@ -284,7 +284,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix="installed-runner-", dir="/tmp/opencode") as temporary:
         root = Path(temporary)
         prefix, consumer = root / "prefix", root / "consumer"
-        subprocess.run(["dune", "install", "-j20", "--prefix", str(prefix)], cwd=repo, check=True, stdout=subprocess.DEVNULL)
+        from reference_harness import installed_prefix
+        installed_prefix(repo, prefix)
         consumer.mkdir()
         shutil.copyfile(repo / "test/runner_consumer.ml", consumer / "runner_consumer.ml")
         (consumer / "dune-project").write_text("(lang dune 3.17)\n(name installed_runner_consumer)\n")

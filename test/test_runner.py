@@ -135,6 +135,12 @@ class RunnerTest(unittest.TestCase):
 
 
 class ServiceIntegrationTest(unittest.TestCase):
+    class PythonOperations(cli.Operations):
+        # Explicit injected retained-service fixture. Production Operations.run
+        # is now authoritative OCaml and is exercised in check_coarse_run.py.
+        def run(self, args):
+            return phase4.run(args)
+
     def setUp(self):
         # Reuse the existing emitted-bundle/runtime fixture, not another service
         # implementation. Only the external probe/process boundaries are replaced.
@@ -155,7 +161,7 @@ class ServiceIntegrationTest(unittest.TestCase):
                     mock.patch.object(phase4, "run_logged") as backend, \
                     mock.patch.object(cli.reporter, "report") as acceptance:
                 result = runner.execute(plans.resolve("synthesis"),
-                                        runner.ServiceAdapter(self.args, cli.Operations()))
+                                        runner.ServiceAdapter(self.args, self.PythonOperations()))
                 self.assertEqual(result.exit_code, 143 if interrupted else 1)
                 run = result.run_outcome.run_dir
                 self.assertTrue((run / "results.json").is_file())
@@ -168,7 +174,7 @@ class ServiceIntegrationTest(unittest.TestCase):
         with mock.patch.object(phase4, "preflight", return_value=self.fixture.ready()), \
                 mock.patch.object(phase4, "run_logged", return_value=0):
             result = runner.execute(plans.resolve("synthesis"),
-                                    runner.ServiceAdapter(self.args, cli.Operations()))
+                                    runner.ServiceAdapter(self.args, self.PythonOperations()))
         # The fixture produces no synthesis artifacts. Existing reporter policy
         # must reject it even though the coarse process returned zero.
         self.assertEqual(result.run_outcome.status, "completed")

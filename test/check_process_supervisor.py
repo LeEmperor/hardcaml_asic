@@ -143,8 +143,9 @@ def main():
             verify(args.consumer.resolve(), fixture, root)
             return
         prefix = root / "prefix"
-        subprocess.run(["dune", "install", "-j20", "--prefix", str(prefix)],
-                       cwd=repo, check=True, stdout=subprocess.DEVNULL)
+        from reference_harness import hardlink_prefix, thin_prefix
+        hardlink_prefix(repo / "_build/install/default", prefix)
+        thin_prefix(prefix)
         consumer = root / "consumer"
         consumer.mkdir()
         shutil.copyfile(repo / "test/process_supervisor_consumer.ml", consumer / "process_supervisor_consumer.ml")

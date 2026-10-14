@@ -1,19 +1,14 @@
 #!/usr/bin/env python3
-"""Development adapter: the P6.1 reporter lives in `hardcaml_asic_flow`.
+"""Deprecated SOURCE-only P6.1 reporting reference command.
 
-Installed as `hardcaml-asic-flow report`. See
-`flow/hardcaml_asic_flow/report.py`; acceptance policy is entirely there.
+Imports the retained checkout oracle. Production `hardcaml-asic-flow report`
+uses OCaml Report_service; this is not the same public implementation or installed API.
 """
 
 import sys
 from pathlib import Path
 
-# These repository scripts are development entry points and hold no
-# implementation: each imports the same module the installed
-# `hardcaml-asic-flow` command imports, so a checkout and a prefix run one
-# implementation rather than two. This checkout-relative path is the only one of
-# its kind left; the installed launcher resolves its own prefix and never
-# searches for a source tree.
+# Explicit checkout reference access; production never searches this source path.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "flow"))
 
 from hardcaml_asic_flow import report  # noqa: E402

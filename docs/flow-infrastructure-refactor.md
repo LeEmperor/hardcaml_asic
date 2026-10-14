@@ -1,13 +1,16 @@
 # OCaml-first flow infrastructure and stage decomposition
 
-**Status:** implementation in progress. The OCaml-owned explicit-stage execution
-milestone is delivered and physically verified as of 2026-10-14; the entire
-refactor is not complete. Written 2026-10-13.
+**Status:** implementation in progress. Native public CLI, explicit/coarse
+execution, results/acceptance/archive services, thin Python runtime installation,
+and responsibility-oriented source organization are delivered as of 2026-10-14.
+Physical and installed-service verification are recorded separately. Finer
+per-operation execution and modularized flows remain later work. Written 2026-10-13.
 
 See the [implementation record](development/flow-infrastructure-progress.md) and
 [active queue](phase_plan.md#ocaml-first-flow-infrastructure) for delivered
-boundaries, verification, and remaining work. The current-state inventory below
-describes the starting point; the target layout remains a destination sketch.
+boundaries, verification, and remaining work. Section 2 preserves the historical
+starting-point inventory; section 5 records delivered destination status alongside
+the original sketch.
 
 **Purpose:** reorganize the provider around explicit stages, backend integration,
 and OCaml-owned execution infrastructure. This builds much of the foundation for
@@ -222,8 +225,20 @@ directory moves alone must not redefine persisted boundary names.
 ## 5. Proposed hybrid source layout
 
 Organize top-level code by responsibility, with stage-specific modules inside
-the flow layer. The following is a destination sketch; exact Dune library and
-namespace boundaries remain to be designed.
+the flow layer. The following is the original destination sketch, not a current
+file inventory.
+
+**Delivered destination status (2026-10-14):** stage domains, shared analysis and
+LibreLane mapping are under `lib/flow/{stages,analysis,backends/librelane}`. Native
+execution is now organized under `lib/execution/{storage,observation,results,archive,runtime,backends/librelane}`,
+with runner, execution plan and coarse orchestration at its root. A single public
+`hardcaml_asic.execution` library uses unqualified subdirectories, preserving all
+`Hardcaml_asic_execution.*` names. C stubs remain at that library root. See the
+[current module map](architecture.md#current-native-execution-source-map).
+Hardware/project/resource reorganization, retired Python SOURCE relocation and
+flow definition/profile authoring remain later work. The sketch's top-level
+storage/results/backend directories and illustrative module names were not
+adopted as new public libraries or namespaces.
 
 ```text
 lib/

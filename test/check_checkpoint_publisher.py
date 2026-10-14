@@ -252,8 +252,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix='installed-publisher-', dir='/tmp/opencode') as tmp:
         root = Path(tmp)
         prefix, consumer = root / 'prefix', root / 'consumer'
-        subprocess.run(['dune', 'install', '-j20', '--prefix', str(prefix)], cwd=repo,
-                       check=True, stdout=subprocess.DEVNULL)
+        from reference_harness import installed_prefix
+        installed_prefix(repo, prefix)
         consumer.mkdir()
         for name in ['checkpoint_consumer.ml', 'checkpoint_publisher_consumer.ml']:
             shutil.copyfile(repo / 'test' / name, consumer / name)
@@ -272,7 +272,7 @@ def main():
             '  if Path(args[0]).resolve().is_relative_to(repo): raise RuntimeError("checkout read denied")\n'
             ' if event=="import" and (args[0].startswith("librelane") or "librelane_bridge" in args[0]): raise RuntimeError("backend import denied")\n'
             'sys.addaudithook(audit)\n'
-            f'sys.path.insert(0,{str(prefix / "lib/hardcaml_asic/flow")!r})\n'
+            f'sys.path.insert(0,{str(root)!r})\nfrom reference_harness import activate\nactivate()\n'
             f'ns=runpy.run_path({str(script)!r},run_name="publisher_test")\n'
             f'ns["verify"](Path({str(consumer / "_build/default/checkpoint_publisher_consumer.exe")!r}),Path({str(consumer / "_build/default/checkpoint_consumer.exe")!r}))\n')
         subprocess.run([sys.executable, '-I', '-B', str(launcher)], cwd=root, check=True)

@@ -287,8 +287,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix='installed-checkpoint-', dir='/tmp/opencode') as tmp:
         root = Path(tmp)
         prefix, consumer = root / 'prefix', root / 'consumer'
-        subprocess.run(['dune', 'install', '-j20', '--prefix', str(prefix)], cwd=repo,
-                       check=True, stdout=subprocess.DEVNULL)
+        from reference_harness import installed_prefix
+        installed_prefix(repo, prefix)
         consumer.mkdir()
         shutil.copyfile(repo / 'test/checkpoint_consumer.ml', consumer / 'checkpoint_consumer.ml')
         (consumer / 'dune-project').write_text('(lang dune 3.17)\n(name installed_checkpoint)\n')
@@ -305,7 +305,7 @@ def main():
             '  if Path(args[0]).resolve().is_relative_to(repo): raise RuntimeError("checkout read denied")\n'
             ' if event=="import" and (args[0].startswith("librelane") or "librelane_bridge" in args[0]): raise RuntimeError("backend import denied")\n'
             'sys.addaudithook(audit)\n'
-            f'sys.path.insert(0,{str(prefix / "lib/hardcaml_asic/flow")!r})\n'
+            f'sys.path.insert(0,{str(root)!r})\nfrom reference_harness import activate\nactivate()\n'
             f'ns=runpy.run_path({str(script)!r},run_name="checkpoint_test")\n'
             f'ns["verify"](Path({str(consumer / "_build/default/checkpoint_consumer.exe")!r}),Path({str(prefix / "bin/hardcaml-asic-experimental-checkpoint-inspect")!r}))\n')
         subprocess.run([sys.executable, '-I', '-B', str(launcher)], cwd=root, check=True)

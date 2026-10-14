@@ -1,12 +1,17 @@
-"""The `hardcaml-asic-flow` command: parsing, dispatch and presentation.
+"""Retained compatibility CLI/API and differential oracle.
+
+The installed `hardcaml-asic-flow` command is owned by bin/flow_cli.ml; it never
+imports this module. The Python parser/injected Operations seam remains for
+transitional consumers and tests pending coordinated resource-validator cleanup.
 
 The dispatcher owns human/explicit-JSON presentation, result-store defaults,
 argument parsing, path and tool-location precedence, exit
 status mapping; the shared runner owns the coarse `execute` composition.
 Stages exec the linked OCaml preparation/runner/journal implementation;
 checkpoint and observation cold queries delegate to the typed OCaml readers.
-The remaining operations use the Python runner/collector, reporter, archiver
-and provisioner. Foreground watch execs the same native observation helper.
+Run, preflight and collection delegate to installed native services. The remaining
+aggregate runner and provisioner use Python.
+Foreground watch execs the same native observation helper.
 
 P6.4a packages that dispatcher. It does not add identity or waiver semantics:
 `--dependency-lock` and `--waiver` still parse (so the option surface is settled
@@ -113,76 +118,33 @@ class Operations:
 
     def run(self, args):
         self.require_p6_5(args)
+        from . import ocaml_backend
         try:
-            with self.phase4.interruption_handlers():
-                return self.phase4.run(args)
+            return ocaml_backend.run(args)
         except self.phase4.FlowInterrupted as exc:
             raise ContractInterrupted(exc.signum) from exc
 
     def postcheck(self, args):
         self.require_p6_5(args)
+        from . import ocaml_backend
         try:
-            with self.phase4.interruption_handlers():
-                return self.phase4.check(args)
+            return ocaml_backend.postcheck(args)
         except self.phase4.FlowInterrupted as exc:
             raise ContractInterrupted(exc.signum) from exc
         except self.phase4.PrerequisiteError as exc:
             raise ContractError(str(exc)) from exc
 
     def collect(self, args):
-        result = self.phase4.collect(args.run_dir)
-        if not args.stdout:
-            self.phase4.save(args.output, result)
-        if args.stdout or getattr(args, "json", False):
-            print(json.dumps(result, indent=2, sort_keys=True))
-        elif not getattr(args, "quiet", False):
-            print(f"collect: results {args.output}")
-        if getattr(args, "verbose", False):
-            for name, value in result.items():
-                print(f"collect {name}: {value}", file=sys.stderr)
-        return 0
+        from . import ocaml_backend
+        return ocaml_backend.collect(args)
 
     def report(self, args):
-        results, source = self.reporter.results_for(args.run_dir)
-        output = print
-        diagnostics_only = getattr(args, "diagnostics_only", False)
-        diagnostics = []
-        if args.json or diagnostics_only:
-            output = lambda *values: print(*values, file=sys.stderr)
-        if diagnostics_only:
-            output = lambda *values: diagnostics.append(" ".join(map(str, values)))
-        status = self.reporter.report(args.run_dir, results, source, output=output)
-        if diagnostics_only and (status or getattr(args, "verbose", False)):
-            for line in diagnostics:
-                print(line, file=sys.stderr)
-        if getattr(args, "verbose", False):
-            print(f"report: run {args.run_dir}; result source {source}; acceptance exit {status}",
-                  file=sys.stderr)
-        if args.json and not diagnostics_only:
-            print(json.dumps(results, indent=2, sort_keys=True))
-        return status
+        from . import ocaml_backend
+        return ocaml_backend.report(args)
 
     def archive(self, args):
-        try:
-            if args.list:
-                self.archiver.list_archive(args.run_dir)
-                return 0
-            tarball, _, omitted = self.archiver.archive(
-                args.run_dir, args.output, args.force)
-        except self.archiver.phase4.PrerequisiteError as exc:
-            raise ContractError(str(exc)) from exc
-        for name in omitted:
-            print(f"archive: absent, not included: {name}", file=sys.stderr)
-        if not getattr(args, "quiet", False):
-            if getattr(args, "json", False):
-                print(json.dumps({"archive": str(args.output), "reports": str(tarball)},
-                                 sort_keys=True))
-            else:
-                print(f"archive: created {args.output}")
-                print(f"reports: {tarball}")
-        if getattr(args, "verbose", False):
-            print(f"archive: reports {tarball}; omitted {len(omitted)} files", file=sys.stderr)
-        return 0
+        from . import ocaml_backend
+        return ocaml_backend.archive(args)
 
 
 def add_toolchain(parser, *, flow_python=False, precheck_python=False):
@@ -269,6 +231,8 @@ def build_parser():
     postcheck.add_argument("run_dir", type=Path)
     postcheck.add_argument("--testbench", required=True, type=Path)
     postcheck.add_argument("--testbench-top", required=True)
+    postcheck.add_argument("--replay-trace", type=Path)
+    postcheck.add_argument("--timeout", type=float, help="optional per-tool timeout in seconds (default: no limit)")
     add_toolchain(postcheck, precheck_python=True)
     add_identity_seam(postcheck)
 
@@ -411,7 +375,7 @@ def validate_waivers(parser, args):
 
 def resolve_paths(parser, args, environ, cwd):
     for name in ("bundle", "run_dir", "runs", "results_root", "output", "archive",
-                 "testbench", "dependency_lock", "toolchain",
+                 "testbench", "replay_trace", "dependency_lock", "toolchain",
                   "support_tools", "pdk_root"):
         if hasattr(args, name):
             setattr(args, name, absolute(getattr(args, name), cwd))
@@ -642,6 +606,13 @@ def main(argv=None, operations=None, environ=None, cwd=None):
             presentation.allocation(value, output=lambda line: print(line, flush=True))
 
     if args.command in ("finalize", "finalization-inspect"):
+        if operations is None:
+            from .ocaml_backend import public_finalization
+            try:
+                return public_finalization(args, cwd, absolute, interpreter_absolute)
+            except OSError as exc:
+                print(f"{args.command}: {exc}", file=sys.stderr)
+                return 2
         from . import finalization, checkpoint
         try:
             if args.command == "finalization-inspect":
@@ -686,8 +657,33 @@ def main(argv=None, operations=None, environ=None, cwd=None):
             return 2
     resolve_paths(parser, args, environ, cwd)
     validate_contract(parser, args)
-    operations = operations or Operations()
     try:
+        if args.command == "execute" and operations is None:
+            Operations.require_p6_5(args)
+            from . import ocaml_backend
+            return ocaml_backend.public_execute(args)
+        if args.command == "run" and operations is None:
+            Operations.require_p6_5(args)
+            from . import ocaml_backend
+            return ocaml_backend.public_run(args)
+        if args.command == "postcheck" and operations is None:
+            Operations.require_p6_5(args)
+            from . import ocaml_backend
+            return ocaml_backend.public_postcheck(args)
+        if args.command == "preflight" and operations is None:
+            Operations.require_p6_5(args)
+            from . import ocaml_backend
+            return ocaml_backend.preflight(args)
+        if args.command == "collect" and operations is None:
+            from . import ocaml_backend
+            return ocaml_backend.public_collect(args)
+        if args.command == "report" and operations is None:
+            from . import ocaml_backend
+            return ocaml_backend.public_report(args)
+        if args.command == "archive" and operations is None:
+            from . import ocaml_backend
+            return ocaml_backend.public_archive(args)
+        operations = operations or Operations()
         if args.command == "execute":
             return execute_sequence(args, operations)
         result = getattr(operations, args.command)(args)

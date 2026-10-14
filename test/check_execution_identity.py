@@ -230,8 +230,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix='execution-installed-', dir='/tmp/opencode') as tmp:
         root = Path(tmp)
         prefix = root / 'prefix'
-        subprocess.run(['dune', 'install', '-j', '20', '--prefix', str(prefix)], cwd=repo, check=True,
-                       stdout=subprocess.DEVNULL)
+        from reference_harness import installed_prefix
+        installed_prefix(repo, prefix)
         consumer = root / 'consumer'
         consumer.mkdir()
         shutil.copyfile(repo / 'test/execution_identity_driver.ml', consumer / 'execution_identity_driver.ml')
@@ -243,7 +243,7 @@ def main():
         # Execution may depend on hardware declarations, never the reverse.
         meta = (prefix / 'lib/hardcaml_asic/META').read_text()
         execution = meta.split('package "execution" (', 1)[1].split('\n)', 1)[0]
-        assert 'requires = "cryptokit hardcaml_asic zarith"' in execution, execution
+        assert 'requires = "cryptokit hardcaml_asic spawn str unix yojson zarith"' in execution, execution
         # Deny any Python reads from the checkout while exercising installed
         # provider helpers and the freshly linked installed-only consumer.
         auditing = True

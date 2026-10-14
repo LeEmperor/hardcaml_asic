@@ -169,7 +169,9 @@ class ObservationTest(unittest.TestCase):
         self.assertEqual(inspected["state"], expected_state)
         entry = "import sys; sys.path.insert(0, sys.argv.pop(1)); from hardcaml_asic_flow.cli import main; sys.exit(main())"
         command = [sys.executable, "-I", "-B", "-c", entry, PACKAGE_ROOT,
-                   "observation", "watch", str(self.writer.directory), "--stream-id", self.writer.stream_id, "--after", "2"]
+                    "observation", "watch", str(self.writer.directory), "--stream-id", self.writer.stream_id, "--after", "2"]
+        if os.environ.get("PUBLIC_FLOW_CLI"):
+            command = [os.environ["PUBLIC_FLOW_CLI"], *command[6:]]
         watched = subprocess.run([*command, "--json"], capture_output=True, text=True, timeout=10)
         self.assertEqual(watched.returncode, 0, watched.stderr)
         envelopes = [json.loads(line) for line in watched.stdout.splitlines()]
@@ -300,6 +302,8 @@ class ObservationTest(unittest.TestCase):
                 stream = state["attempt_id"]
                 # Reader disconnect/reattach occurs through an independent process.
                 command = [sys.executable, "-B", "-m", "hardcaml_asic_flow", "observation", "inspect", str(attempt), "--json"]
+                if os.environ.get("PUBLIC_FLOW_CLI"):
+                    command = [os.environ["PUBLIC_FLOW_CLI"], *command[4:]]
                 read_env = dict(env, PYTHONPATH=PACKAGE_ROOT)
                 live = subprocess.run(command, env=read_env, text=True, capture_output=True, check=True)
                 self.assertTrue(json.loads(live.stdout)["writer_active"])

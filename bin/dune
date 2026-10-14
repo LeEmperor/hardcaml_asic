@@ -1,6 +1,69 @@
 (executable
+ (name experimental_execute)
+ (modules experimental_execute)
+ (public_name hardcaml-asic-experimental-execute)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution unix))
+
+(executable
+ (name experimental_archive)
+ (modules experimental_archive)
+ (public_name hardcaml-asic-experimental-archive)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution unix yojson))
+
+(executable
+ (name experimental_finalization)
+ (modules experimental_finalization)
+ (public_name hardcaml-asic-experimental-finalization)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution unix))
+
+(executable
+ (name experimental_finalization_inspect)
+ (modules experimental_finalization_inspect)
+ (public_name hardcaml-asic-experimental-finalization-inspect)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution unix))
+
+(executable
+ (name experimental_postcheck)
+ (modules experimental_postcheck)
+ (public_name hardcaml-asic-experimental-postcheck)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution unix))
+
+(executable
+ (name experimental_report)
+ (modules experimental_report)
+ (public_name hardcaml-asic-experimental-report)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution unix yojson))
+
+(executable
+ (name experimental_collect)
+ (modules experimental_collect)
+ (public_name hardcaml-asic-experimental-collect)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution unix yojson))
+
+(executable
+ (name experimental_run)
+ (modules experimental_run)
+ (public_name hardcaml-asic-experimental-run)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution unix))
+
+(executable
+ (name experimental_preflight)
+ (modules experimental_preflight)
+ (public_name hardcaml-asic-experimental-preflight)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution unix))
+
+(executable
  (name experimental_observation_read)
- (modules experimental_observation_read observation_watch)
+ (modules experimental_observation_read observation_watch observation_presentation)
  (public_name hardcaml-asic-experimental-observation-read)
  (package hardcaml_asic)
  (libraries hardcaml_asic.execution unix))
@@ -32,3 +95,9 @@
  (public_name hardcaml-asic-experimental-checkpoint-inspect)
  (package hardcaml_asic)
  (libraries hardcaml_asic.execution))
+(executable
+ (name flow_cli)
+ (modules flow_cli flow_cli_args flow_cli_paths flow_cli_identity)
+ (public_name hardcaml-asic-flow)
+ (package hardcaml_asic)
+ (libraries unix yojson))

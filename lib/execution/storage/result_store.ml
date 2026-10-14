@@ -88,7 +88,7 @@ let instant clock =
 
 type allocation = { identity : string; directory : string; created_at : string }
 
-let allocate ?(clock = Unix.gettimeofday) ?(id_factory = uuid) ?(max_attempts = 8) root =
+let allocate ?(clock = Unix.gettimeofday) ?(id_factory = uuid) ?(max_attempts = 8) ?(uuid_directory=false) root =
   if max_attempts < 1 then invalid_arg "max_attempts must be positive";
   let root = resolve (path root) in
   mkdirs root;
@@ -96,7 +96,7 @@ let allocate ?(clock = Unix.gettimeofday) ?(id_factory = uuid) ?(max_attempts = 
     if remaining = 0 then raise (Unix.Unix_error (Unix.EEXIST, "result allocation exhausted", root));
     let stamp, created_at = instant clock in
     let identity = identity (id_factory ()) in
-    let directory = Filename.concat root (stamp ^ "_" ^ String.sub identity 0 8) in
+    let directory = Filename.concat root (if uuid_directory then identity else stamp ^ "_" ^ String.sub identity 0 8) in
     try Unix.mkdir directory 0o777; { identity; directory; created_at } with
     | Unix.Unix_error (Unix.EEXIST, _, _) -> attempt (remaining - 1)
   in
@@ -118,9 +118,8 @@ let record_bytes value =
   in pretty 0 value ^ "\n"
 ;;
 
-let save_json destination value =
+let save_bytes destination bytes =
   let destination = path destination in
-  let bytes = record_bytes value in
   let temporary, oc = Filename.open_temp_file ~mode:[Open_binary]
       ~temp_dir:(Filename.dirname destination) ("." ^ Filename.basename destination ^ ".") "" in
   Fun.protect ~finally:(fun () ->
@@ -128,6 +127,8 @@ let save_json destination value =
     try Unix.unlink temporary with Unix.Unix_error (Unix.ENOENT, _, _) -> ())
     (fun () -> output_string oc bytes; close_out oc; Unix.rename temporary destination)
 ;;
+
+let save_json destination value = save_bytes destination (record_bytes value)
 
 let read_json p =
   let ic = open_in_bin (path p) in

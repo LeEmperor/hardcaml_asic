@@ -41,7 +41,7 @@ val owned_name : unit -> string
 val docker_command
   :  docker -> project:string -> pdk_root:string -> name:string
   -> ?workdir:string -> ?entrypoint:string -> ?pdk:string
-  -> uid:int -> gid:int -> unit -> string list
+   -> ?extra_mounts:string list -> uid:int -> gid:int -> unit -> string list
 (** Prefix only; image ID is authoritative, declared_ref is evidence only.
     Mount syntax rejects colon paths rather than silently mounting another path. *)
 
@@ -53,14 +53,19 @@ val native_invocation
   -> stdout:Process.output -> stderr:Process.output -> invocation
 val docker_invocation
   :  docker -> project:string -> pdk_root:string -> ?workdir:string -> ?pdk:string
-  -> ?entrypoint:string -> interpreter:bool -> arguments:string list
+   -> ?extra_mounts:string list -> ?entrypoint:string -> interpreter:bool -> arguments:string list
   -> cwd:string -> environment:string list -> stdout:Process.output
   -> stderr:Process.output -> unit -> invocation
 (** Fresh owned name per invocation. [interpreter=true] prepends the bound flags
-    and requires the python3 entrypoint; false runs an explicit tool argv.
+     and requires the python3 entrypoint; false runs an explicit tool argv.
+     [extra_mounts] are explicit same-path writable directories, validated with
+     the same absolute/colon restrictions as the main workspace mount.
     Invocations are single-use, including after a failed launch. *)
 
 type removal = { result : Process_supervisor.result; diagnostic : string }
+val metadata_invocation : docker -> arguments:string list -> environment:string list
+  -> stdout:Process.output -> stderr:Process.output -> invocation
+(* Mount-free, read-only, network-disabled metadata probe, with owned cleanup. *)
 type cleanup = { attempts : removal list; error : string option }
 type result = { process : Process_supervisor.result; cleanup : cleanup option }
 val succeeded : result -> bool

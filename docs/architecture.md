@@ -25,7 +25,7 @@ implementation. A successful process is not a signoff verdict.
 
 Implemented: project declaration inspection and shared emission entry point,
 project elaboration, target/constraint resolution, immutable bundles,
-installed Python dispatcher, separate execution IDs, `run.json`, `results.json`,
+installed native OCaml CLI4 composition, separate execution IDs, `run.json`, `results.json`,
 postcheck attempts, operation-aware acceptance and integrity-checked archives;
 default result stores, standalone preflight receipts, human/explicit-JSON CLI 4,
 and project preflight/implementation-run routing.
@@ -42,10 +42,10 @@ or live provider capability.
 ## 2. Responsibilities and dependency direction
 
 **Settled tool-environment ownership:** the installed provider (OCaml library and
-stdlib Python CLI) operates independently of its source checkout. The consumer
+native OCaml CLI) operates independently of its source checkout. The consumer
 owns a configurable tool root, with `_flow_tools/` as the adopted default, holding
 the pinned managed Python/Tcl runtime, LibreLane/precheck venvs and PDK/support
-collateral. Host CLI Python >= 3.9, explicit external Python overrides, OS
+collateral. External bootstrap/probe Python, explicit Python overrides, OS
 libraries/certificates and Docker/Nix stores remain separate. A thin consumer bootstrap delegates to the
 installed provider without copying its pins; provider refresh and tool provisioning
 are separate operations. The example's thin bootstrap and bounded provisioning
@@ -56,11 +56,36 @@ provider refresh is used. See the [current acceptance](phase_plan.md#hostcontain
 | --- | --- |
 | OCaml hardware library (`lib/`) | Resource semantics, project declarations, validated design intent and input emission |
 | OCaml flow domain (`lib/flow/`) | Stage/operation contracts, standard compositions and checked LibreLane mappings |
-| OCaml execution library (`lib/execution/`) and native commands (`bin/`) | Explicit-stage preparation, supervision, publication, records, observation and watch |
-| Transitional installed Python package (`flow/hardcaml_asic_flow/`) | Top-level CLI routing, native LibreLane bridge/probes, and remaining coarse/results/finalization/archive services |
+| OCaml execution library (`lib/execution/`) and native commands (`bin/`) | Public CLI4 parsing/defaults/identity/routing/rendering, all computation services, supervision, publication, records, observation and watch |
+| Thin installed Python runtime (`flow/hardcaml_asic_flow/`) | Exactly nine runtime modules: `__init__`, `backend_protocol`, `librelane_bridge`, `stage_metadata_probe`, `probe`, `runtime_observation`, `runtime_contract`, `managed_python`, `paths`; four packaged data files; provision shell remains independently Python-dependent |
+| Retired Python SOURCE references | Sixteen service/CLI/planner/reader modules retained only for deprecated checkout imports and test oracles; `execution_plan`, `flow_observation`, `IncrementalReader` and related installed imports are a Python API break. Native CLI/OCaml execution APIs replace them; optional `PYTHONPATH=checkout/flow` is not installed support |
 | Hardware project | Design/wrapper semantics, testbench/regressions, declaration, dependency pin and chosen evidence stores |
 | Workbench ASIC adapter | Consume the project's configured public provider interface and translate into feature data |
 | Workbench application | Job supervision, derived catalog/cache, workspace/window/tile state and presentation |
+
+Package 0.1.0 and CLI4 remain unchanged only because the native CLI contracts are
+unchanged. They do not preserve the retired installed Python API.
+
+### Current native execution source map
+
+`lib/execution/dune` defines one public `hardcaml_asic.execution` library with
+`(include_subdirs unqualified)`. Responsibility directories are source organization,
+not new namespaces: all `Hardcaml_asic_execution.*` module names are retained.
+
+| Source directory under `lib/execution/` | Modules / responsibility |
+| --- | --- |
+| Root | `Runner`, `Execution_plan`, `Coarse_execution_service`, `Coarse_run_service`: central planning and orchestration |
+| `storage/` | `Checkpoint`, `Checkpoint_publisher`, `Result_store`: validation, publication and allocation |
+| `observation/` | `Observation`, `Observation_writer`: persisted reader and writer |
+| `results/` | `Collect_service`, `Evidence_json`, `Report_service`, `Postcheck_service`, `Finalization_record`, `Finalization_service`, `Run_record`: collection, evidence decoding, acceptance and records |
+| `archive/` | `Archive_service`, `Archive_encoding`, `Evidence_tar`: archive selection and encoding |
+| `runtime/` | `Identity_json`, `Runtime_contract`, `Runtime_evidence`, `Runtime_probe`, `Execution_transport`, `Process`, `Process_supervisor`, `Preflight_service`: identity, readiness, launch and supervision |
+| `backends/librelane/` | `Backend_protocol`, `Backend_state`, `Classic_contract`, `Segment_report`, `Segment_service`, `Stage_preparation`: narrow native-backend integration |
+
+The three C stubs remain at the library root beside the unchanged foreign-stub
+stanza. Stage domains remain in `lib/flow/stages/`; the hardware library still has
+no execution dependency. Installed resource paths and runtime output layouts are
+unchanged by this source-only organization.
 
 Dependencies remain one-way: hardware project → ASIC library/CLI; Workbench
 adapter → configured project/provider entry point. ASIC never imports Workbench
@@ -262,12 +287,14 @@ and does not advertise partial input as ready; see
 ### Delivered bounded execution and readers
 
 The current explicit-stage implementation uses `Hardcaml_asic_execution` and the
-stage-oriented `Hardcaml_asic_flow_domain` library. The public Python dispatcher
+stage-oriented `Hardcaml_asic_flow_domain` library. The public native OCaml CLI
 execs the installed native command for `stages` and delegates checkpoint/observation
 queries and watch to native readers. There is no silent Python stage fallback.
-The top-level parser and coarse Classic services (implementation, optional
-postcheck, collection, acceptance, optional archive) remain Python-owned pending
-the next migration slices. Coarse collection remains best-effort after failure
+The top-level CLI4 parser, paths/defaults and cold-query human views are native.
+Coarse Classic `execute` uses the installed
+native `Coarse_execution_service`, binding implementation, optional postcheck,
+collection, acceptance and optional archive to the checked plan and shared `Runner`.
+Coarse collection remains best-effort after failure
 without replacing the primary failure. `Flow.Stage` / `Flow.Recipe` are pure typed
 OCaml declarations; the native execution models and retained Python readers
 validate the same schema-3 contract. Stage modules now describe all 80 Classic

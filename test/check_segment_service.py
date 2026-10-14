@@ -315,7 +315,8 @@ def main():
                    Path(__file__).with_name("segment_service_fixture.py"), engine)
             return
         prefix = root / "prefix"
-        subprocess.run(["dune", "install", "-j20", "--prefix", str(prefix)], cwd=repo, check=True, stdout=subprocess.DEVNULL)
+        from reference_harness import installed_prefix
+        installed_prefix(repo, prefix)
         consumer = root / "consumer"
         consumer.mkdir()
         shutil.copyfile(repo / "test/segment_service_consumer.ml", consumer / "segment_service_consumer.ml")

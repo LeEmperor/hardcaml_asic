@@ -118,15 +118,16 @@ let check_name name =
   let n = String.length prefix in
   if String.length name <> n + 32 || not (starts name prefix) || not (hex (String.sub name n 32))
   then invalid "owned container name"
-let docker_command d ~project ~pdk_root ~name ?workdir ?(entrypoint="python3") ?pdk ~uid ~gid () =
+let docker_command d ~project ~pdk_root ~name ?workdir ?(entrypoint="python3") ?pdk ?(extra_mounts=[]) ~uid ~gid () =
   check_name name;
-  List.iter (fun p -> absolute p; if String.contains p ':' then invalid "colon in mount path") [project; pdk_root];
+   List.iter (fun p -> absolute p; if String.contains p ':' then invalid "colon in mount path") ([project; pdk_root] @ extra_mounts);
   let workdir = Option.value workdir ~default:project in
   absolute workdir; nonempty entrypoint; Option.iter text pdk;
   if uid < 0 || gid < 0 then invalid "negative uid/gid";
    [d.executable; "run"; "--rm"; "--pull=never"; "--name"; name; "--cpus=20"]
   @ (if d.rootless then [] else ["--user"; Printf.sprintf "%d:%d" uid gid])
-  @ ["-v"; project ^ ":" ^ project ^ ":rw"; "-v"; pdk_root ^ ":" ^ pdk_root ^ ":ro"; "-w"; workdir]
+   @ ["-v"; project ^ ":" ^ project ^ ":rw"; "-v"; pdk_root ^ ":" ^ pdk_root ^ ":ro"; "-w"; workdir]
+   @ List.concat_map (fun p -> ["-v";p ^ ":" ^ p ^ ":rw"]) extra_mounts
   @ (match pdk with None -> [] | Some p -> ["-e"; "PDK_ROOT=" ^ pdk_root; "-e"; "PDK=" ^ p])
    @ ["-e"; "_OPENLANE_MAX_CORES=20"; "-e"; "OPENROAD_THREADS=20"; "-e"; "OMP_NUM_THREADS=20";
       "--entrypoint"; entrypoint; d.image_id]
@@ -137,17 +138,25 @@ let native_invocation n ~arguments ~cwd ~environment ~stdout ~stderr =
   {process = Process.make ~prog:n.interpreter
        ~argv:(n.interpreter :: flag_list Isolated @ arguments) ~cwd
        ~environment:(clean_environment environment) ~stdout ~stderr; container=None; launched=false}
-let docker_invocation d ~project ~pdk_root ?workdir ?pdk ?(entrypoint="python3")
+let docker_invocation d ~project ~pdk_root ?workdir ?pdk ?extra_mounts ?(entrypoint="python3")
     ~interpreter ~arguments ~cwd ~environment ~stdout ~stderr () =
   if interpreter && entrypoint <> "python3" then invalid "interpreter entrypoint";
   let name = owned_name () in
-  let argv = docker_command d ~project ~pdk_root ~name ?workdir ?pdk ~entrypoint
+   let argv = docker_command d ~project ~pdk_root ~name ?workdir ?pdk ?extra_mounts ~entrypoint
       ~uid:(Unix.getuid ()) ~gid:(Unix.getgid ()) ()
       @ (if interpreter then flag_list d.flags else []) @ arguments in
   {process = Process.make ~prog:d.executable ~argv ~cwd
        ~environment:(clean_environment environment) ~stdout ~stderr;
    container=Some (d,name); launched=false}
 type removal = { result : Process_supervisor.result; diagnostic : string }
+let metadata_invocation d ~arguments ~environment ~stdout ~stderr =
+  let name = owned_name () in
+  let argv = [d.executable; "run"; "--rm"; "--pull=never"; "--network"; "none";
+    "--read-only"; "--cpus=20"; "--name"; name; "--entrypoint"; "python3"; d.image_id]
+    @ flag_list d.flags @ arguments in
+  {process=Process.make ~prog:d.executable ~argv ~cwd:"/"
+    ~environment:(clean_environment environment) ~stdout ~stderr;
+   container=Some (d,name); launched=false}
 type cleanup = { attempts : removal list; error : string option }
 type result = { process : Process_supervisor.result; cleanup : cleanup option }
 let succeeded r = Process_supervisor.succeeded r.process

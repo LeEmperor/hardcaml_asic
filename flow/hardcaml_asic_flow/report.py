@@ -9,9 +9,11 @@ anything is not a pass.
 An unconstrained timing mode counts as a failure on purpose. A "-max" only SDC
 leaves hold with no paths at all, which every individual check reports as fine.
 
-Installed as `hardcaml-asic-flow report`; `scripts/report.py` is the checkout's
-adapter onto this same module. The `--runs` newest-run lookup below belongs to
-that development command line only: the installed contract requires an explicit
+The public `hardcaml-asic-flow report` route now delegates to native
+Report_service. This retained implementation is the differential oracle and the
+transitional Python finalization API; `scripts/report.py` still adapts this
+development command line. Its `--runs` newest-run lookup remains a documented
+compatibility seam until top-level CLI migration: the installed contract requires an explicit
 run directory everywhere, because guessing which run someone meant is how
 evidence gets attached to the wrong attempt.
 

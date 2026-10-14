@@ -57,6 +57,22 @@ with `--plan RECIPE.json`, containing exactly:
 Journaling defaults to `$(dirname "$WORKSPACE")/observations` after resolving the
 workspace. Override with `--observation-store ROOT`, or opt out with the mutually
 exclusive `--no-observation`. Fresh and resumed commands both allocate new streams.
+
+Inspect retained results without running tools:
+
+```sh
+hardcaml-asic-flow report "$WORKSPACE"
+hardcaml-asic-flow report "$CHECKPOINT" --verbose  # every retained Yosys cell type
+hardcaml-asic-flow report "$WORKSPACE/execution-$ATTEMPT_ID.json" --json
+```
+
+Set `CHECKPOINT` to the published checkpoint directory. A workspace must contain
+exactly one direct execution record; otherwise select the exact execution JSON.
+The default cell table shows up to 10 rows; JSON contains the full inventory.
+Retained Yosys statistics are supplementary, explicitly not checkpoint-inventoried;
+missing statistics leave checkpoint metrics visible and invalid statistics produce
+diagnostics. See [read-only reporting](flow.md#read-only-reporting).
+
 The command flushes an early human allocation receipt, then a stage and
 publication summary, and retains `WORKSPACE/execution-<attempt>.json`. Add `--json`
 to the stages invocation for contract-4 allocation/terminal JSONL. Successful

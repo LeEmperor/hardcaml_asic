@@ -63,7 +63,11 @@ This renders exactly schema 3:
   are abstract: callers cannot forge an unchecked record. There is no raw backend
    JSON argument or per-stage settings API.
 
-The installed Python counterpart is `hardcaml_asic_flow.execution_plan`:
+The retired, SOURCE-only Python counterpart is `hardcaml_asic_flow.execution_plan`.
+It is no longer installed: use the typed OCaml API above or native `stages --plan`.
+Optional `PYTHONPATH=/path/to/checkout/flow` permits deprecated reference/oracle
+imports, not installed support. This Python API break leaves package 0.1.0 and
+CLI4 unchanged solely because the CLI contracts are unchanged.
 
 ```python
 from hardcaml_asic_flow.execution_plan import StagePlan, resolve_sequence
@@ -77,7 +81,7 @@ assert StagePlan.from_dict(recipe.as_dict()) == recipe
 schema-2 endpoint/resume readers remain compatible. Schema 3 has exactly
 `schema_version`, `stages`, `initial_boundary`, with null source for fresh recipes.
 
-The standalone Python segment API can resume synthesis directly through placement.
+The SOURCE-only Python segment reference can resume synthesis directly through placement.
 Composable recipes deliberately include floorplan, matching the provider's
 contiguous schema-3 contract. Backend successor checkers remain included: CTS ends
 at `OpenROAD.CTS`, its later STA/repair work begins routing; routing ends at
@@ -243,15 +247,21 @@ From the sibling checkout, compile against that installed library:
 OCAMLPATH="/tmp/asic-recipe-prefix/lib${OCAMLPATH:+:$OCAMLPATH}" dune build -j 20 --build-dir /tmp/asic-recipe-consumer-build bin/stage_recipe/stage_recipe.exe bin/project.exe
 ```
 
-Back in the provider checkout, validate against the installed Python package:
+Back in the provider checkout, validate installed bytes with the test-only source
+oracle separated from runtime resources:
 
 ```sh
-python3 -B test/check_stage_recipes.py --emitter _build/default/test/stage_recipe_contract.exe \
-  --provider-prefix /tmp/asic-recipe-prefix \
-  --consumer-executable /tmp/asic-recipe-consumer-build/default/bin/stage_recipe/stage_recipe.exe
+python3 -B test/test_installed_prefix.py
 ```
 
-The test decodes actual OCaml output in the installed Python provider, compares
+For a separate specimen run, `check_stage_recipes.py --provider-prefix PREFIX
+--consumer-executable EXE --emitter EXE` requires `FLOW_TEST_REFERENCE_ROOT` from
+`test/reference_harness.copy_reference(checkout/flow, private_reference, PREFIX/lib/hardcaml_asic/flow)`
+and `FLOW_TEST_RUNTIME_ROOT=PREFIX/lib/hardcaml_asic/flow`. The reference must live
+outside the checkout/prefix; runtime links resolve to actual installed bytes.
+Missing explicit roots fail instead of searching a checkout.
+
+The test decodes actual OCaml output using the SOURCE-only reference, compares
 capabilities and ordered handoffs, checks all length-0-through-3 candidate sequences
 for every source, all endpoint expansions (including long sequences), composition,
 provider mismatch rejection, installed checkpoint inspection and independently

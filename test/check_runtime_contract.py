@@ -205,7 +205,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix="runtime-contract-", dir="/tmp/opencode") as temporary:
         root = Path(temporary)
         prefix = root / "prefix"
-        subprocess.run(["dune", "install", "-j20", "--prefix", str(prefix)], cwd=repo, check=True, stdout=subprocess.DEVNULL)
+        from reference_harness import installed_prefix
+        installed_prefix(repo, prefix)
         consumer = root / "consumer"
         consumer.mkdir()
         shutil.copyfile(repo / "test/runtime_contract_consumer.ml", consumer / "runtime_contract_consumer.ml")

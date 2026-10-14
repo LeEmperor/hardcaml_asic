@@ -59,6 +59,8 @@ class Fixture:
 
     def invoke(self, arguments, live=False, **kwargs):
         launcher = os.environ.get("PUBLIC_FLOW_CLI")
+        if os.environ.get("FLOW_TEST_RUNTIME_ROOT") and not launcher:
+            raise ValueError("installed public tests require PUBLIC_FLOW_CLI")
         argv = ([launcher] if launcher else [sys.executable, "-I", "-B", "-c",
             "import sys;sys.path.insert(0,sys.argv[1]);from hardcaml_asic_flow.cli import main;sys.exit(main(sys.argv[2:]))",
             str(PACKAGE_ROOT)]) + arguments

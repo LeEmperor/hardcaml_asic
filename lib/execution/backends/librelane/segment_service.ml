@@ -104,14 +104,16 @@ let process_error (r:T.result) =
   | Process_supervisor.Timed_out -> Runner.failure ~exit_code:124 ~secondary "backend execution timed out"
   | Process_supervisor.Failed s -> Runner.failure ~secondary s
   | Process_supervisor.Exited _ -> Runner.failure ~secondary "backend transport cleanup failed"
-let verify_reply request =
+let verify_reply_internal request =
   regular request.B.reply_path;
   let reply = checked (B.reply_of_json ~request (read_json request.reply_path)) in
   (match reply.outcome with B.Failed s -> fail ("backend reply failed: " ^ s) | B.Completed | B.Validated -> ());
   List.iter (fun (_, (a:B.artifact)) -> regular a.path;
     let actual = checked (Checkpoint.file_record a.path) in
     if actual.sha256 <> a.sha256 || actual.bytes <> a.bytes then fail ("backend artifact mismatch: " ^ a.path)) reply.artifacts;
-  reply
+   reply
+let verify_reply request = try verify_reply_internal request with
+  | Service_error e -> raise (Runner.Callback_error e)
 let write_fresh p j =
   let fd = Unix.openfile p [Unix.O_WRONLY;Unix.O_CREAT;Unix.O_EXCL] 0o600 in
   let oc = Unix.out_channel_of_descr fd in

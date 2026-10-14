@@ -11,10 +11,15 @@ import signal
 import subprocess
 import sys
 import tempfile
+from reference_harness import copy_reference, hardlink_prefix, thin_prefix, ENTRY
 
 
 def verify(emitter, package_root, root, fixture):
-    sys.path.insert(0, str(package_root))
+    if Path(package_root).parts[-3:] == ("lib", "hardcaml_asic", "flow"):
+        from reference_harness import activate
+        activate(runtime_root=package_root)
+    else:
+        sys.path.insert(0, str(package_root))
     from hardcaml_asic_flow import backend_protocol as p, stages, checkpoint as cp, execution_plan, runner
     cases = []
     counts = [0, 0]
@@ -293,8 +298,12 @@ def main():
             verify(args.emitter.resolve(), package, root, Path(__file__).with_name("bridge_protocol_fixture.py"))
             return
         prefix = root / "prefix"
-        subprocess.run(["dune", "install", "-j20", "--prefix", str(prefix)], cwd=repo,
-                       check=True, stdout=subprocess.DEVNULL)
+        subprocess.run(["dune", "build", "-j20", "@install"], cwd=repo,
+                        check=True, stdout=subprocess.DEVNULL)
+        hardlink_prefix(repo / "_build/install/default", prefix)
+        package = prefix / "lib/hardcaml_asic/flow"
+        reference = copy_reference(repo / "flow", root / "oracle", package)
+        thin_prefix(prefix)
         consumer = root / "consumer"
         consumer.mkdir()
         shutil.copyfile(repo / "test/backend_protocol_driver.ml", consumer / "backend_protocol_driver.ml")
@@ -305,18 +314,13 @@ def main():
         subprocess.run(["dune", "build", "-j20", "backend_protocol_driver.exe"], cwd=consumer, env=env, check=True)
         fixture = root / "bridge_protocol_fixture.py"
         shutil.copyfile(repo / "test/bridge_protocol_fixture.py", fixture)
-        auditing = True
-        def audit(event, values):
-            if auditing and event == "open" and isinstance(values[0], (str, bytes, os.PathLike)):
-                path = Path(os.fsdecode(values[0])).resolve()
-                if path.is_relative_to(repo):
-                    raise AssertionError("checkout read in installed protocol test: " + str(path))
-        sys.addaudithook(audit)
-        try:
-            verify(consumer / "_build/default/backend_protocol_driver.exe",
-                   prefix / "lib/hardcaml_asic/flow", root, fixture)
-        finally:
-            auditing = False
+        for name in ("check_backend_protocol.py", "reference_harness.py"):
+            shutil.copyfile(repo / "test" / name, root / name)
+        env.update(FLOW_TEST_REFERENCE_ROOT=str(reference), FLOW_TEST_RUNTIME_ROOT=str(package))
+        subprocess.run([sys.executable, "-I", "-B", "-c", ENTRY, str(repo),
+                        str(root / "check_backend_protocol.py"), "--emitter",
+                        str(consumer / "_build/default/backend_protocol_driver.exe"),
+                        "--provider-prefix", str(prefix)], cwd=root, env=env, check=True)
         print("independently installed protocol consumer and isolated bridge passed outside checkout")
 
 

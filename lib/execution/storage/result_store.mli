@@ -22,7 +22,8 @@ type allocation = private
     Failed allocations never delete or overwrite collision paths. Root parents
     are created and resolved through symlinks as Python Path.resolve does. *)
 val allocate : ?clock:(unit -> float) -> ?id_factory:(unit -> string)
-  -> ?max_attempts:int -> string -> allocation
+  -> ?max_attempts:int -> ?uuid_directory:bool -> string -> allocation
+(* [uuid_directory=true] retains the historical checks/<uuid-hex> layout. *)
 
 val record_bytes : Identity_json.t -> string
 
@@ -30,6 +31,9 @@ val record_bytes : Identity_json.t -> string
     errors. Parent must exist. Deliberately replaces the caller-selected entry,
     including a symlink itself (never its referent). *)
 val save_json : string -> Identity_json.t -> unit
+(* Same atomic publication primitive for explicitly scoped evidence codecs.
+   Bytes are not validated, canonicalized, or hashed. *)
+val save_bytes : string -> string -> unit
 val read_json : string -> (Identity_json.t, Identity_json.error) result
 
 (** Explicit output validation only: absolute lexical path, existing writable

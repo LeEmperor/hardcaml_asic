@@ -17,11 +17,31 @@ OCaml facade to the opt-in schema-3 stage provider, see
 [OCaml stage declarations and recipes](ocaml-stage-recipes.md), including
 composition, the specimen recipe command and read-only `checkpoint-inspect`.
 
-The P3 bundle is immutable input. `scripts/phase4.py` is an external consumer:
+The P3 bundle is immutable input. The native `hardcaml-asic-flow` is an external consumer:
 it verifies the emitted file hashes and pinned target references, creates a
 unique run directory for each attempt, executes LibreLane, and collects results
 from either new or existing run directories. It does not install tools or change
 `manifest.json`.
+
+## Installed Python API retirement
+
+The thin installation ships only `__init__`, `backend_protocol`, `librelane_bridge`,
+`stage_metadata_probe`, `probe`, `runtime_observation`, `runtime_contract`,
+`managed_python` and `paths`, plus the four existing runtime data files.
+The installed Python planner, runner, checkpoint, observation reader, collector,
+reporter and archiver APIs are retired. This is a **Python API break**, including
+previously advertised `execution_plan`, `flow_observation` and `IncrementalReader`
+imports. Package **0.1.0** and CLI contract **4** remain unchanged because the
+native CLI contracts remain unchanged; those numbers do not promise Python API
+compatibility.
+
+Use `hardcaml-asic-flow` commands or the typed `hardcaml_asic.execution` OCaml
+library (`Hardcaml_asic_execution.Execution_plan`, `Runner`, `Checkpoint`,
+`Observation` / `Observation.Reader` and native service modules). Deprecated reference/oracle
+sources remain available optionally with `PYTHONPATH=/path/to/checkout/flow`.
+That is SOURCE-only access, not equivalent installed support.
+`scripts/{phase4,report,archive}.py` invoke those source references; the public
+native command has a separate OCaml implementation.
 
 <a id="default-result-store-and-cli-contract-3"></a>
 ## Default result store and CLI contract 4
@@ -91,7 +111,7 @@ archive, full acceptance or project `execute` operation.
 | Installed `preflight BUNDLE` | `<results-root>/operations/<UTC-timestamp>_<id-prefix>/{operation,preflight}.json` | `--results-root DIR`, `--output FILE`, `--json` |
 | Project/installed `run` | New `<results-root>/runs/<UTC-timestamp>_<id-prefix>` with full random run ID in `run.json` | Required `--stage synthesis\|full`; `--runs DIR` overrides the run store |
 | Installed `collect RUN` | Writes `RUN/results.json`, prints its path | `--output FILE`; `--json` still writes normally; legacy `--stdout` emits read-only JSON |
-| Installed `report RUN` | Read-only acceptance summary | `--json` emits results, verdict/diagnostics on stderr; exit remains acceptance status |
+| Installed `report TARGET` | Read-only coarse acceptance or stage evidence summary | Coarse `--json` retains raw results and acceptance exit; stage `--json` emits one `hardcaml-asic.report` envelope |
 | Installed `execute BUNDLE` | Existing fixed run → optional full postcheck → collect → report → optional archive | Required stage; `--json` selects the sequence payload; no project counterpart |
 | Installed `archive RUN` | Explicit `--output DIR` creates archive, or human `--list` reads selection | `--json --output DIR` supported; `--json --list` explicitly unsupported |
 
@@ -127,7 +147,57 @@ journal; default CLI-stage observation is a separate bounded interface below.
 
 ## Explicit sequential stages and checkpoints
 
-The shared `execution_plan` / `runner` modules retain the coarse Classic sequence
+### Read-only reporting
+
+```sh
+hardcaml-asic-flow report "$WORKSPACE"
+hardcaml-asic-flow report "$CHECKPOINT"
+hardcaml-asic-flow report "$CHECKPOINT" --verbose  # complete cell-type table
+hardcaml-asic-flow report "$WORKSPACE/execution-ATTEMPT.json" --json
+```
+
+`report TARGET` accepts an existing coarse run, checkpoint directory, stage
+workspace containing exactly one **direct** `execution-*.json`, or explicit
+segmented Runner execution JSON (plan schema 2/3). Conflicting structural markers,
+malformed selected evidence and multiple executions are errors; select an explicit
+execution file for multi-attempt workspaces. Discovery never scans recursively or
+chooses the newest record. Observation directories use `observation inspect`.
+
+Stage reports validate checkpoint inventory, hashes and host closure without
+tool calls or writes. Query success exits **0**, including recorded failed,
+interrupted or incomplete executions; malformed targets or invalid checkpoint
+evidence exit **2**. Acceptance and external postcheck remain `not_evaluated`.
+Checkpoint-only reports have no invented attempt duration or requested completion.
+Physical `full` requires a selected, completed signoff occurrence and its validated
+publication; it does not imply acceptance or successful outer execution.
+
+Stage `--json` emits one object with contract `hardcaml-asic.report`, schema 1,
+target/selected record, original validated execution (or null), completion,
+checkpoints, provenance, availability-wrapped metrics and diagnostics. Human
+output goes to stderr in JSON mode, otherwise stdout. All public checkpoint
+metrics are retained; unknown units stay unknown, invalid counts stay unavailable.
+Metrics describe the accumulated boundary snapshot, not measurements necessarily
+made in that stage. Recorded target/corner context is not measurement attribution.
+The coarse run human output, raw-results JSON and acceptance exits **0/1/2** retain
+their existing contract. See [slice notes](../development/checkpoint-reporting.md).
+
+When the selected checkpoint's inventoried `segment.json.run_dir` retains
+`06-yosys-synthesis/reports/stat.json`, the stage report also shows Yosys's actual
+cell-type inventory and sequential cell area in µm². The default table shows the
+10 largest counts (ties sorted by name), with type count and total; `--verbose`
+shows every row and `--json` always includes the complete sorted map. Numbers use
+grouped decimal formatting in the human summary. Cell names are not interpreted
+as classes or sequential counts.
+
+Each `supplementary` entry records `kind: yosys_stat`, exact path, raw-byte SHA-256,
+creator/tool, area values/units and inventory, explicitly labelled **retained
+producer report; not checkpoint-inventoried**. This does not extend checkpoint
+validation or attribute a measurement corner. Missing retained reports are optional;
+malformed, duplicate-key, nonfinite or inconsistent reports produce diagnostics
+without replacing checkpoint metrics or failing a valid checkpoint query. No
+producer/observation search, tool invocation or source refresh is performed.
+
+The OCaml `Execution_plan` / `Runner` modules own the coarse Classic sequence
 and also execute opt-in stage plans. Preflight binds runtime once; each stage runs
 in a fresh owned process/toolbox and publishes a checkpoint before its occurrence
 can complete. StagePlan schema 3 has exactly these fields:
@@ -141,7 +211,7 @@ Fresh sequences start at synthesis; resumed sequences start immediately after
 duplicate JSON keys are rejected. `--plan FILE` and `--endpoint STAGE` are mutually
 exclusive; endpoint shorthand expands a contiguous sequence. With `--checkpoint`,
 endpoint shorthand infers its source. Legacy schema-2 endpoint/resume JSON remains
-readable, with resumed source synthesis. Python callers use
+readable, with resumed source synthesis. SOURCE-only Python references use
 `execution_plan.resolve_sequence(stages, initial_boundary=...)`,
 `resolve_stages(endpoint, ...)` or `StagePlan.from_dict`; OCaml callers use
 [`Flow.Stage` / `Flow.Recipe`](ocaml-stage-recipes.md).
@@ -155,7 +225,7 @@ readable, with resumed source synthesis. Python callers use
 | routing | `OpenROAD.DetailedRouting` | `Odb.RemoveRoutingObstructions` | signoff |
 | signoff | `Misc.ReportManufacturability` | none | none |
 
-`stages.SegmentAdapter.run_segment` supplies the standalone direct synthesis →
+The SOURCE-only `stages.SegmentAdapter.run_segment` reference supplies the standalone direct synthesis →
 placement capability; recipes include floorplan. CTS's later STA/repair is in
 routing; routing checkers/fill/extraction are in signoff. Official Classic gates
 and successors remain intact. There is no arbitrary DAG/custom-step/settings API.
@@ -260,9 +330,11 @@ responses), publication paths, omitted count and an explicit complete-response c
 empty reads do not imply completion. These read commands
 need no tools, a PDK, or original producer process. `describe` returns the contract
 `hardcaml-asic.stage-observation`, `schema_version: 2`, `supported_schema_versions: [1, 2]`, capabilities, closed field
-descriptions under `schemas`, writer and retention policies. Python callers can use
-the installed `hardcaml_asic_flow.flow_observation.describe()`, `inspect(directory)`
-and `read_updates(directory, stream_id=..., after=...)` directly. For an efficient
+descriptions under `schemas`, writer and retention policies. Use native observation
+commands or OCaml `Hardcaml_asic_execution.Observation` / `Observation.Reader`. The historical
+`hardcaml_asic_flow.flow_observation.describe()`, `inspect(directory)` and
+`read_updates(directory, stream_id=..., after=...)` are SOURCE-only references.
+For an efficient
 foreground follow use `observation watch` below. `inspect` supplies a consistent recorded prefix and
 its cursor; concurrent later events can be fetched after that cursor. Reader calls
 do not acknowledge execution, append events, repair records, or acquire ownership.
@@ -308,7 +380,8 @@ Persist your own stream/cursor only after processing an entire updates envelope;
 delivery is cursor-based, without acknowledgements or an exactly-once promise.
 
 `--interval` must be positive and finite, defaults to 0.5 seconds and controls idle
-polling. Python API: `IncrementalReader(directory, *, stream_id=None, after=None)`;
+polling. The retired SOURCE-only Python reference is
+`IncrementalReader(directory, *, stream_id=None, after=None)`;
 `poll()` returns `(updates, status)` dictionaries **without** envelope `event`
 fields. Each poll returns updates even when empty; the CLI suppresses empty updates.
 The constructor fully validates once; polls stat the cached prefix and read/hash/

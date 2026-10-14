@@ -1,9 +1,11 @@
 # hardcaml_asic phase plan
 
-Current checkpoint: 2026-10-14 OCaml-owned explicit-stage execution and stage-domain
-decomposition are implemented and physically verified; see the
-[active infrastructure refactor](#ocaml-first-flow-infrastructure). The broader
-OCaml migration and modularized-flow feature remain separate remaining work.
+Current checkpoint: 2026-10-14 native public CLI and provider-service migration
+are delivered, including coarse execution, collection/reporting, postcheck,
+finalization and archives. Installed Python is limited to backend/probe/bootstrap
+resources. See the [active infrastructure refactor](#ocaml-first-flow-infrastructure).
+Finer per-operation backend execution and modularized flow-file/profile support
+remain separate remaining work.
 
 Prior checkpoint: 2026-10-13 bounded explicit-stage implementation, independent
 review and documentation closeout delivered. Coarse runner, six sequential physical
@@ -21,8 +23,8 @@ other proposed work retains its recorded scope.
 
 ## OCaml-first flow infrastructure
 
-Authorized 2026-10-13 and implemented through the native explicit-stage milestone
-on 2026-10-14. The [design](flow-infrastructure-refactor.md) gives the destination;
+Authorized 2026-10-13 and implemented through native public CLI/services and thin
+runtime installation on 2026-10-14. The [design](flow-infrastructure-refactor.md) gives the destination;
 the [slice record](development/flow-infrastructure-progress.md) retains APIs,
 commands, independent review findings/fixes, and verification.
 
@@ -40,6 +42,16 @@ commands, independent review findings/fixes, and verification.
   to OCaml. The Python bridge remains responsible for native LibreLane API calls.
 - Schema-2 journals and schema-1 readers, actual transport evidence, and retained
   public command/exit conventions. Completed cleanup avoids unnecessary retry waits.
+- Native standalone preflight, coarse run/execute, collection, reporting/acceptance,
+  external postcheck orchestration, finalization/inspection, and archive services.
+  LibreLane and TT implementations remain external and unchanged.
+- Native public `hardcaml-asic-flow` parsing, path resolution, metadata and routing.
+  Responsibility directories now organize storage, observation, results, archives,
+  runtime and backend integration while preserving public OCaml module names.
+- Reduced installation: nine Python backend/probe/bootstrap modules and four data
+  files. Sixteen retired Python service modules remain source-only references.
+  Their installed imports are explicitly retired; CLI4 remains supported. The
+  example's validator/tests/docs now recognize the native installation.
 
 Verification: `dune runtest -j 20 --force` passed; installed-prefix suite passed
 57 tests, with focused installed cross-language/consumer checks. A fresh private
@@ -55,23 +67,32 @@ The consumer recorded pin and normal activation are unchanged; the verified
 private generation and exact commands are in the evidence. Source-artifact
 stamping, cross-machine portability, and committed-pin adoption remain separate.
 
+Subsequent reduced-install verification passed a fresh public native synthesis
+`execute` through collection, acceptance and archive publication, then new native
+external finalization/acceptance of the retained complete six-stage execution.
+TT precheck and the 11,429-row replay passed in 689.6 seconds; this was not a
+repeat of physical implementation. All 1,205 historical evidence files remained
+unchanged. See [reduced-install integration](../evidence/librelane-observation/reduced-install-real-integration.json).
+The forced full provider regression passed after service/packaging/source moves.
+An additional review then found an outer preflight cancellation/publication
+failure: its focused source and fresh installed tests now pass 24 report
+differentials and 72 terminal-publication cancellation cases. The earlier physical
+evidence remains its original byte snapshot; see
+[the separate correction](../evidence/librelane-observation/preflight-terminal-publication.json).
+
 ### Remaining dependency-ordered work
 
-Continue with one bounded implementation owner per dependent slice:
+Continue with one bounded implementation owner per dependent slice; independent
+read-only review may run alongside an implementation owner. Serialize Dune builds
+with `-j 20` and keep external-tool resource limits within the same budget.
 
-1. Migrate coarse `run`/`execute` and standalone preflight services to the existing
-   OCaml execution primitives; preserve current run records and failure precedence.
-2. Migrate collection, external postcheck, acceptance/reporting, finalization, and
-   archive responsibilities in separate dispatches with historical-reader parity.
-3. Move top-level CLI composition/presentation to OCaml; retire replaced Python
-   implementations after installed/public coverage. Preserve one authoritative
-   writer throughout the transition.
-4. Expand the hybrid layout for storage/results/observation and other established
-   responsibilities without coupling source moves to schema changes.
-5. Add bounded per-operation backend invocation, starting with the validated
+1. Add bounded per-operation backend invocation, starting with the validated
    placement sequence. Prove physical equivalence and required checks/gates;
    independent step checkpoints need separate evidence.
-6. Repeat integration only for changed boundaries and close out the full
+2. Finish any useful hardware/project/resource directory organization separately
+   from behavioral changes. Retained Python reference relocation/removal is
+   optional test-maintenance work, not a production dependency.
+3. Repeat integration only for changed boundaries and close out the full
    infrastructure refactor. Then design/implement the later modularized flow-file
    and profile feature, including configuration identity and lineage-aware reuse.
 

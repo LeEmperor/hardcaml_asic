@@ -7,8 +7,8 @@ This is the detailed implementation/evidence record for the
 
 ## Current milestone at a glance
 
-**Delivered:** public CLI4 `stages`, checkpoint inspection, observation queries,
-and foreground watch now use OCaml implementations. The explicit-stage execution
+**Delivered:** public CLI4 aggregate `execute`, coarse `run`, external `postcheck`, `collect`, `report`/acceptance, curated `archive`/read-only archive selection, segmented `finalize`/historical `finalization-inspect`, standalone `preflight`, `stages`, checkpoint inspection,
+observation queries, and foreground watch now use OCaml implementations. The explicit-stage execution
 path owns preparation, runtime binding, process/container supervision, protocol
 validation, checkpoint publication, run records, and schema-2 journaling in OCaml.
 The focused Python bridge invokes LibreLane's native configuration/state/flow APIs.
@@ -19,22 +19,1198 @@ The focused Python bridge invokes LibreLane's native configuration/state/flow AP
 - `lib/flow/analysis/`: shared timing analysis contracts.
 - `lib/flow/backends/librelane/`: the maintained 80-occurrence backend mapping.
 - `lib/execution/`: the installed `hardcaml_asic.execution` library and typed APIs.
+  Central runner/plan and coarse orchestration remain at the root; `storage/`,
+  `observation/`, `results/`, `archive/`, `runtime/` and `backends/librelane/`
+  group implementation sources. See the [current module map](../architecture.md#current-native-execution-source-map).
 - `bin/`: installed native command implementations, retaining experimental helper
   names behind the public routing layer.
-- `flow/hardcaml_asic_flow/ocaml_backend.py`: explicit transitional public routing.
+- `bin/flow_cli{,_args,_paths,_identity}.ml`: native public CLI4 owner.
+- `flow/hardcaml_asic_flow/ocaml_backend.py`: retired SOURCE-only compatibility/oracle routing.
 
 **Verified:** forced full provider regression, independent installed-prefix and
-consumer tests, and a fresh six-stage physical execution followed by separate
-external acceptance. The current mapping, default journal/watch, transport records,
-20-CPU bound, and actual checkpoint handoffs were exercised. See
-[curated final evidence](../../evidence/librelane-observation/native-final-integration.json).
+consumer tests, and the earlier fresh six-stage physical execution with separate
+external acceptance. Subsequent reduced-install verification exercised fresh native
+coarse synthesis/collection/report/archive and new native external acceptance of
+the retained six-stage result. The final preflight error-path correction has its
+own source/installed tests; it did not repeat physical implementation. See
+[physical-stage evidence](../../evidence/librelane-observation/native-final-integration.json),
+[reduced-install evidence](../../evidence/librelane-observation/reduced-install-real-integration.json),
+and [terminal-publication correction](../../evidence/librelane-observation/preflight-terminal-publication.json).
 
-**Remaining:** top-level CLI parsing, coarse command services, results/finalization,
-and archive migration; broader directory reorganization; finer per-operation
+**Remaining:** retained SOURCE-only reference cleanup and hardware/project/resource
+directory reorganization; finer per-operation
 backend invocation. Stage decomposition currently describes and validates trusted
 Classic sequences, not new fine-grained checkpoint boundaries. Modularized
 flow-file/profile support remains deferred. Later sections retain the chronological
 slice results and superseded intermediate limitations.
+
+## Unified native reporting slice 1 (2026-10-14)
+
+Delivered `report TARGET` for coarse runs, stage checkpoints, single-execution
+workspaces and explicit segmented execution JSON. Dedicated installed
+`Stage_execution_record` and `Stage_report_service` APIs validate read-only host
+evidence and project accumulated metric snapshots; stage query success is separate
+from recorded execution outcome and acceptance. Coarse reporting is unchanged.
+Focused source/installed tests and the supplied real synthesis workspace preview
+passed; 112 retained files were unchanged by SHA-256, size and mtime. See the
+[bounded implementation and slice-2 handoff](checkpoint-reporting.md).
+
+## Final P1 terminal preflight publication correction (2026-10-14)
+
+**PASS:** review confirmed that runtime-probe cancellation retention worked, but
+`Preflight_service.run` reset the outcome and rethrew when terminal report storage
+failed. The outer service now returns publication diagnostics and truthful
+`report_published`/`receipt_published` flags. SIGINT/SIGTERM retain **130/143**
+across failed `preflight.json`, `operation.json`, or both; readiness/process
+failure retains **1**, and otherwise-successful probing with failed terminal
+storage becomes **Failed/2**. Preallocation/pending-write errors still escape as
+CLI **2**. Helpers label unpublished paths instead of claiming terminal records.
+Writable reports disclose receipt errors; corrupted destinations stay untouched.
+Unavailable storage may leave pending/stale bytes: the returned report/CLI output
+can be the only terminal evidence, and no failed receipt data is fabricated.
+
+Verification: sequential `dune build -j20 @test/ocaml-preflight` and
+`dune build -j20 @install` passed. A fresh self-cleaning hardlinked reduced prefix
+then passed `python3 -B test/check_preflight.py --installed`, including an
+independently linked typed consumer and actual native public/helper CLIs with the
+provider checkout hidden by bubblewrap (read-only root; only own temporary tree
+writable), plus Python checkout-open denial. Each suite covers **24 exact report
+differentials and 72 terminal-publication cancellation cases**, native and Docker
+host/container interruption, report/receipt/both corruption, explicit output,
+non-writable operation root with pending records, preallocation failures,
+non-cancel precedence, ownership markers and no later probes after interruption.
+The earlier probe-evidence corruption/cleanup checks also pass.
+
+Disk-limited installed-link attempts were retried after removing two generated
+test executables; only the disposable linked consumer strips debug sections.
+The accepted real-integration prefix and evidence remain retained. The real
+reduced-install acceptance below is a **pre-correction byte snapshot**, not a run
+of these corrected helper bytes; physical acceptance was not repeated. See the
+[separate correction evidence note](../../evidence/librelane-observation/preflight-terminal-publication.json).
+
+## Final real reduced-install integration (2026-10-14)
+
+**PASS:** one private prefix hardlinked from current install staging, containing
+only the production Python-nine/data-four allowlist, passed the actual sibling
+consumer validator (ocamlfind and independent Dune linkage), fresh isolated
+`@all @acceptance-strict` build and consumer runtest. Every Dune invocation was
+sequential `-j20`. Consumer pin and normal activation stayed unchanged; its three
+existing validator/docs/test tracked changes were retained.
+
+Actual public native standalone preflight passed, then `execute --stage synthesis`
+ran the existing emitted consumer bundle, collected results, obtained report
+acceptance and published a curated archive. Independent tarfile reopen verified
+all **26 report / 21 input** member hashes against source bytes and normalized
+input metadata/order. Acceptance here is **synthesis only**.
+
+The current installed bridge/protocol hashes first matched the retained exact-image
+closure. NEW native `finalize --accept` completed in **689.574 seconds**, including
+real external TT precheck (**669.043 seconds**), native postcheck gate replay
+(**11,429 rows**) and native report acceptance **pass**. This revalidated and
+accepted the retained COMPLETE six-stage execution under
+`/tmp/opencode/native-final-integration`; **physical implementation was not rerun**.
+All **1,205** snapshotted historical run/journal/accepted-operation files remained
+byte-identical, with the journal at its original path.
+
+Eleven actual cold public help/metadata/readers/collect-stdout/report/archive-list
+queries passed with the provider checkout hidden by bubblewrap, read-only root,
+empty Python PATH and denied PYTHONPATH. Kernel file/process traces showed no
+provider-source opens or Python exec. Native finalization inspection covered both
+new and historical accepted receipts. Host CPU affinity was 0–19, native container
+quota/tool thread settings 20; finalization outer deadline 2,400 seconds.
+
+Exact commands, runtime/path binding, artifact/reopen hashes and acceptance scopes:
+[curated JSON](../../evidence/librelane-observation/reduced-install-real-integration.json).
+Detailed logs/inventories and NEW outputs remain under
+`/tmp/opencode/current-real-verification`. Own disposable consumer/validator builds
+were removed after dependency accounting; the hardlinked runtime prefix remains
+because new validation records bind its exact paths. Free space recovered to
+**749,867,008 bytes (~715 MiB)**. No production edits, provider rebuild/forced-suite
+repeat, spawning or live Git mutations occurred. Earlier orchestrator forced full
+runtest PASS remains the provider regression evidence. Source/artifact stamping,
+relocation and restart promises remain outside this acceptance scope.
+
+## Completed mechanical native execution organization (2026-10-14)
+
+Moved 29 implementation/interface pairs into responsibility subdirectories, with
+all source bytes and module basenames retained. `lib/execution/dune` adds only
+`(include_subdirs unqualified)` for this slice; one public execution library,
+dependencies and foreign-stub compilation remain intact. Runner, execution plan,
+coarse orchestration and the three C stubs stay at the root. No test inventory,
+runtime resource lookup or installed namespace adjustment was required.
+The [proposal destination status](../flow-infrastructure-refactor.md#5-proposed-hybrid-source-layout)
+and [architecture module map](../architecture.md#current-native-execution-source-map)
+describe the current layout; later entries retain historical paths and chronology.
+
+**Verification:** all 58 moved files matched the pre-move current build-tree
+sources byte-for-byte (`git diff --no-index`). `dune build -j20 @all @install`
+passed, followed by 24 focused native aliases covering storage, observation,
+collection/report/postcheck/finalization, archive/encoding, identity/runtime,
+transport/supervision/preflight, backend contracts, preparation/segment service,
+plans and central/coarse runners. This includes 12 retained historical checkpoints,
+51 publication checks, 628 runner cases and 22 real process-supervision cases.
+Installed checks passed sequentially:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -B test/check_stage_preparation.py --installed
+PYTHONDONTWRITEBYTECODE=1 python3 -B test/check_thin_install.py --consumer-script /home/wayne/devel/jane/hardcaml_asic_example/scripts/asic_dependency.py
+PYTHONDONTWRITEBYTECODE=1 python3 -B test/check_native_cli.py
+git diff --check  # provider and sibling consumer checkouts
+```
+
+The preparation smoke independently compiled the public execution-library
+consumer and passed 51 pipeline checks with checkout reads denied. Thin-prefix
+integration passed ocamlfind/Dune consumer linkage, archive/encoding consumers,
+runtime inventory/imports and cold native CLI checks; the native CLI corpus passed
+10 presentation differentials and 24 contract negatives including Python/source
+denial. Current build and disposable hardlinked installs only; all Dune commands
+were sequential `-j20`, with no EDA or full forced-suite rerun. Final disk free
+space was approximately 753 MiB; existing evidence was preserved.
+
+## Completed bounded thin Python installation (2026-10-14)
+
+**Production:** `flow/dune` now ships exactly nine Python modules (`__init__`,
+`backend_protocol`, `librelane_bridge`, `stage_metadata_probe`, `probe`,
+`runtime_observation`, `runtime_contract`, `managed_python`, `paths`) and the
+existing four data files (`toolchain.sh`, `toolchain.lock`, `managed-python.json`,
+generated `version.txt`). All sixteen retirement candidates listed by
+`test/reference_harness.RETIRED` were removed from installation, with SOURCE
+retained. Native `bin/flow_cli.exe` owns public `hardcaml-asic-flow`; no upstream
+LibreLane/TT tooling was rewritten. Provision shell still requires its external
+host Python/runtime-nine helpers independently of native CLI dispatch.
+
+**Compatibility:** active flow, recipe, installation and architecture guides now
+explicitly state the installed Python API break, including the formerly advertised
+`execution_plan`, `flow_observation`, `IncrementalReader` and service APIs.
+Native CLI/typed OCaml execution APIs are the replacements. Optional
+`PYTHONPATH=checkout/flow` is deprecated SOURCE-only reference access, not installed
+support. `scripts/{phase4,report,archive}.py` and package description now identify
+the references honestly. Package **0.1.0** and CLI **4** remain unchanged only
+because CLI contracts remain unchanged; this does not preserve Python API support.
+Dune's version comment names the native metadata reader, not installed identity.py.
+
+**Standalone migration complete:** the exact previous handoff list below is now
+covered by thin installation. `installed_prefix` uses private hardlinks, an explicit
+copied oracle and installed runtime links; copied drivers import their copied
+shared helper. Nested preflight/postcheck/coarse compatibility subprocesses also
+activate the harness, binding `ocaml_backend.PACKAGE` to actual installed resources.
+Native service `--package` arguments remain at the actual runtime root. Checkout
+denial remains active in the installed differential drivers; there is no oracle
+discovery fallback. Updated Dune deps expose the helper in source aliases.
+`test_packaging.py` checks the exact runtime-nine/data-four inventory and actual
+native-bin owner. The new focused `flow-packaging` alias retains runtest coverage.
+
+`test/check_installed_corpus.py` runs the standalone modes one-by-one against
+**one reused thin hardlinked prefix**, checks installed helper/payload hashes after
+each fixture, and compiles each independent installed-library consumer sequentially.
+Archive/encoding are included; the separate native CLI corpus retains its specially
+named private prefix and destructive helper fixtures. `check_thin_install.py`
+reuses a private prefix for native cold commands, host payload imports/relative
+dependency checks, managed describe/check, consumer bootstrap `--check`, real
+consumer validator/linkage and archive/encoding. Bridge and metadata scripts are
+executed by the existing authorized-runtime fixture corpus rather than imported
+as host libraries.
+
+**Consumer integration:** sibling `scripts/asic_dependency.py` now requires all
+nine runtime modules, four data files and executable native CLI/service helpers.
+The old installed cli/transport/result_store requirements are gone. Source API
+validation checks a real `bin/dune` executable stanza naming `flow_cli` with
+`public_name hardcaml-asic-flow`, rejecting comment-only/wrong-owner fixtures.
+Focused setup tests pass **19**, bootstrap tests **11**, including missing-runtime,
+missing-native-helper and shell-CLI negatives; the real validator compiles both
+ocamlfind and independent Dune consumers against the thin prefix. Consumer docs
+are updated. Recorded pin remains **1714764859274f80a9f5ad207421a04601824e99**;
+normal published generation **9f3233b4c5394722a12a88b417d73c64** was preserved.
+This shell has no activated generation; only explicit private test outputs were
+selected. No global/development refresh was performed.
+
+**Passing evidence:**
+
+| Thin installed corpus | Results |
+| --- | --- |
+| Full installed-prefix suite | **57/57**; source-denied stage, observation/watch, finalization, archive and native execute fixtures retained |
+| Preflight / postcheck | **24 / 15** Python differentials plus existing failure/signal/public routing cases |
+| Coarse run / aggregate child | **15 / 24** differentials; **8** receipts, **4** presentations, **4** full postchecks, **10** cancellations |
+| Collect / report / finalization | **132 + 4**, **586 + 15**, **26 + 16** differentials/original fixtures |
+| Identity / plans | **62,221 accepted / 55 rejected**; **164 accepted / 4,900 rejected** |
+| Checkpoint / publisher / runner | **67 / 199** validation cases and **12** historical checkpoints; **51** publisher checks; **628** runner cases |
+| Result store / runtime / transport | Allocation/concurrency/atomic parity; **2,961 / 1,253** runtime cases; **34 / 105** transport cases plus **19** real engine fixtures |
+| Observation / writer | **307 / 2,077**, **173** queries, **22** incremental; historical **221** queries/**12** journals; writer **21** checks |
+| Preparation / segment / domain / supervisor | **51 / 70** fixture pipeline cases; six groups/**80** occurrences/**14 + 5** drift negatives; **22** real process cases |
+| Archive / encoding | **16** native differentials plus **19** original fixtures; streaming **192 MiB** input under **128 MiB** address-space limit, corruption/interoperability/supervisor checks |
+| Backend protocol / native CLI | **50 / 886**, actual installed bridge/no-publication; **10** cold presentation differentials/**24** contract negatives, own-prefix and Python/source-denied queries |
+| Focused source checks | Packaging **17**, CLI **43**, preflight/postcheck/coarse aliases at original counts |
+
+Commands and bounded continuation (sole code/build owner, no spawning; all Dune
+invocations, including nested consumer builds, sequential and `-j20`):
+
+```sh
+dune build -j20 @install @test/flow-packaging @test/flow-cli
+dune build -j20 @install @test/flow-packaging @test/ocaml-preflight @test/ocaml-postcheck @test/ocaml-coarse-run
+python3 -B test/test_installed_prefix.py
+python3 -B test/check_thin_install.py --consumer-script /home/wayne/devel/jane/hardcaml_asic_example/scripts/asic_dependency.py
+python3 -B test/check_backend_protocol.py --installed
+python3 -B test/check_native_cli.py
+# Every handoff standalone --installed mode also passed individually.
+python3 -B test/check_installed_corpus.py
+# Outer budget expired after plans; resumed same own prefix from checkpoints:
+python3 -B test/check_installed_corpus.py --resume-prefix /tmp/opencode/installed-corpus-sdmd8dve/prefix --start checkpoints
+python3 -B test/check_installed_corpus.py --start backend_protocol  # final runner tail incl. archive/encoding
+# archive and encoding also passed independently against that same reused prefix.
+# Final harness binding changes: installed preflight/postcheck/coarse rerun passed.
+python3 -B scripts/test_asic_dependency.py  # consumer cwd: 19 tests
+python3 -B scripts/test_bootstrap.py        # consumer cwd: 11 tests
+git diff --check                           # both checkouts
+```
+
+**Resource/failure accounting:** initial free space **881 MiB**. Independent thin
+integration measured **614** prefix files / **566,739,037 logical bytes** (resolved
+hardlinks, no large build/library copies); private compiled validator files used
+**52,412,416 allocated bytes** at measurement, with **842,858,496 bytes** free.
+Archive encoding's uncompressed transient fixture is **192 MiB** and self-cleans.
+The reused corpus prefix reported **542 MiB** via du because du counts shared
+hardlinked inode blocks; that is not a new 542 MiB allocation. Only one native
+prefix was active at a time. Final free space before this log update was
+**859,774,976 bytes (820 MiB)** after the final targeted build/runner checks.
+
+The first shared-prefix restoration check detected child-produced bytecode after
+finalization; inherited `PYTHONDONTWRITEBYTECODE=1` fixed it without weakening hash
+checks. A 1,200-second corpus outer budget expired after identity/plans; the same
+prefix was resumed successfully for the remaining **14** modes. A later combined
+600-second preflight/postcheck/coarse budget expired during coarse; independent
+coarse rerun with 1,200 seconds passed. Only own timeout dirs
+`installed-checkpoint-9ahcx2rg`, `installed-coarse-9b2cs0d6` and own reused
+`installed-corpus-sdmd8dve` were cleaned after verifying no surviving fixture
+processes. Other disposable prefixes self-cleaned. Early failures also exposed
+an oracle subprocess root, stale META expectation and managed-check exit-code
+fixture assumptions; corrected assertions passed with their original coverage.
+No downloads, EDA runs, build-tree copies, live Git add/commit/push/stash/reset,
+pin edits or normal-selection refresh occurred; fixture Git stayed disposable.
+
+**Remaining source cleanup:** all sixteen retired Python SOURCE modules and three
+historical reference scripts remain intentionally. Further directory reorganization,
+source-oracle deprecation/removal, finer backend-operation execution and modular
+flow-file/profile support are later work. No installed-mode harness migration or
+production install-entry removal remains from the exact handoff below.
+
+## Bounded thin-install test infrastructure (2026-10-14; superseded handoff)
+
+**Delivered:** `test/reference_harness.py` explicitly separates a copied source
+oracle from `PREFIX/lib/hardcaml_asic/flow`, the actual runtime under test. The
+small prefix-shaped oracle copies only the sixteen retirement candidates;
+its nine runtime modules and data link to installed bytes, and its native bin
+link targets that same prefix. Activation validates runtime links and explicitly
+binds the copied `ocaml_backend.PACKAGE` to installed resources/helpers. Missing
+explicit roots fail; there is no installed-mode checkout fallback. This is
+test-only infrastructure, not production discovery.
+
+`test_installed_prefix.py` now unlinks all sixteen candidates only in its PRIVATE
+hardlinked prefix and verifies the exact runtime-nine inventory. Copied fixture
+drivers run outside the checkout with checkout-open denial and explicit oracle/
+runtime roots. Original fixture assertions/counts remain: inspector **11**, stages
+**34**, finalization **16**, related presentation **8**, observation **20**, watch
+**16**, default journal **12**, recipe drift/inspection and actual bridge protocol.
+Fixture/comparison Python imports are oracle-owned; installed public watch,
+observation and default-journal commands launch the native `PUBLIC_FLOW_CLI`.
+The introspection case now asserts oracle ownership of retired APIs and installed
+ownership of bridge bytes, rather than requiring retired installed files.
+
+The complete **57-test installed-prefix suite passes with all sixteen absent**.
+Its missing-resource fixture reuses that one prefix and restores renamed entries;
+read-only checks unlink writable private file hardlinks before chmod. Native
+emitter/writer fixtures are hardlinked rather than copied. Production install
+staging, compatibility sources, install entries and consumer pins were not removed.
+
+Standalone `check_backend_protocol.py --installed` also uses the shared harness,
+hardlinked thin prefix, copied/audited drivers and a freshly installed-library-linked
+consumer: **50 accepted / 886 rejected**, actual bridge and no-publication checks
+pass. `check_native_cli.py` uses a thin prefix and copied/audited oracle for its
+**10** cold presentation differentials and **24** contract negatives, identity and
+own-prefix routing checks. Each disposable prefix self-cleans before the next run;
+no build tree copies, no multiple simultaneous native prefixes. About **888 MiB**
+was free before the final standalone/source checks.
+
+Successful commands (sole agent, no spawning/live Git mutations; all Dune calls
+sequential and `-j20`, including the nested installed consumer build):
+
+```sh
+python3 -B test/test_installed_prefix.py
+python3 -B test/check_backend_protocol.py --installed
+python3 -B test/check_native_cli.py
+dune build -j20 @test/ocaml-stage-recipes @test/backend-protocol @test/observation-watch @test/flow-observation @test/default-journal @test/related-presentation @test/inspector-presentation @test/finalization @test/stage-checkpoint
+```
+
+The initial thin-suite run was **55/57**: already-absent legacy modules in the
+missing-resource fixture and writable staged data in the read-only fixture caused
+the two failures. Both fixture corrections preserve the original behaviors being
+asserted; the complete rerun passed. Source-only aliases still use normal source
+references and passed their original counts.
+
+**Exact next-agent test handoff:** the bounded priority here was reusable harness
+plus the complete 57 suite. Do not remove production Python/install entries yet.
+These standalone installed branches still require harness migration and thin-prefix
+verification (their previous full-install passes are not thin-install evidence):
+
+- Service/aggregate differentials: `check_preflight.py --installed`,
+  `check_postcheck.py --installed`, `check_coarse_run.py --installed-hardlink`
+  (including its child `check_coarse_execution.py --package ...`),
+  `check_collect.py --installed`, `check_report.py --installed`,
+  `check_finalization.py --installed`, and `check_archive.py --installed-prefix ...`.
+- Record/plan/runtime differentials: `check_execution_identity.py --installed`,
+  `check_execution_plans.py --installed`, `check_checkpoints.py --installed`,
+  `check_checkpoint_publisher.py --installed`, `check_runner.py --installed`,
+  `check_result_store.py --installed`, `check_runtime_contract.py --installed`,
+  `check_execution_transport.py --installed`.
+- Observation/preparation differentials: `check_observation.py --installed`
+  (also `--historical`), `check_observation_writer.py --installed`,
+  `check_stage_preparation.py --installed`, `check_segment_service.py --installed`.
+- Remaining native-only independent-install checks to reverify against a reused
+  thin hardlinked prefix: `check_stage_domain.py --installed`,
+  `check_process_supervisor.py --installed`,
+  `check_archive_encoding.py --installed-prefix ...`.
+
+`check_stage_recipes.py --provider-prefix ...` now requires an explicit
+`FLOW_TEST_REFERENCE_ROOT`; it passed inside the 57 suite, not a separate newly
+linked recipe-consumer run. Supply `FLOW_TEST_RUNTIME_ROOT` too for copied-driver
+`ENTRY`, and set `STAGE_TEST_PACKAGE_ROOT` to the returned oracle root for nested
+fixtures. Keep service `--package`/resource arguments at the actual runtime root;
+activate the oracle separately rather than changing the production subject to it.
+Copy the shared helper into standalone driver directories and add their Dune deps
+as each branch migrates. Replace remaining `dune install` tree copies with
+`hardlink_prefix`, simulate retirement with `thin_prefix`, and unlink before fixture
+replacement/chmod. Consumer/public route refresh scripts and consumer pins remain
+the later coordinated slice; no full EDA was run here.
+
+## Bounded reviewer corrective fixes (2026-10-14)
+
+Resolved the independently reproduced runtime-probe and postcheck findings:
+
+- `Runtime_probe` now attempts terminal evidence publication while preserving the
+  actual failed/cancelled process outcome as primary. Publication failures are
+  attached to `Runner.error.secondary`; even a successful child cannot return
+  successful metadata if its terminal evidence write failed. The common finish
+  path covers host commands, mount-free readiness containers, and stage metadata
+  containers. Stage container supervision also receives the caller's cancellation
+  callback. Standalone preflight retains secondary diagnostics in its interrupted
+  report; coarse readiness retains them in its saved environment, and execution-time
+  probe cancellation retains them in the terminal run error. Explicit-output private
+  scratch cleanup handles injected directory entries without masking cancellation.
+- `Postcheck_service` treats only supervisor `Cancelled` as caller cancellation.
+  Child `Signaled` results, including removal children, remain ordinary tool/check
+  failures. Cleanup records now retain outcome and signal/exit-code fields as well
+  as status/diagnostics. A killed version probe blocks later tools; killed TT still
+  follows the existing failed-precheck/continued-replay sequence.
+- Absolute `outputs.flow` is used directly; relative paths retain run-relative
+  interpretation. Actual absolute flow directories and nested symlink aliases with
+  lexical `..` now agree with the Python oracle and input hashes.
+
+Regression additions in `check_preflight.py`, `preflight_consumer.ml`,
+`check_coarse_run.py`, and `check_postcheck.py` exercise **8 public preflight**
+signal-plus-EISDIR cases (host/container, SIGINT/SIGTERM, allocated/explicit output),
+**4 stage metadata API** cases and **4 coarse readiness** cases. They assert
+130/143, retained secondary diagnostics, no later probes/implementation launches,
+and owned-container removal. Two additional storage-only cases verify failed-child
+precedence and no hidden successful metadata/binding. **12 child-kill** cases cover
+SIGKILL/SIGSEGV at version, TT, simulator version, compile, replay and cleanup;
+version kills have actual Python status/exit differentials. Self-child crash fixtures
+disable dumpability and core files so SIGSEGV cannot invoke the host core-handler
+pipe. Two absolute/alias cases add Python input-hash/exit differentials.
+
+Exact successful verification (all Dune invocations sequential and `-j20`):
+
+```sh
+dune build -j20 @install @test/ocaml-preflight @test/ocaml-postcheck @test/ocaml-coarse-run @test/ocaml-finalization @test/ocaml-collect @test/ocaml-report
+dune build -j20 @install @test/ocaml-preflight @test/ocaml-postcheck @test/ocaml-coarse-run @test/ocaml-segment-service @test/flow-cli @test/coarse-runner
+python3 -B test/check_preflight.py --installed
+python3 -B test/check_postcheck.py --installed
+python3 -B test/check_coarse_run.py --installed-hardlink
+git diff --check
+```
+
+Source and installed preflight **24** report differentials, postcheck **15**
+persisted-field/outcome differentials, coarse run **15** record differentials plus
+**8** aggregate receipts, **4** presentations, **4** full postchecks and **10**
+external cancellations pass, alongside the added cases above. Installed aggregate
+consumer **24** lifecycle differentials pass. Related source suites: segment
+service **70**, CLI **43**, runner **11**, finalization **26** invocation differentials
+plus **16** original fixtures, collection **132 + 4**, and reporting **586 + 15**.
+
+The installed preflight/postcheck drivers now use resolved hardlinks from existing
+Dune install staging, compile fresh installed-library consumers, copy drivers outside
+the checkout, and deny checkout reads. An initial hardlink attempt linked symlinks
+instead of their resolved targets; that fixture was corrected. Stage fixture transport
+assertions and a core-handler-induced cleanup timeout assertion were corrected before
+the final passing runs. The first 120-second build budget expired; subsequent builds
+used 600 seconds. A combined installed command exceeded its 600-second outer budget
+during coarse checks; only its newly created `/tmp/opencode/installed-coarse-fa2cv_rj`
+was removed, and the independent coarse rerun passed. Approximately **897 MiB** remained
+free after these checks. Prior work, retained prefixes and evidence were preserved;
+sole agent, no spawning, no live Git staging/commit/push/stash/reset, no full EDA.
+
+## Bounded native public CLI composition (2026-10-14)
+
+`bin/flow_cli.exe` now installs as **`hardcaml-asic-flow`**, replacing the shell
+launcher in Dune's bin section. Four bounded command modules own the CLI4 grammar,
+required arguments/unsupported options, defaults/environment precedence, path
+resolution, package identity/help and routing. Services remain separate sibling
+native executables. Helpers and resources resolve from the running executable's
+own prefix via `/proc/self/exe`, including symlink invocation; no PATH-selected
+helper or checkout fallback exists. Only the explicitly named Dune development
+executable recognizes its own build-tree layout. Exec preserves PID, signals,
+stdout/stderr and service exit codes. Missing helpers name the exact expected
+path and reinstall/build remedy.
+
+Directory/file destinations resolve symlink ancestors even for missing leaves;
+Python interpreter paths retain venv aliases and lexical `..`. Global and command
+JSON/verbose flags, observation-query placement, result-store defaults, full versus
+synthesis inputs, archive force/destination constraints and the explicit P6.5
+identity/waiver rejection remain CLI4. Version metadata exactly matches
+`identity.py`'s fields and generated version-file precedence: package **0.1.0**,
+CLI **4**, record schemas **[1]**, source **unstamped**. Help/version need no Python.
+Cold observation human rendering moved to `observation_presentation.ml`, sharing
+watch's formatting primitives; checkpoint human rendering uses its existing native
+renderer. `scripts/flow.sh`, `scripts/flow_cli.py` and the old source shell path
+dispatch the built native owner. The latter two are development compatibility
+adapters, not installed production dispatchers.
+
+**Deliberately retained Python / next cleanup handoff:** no legacy installed
+service files were deleted in this slice. `cli.py`, `__main__.py`,
+`ocaml_backend.py`, `phase4.py`, `report.py`, `archive.py`, `finalization.py`,
+`stages.py`, checkpoint/observation/runner APIs and `presentation.py` remain
+compatibility sources and differential oracles; `scripts/{phase4,report,archive}.py`
+remain development API entrypoints. Coordinate the consumer's provider-refresh
+resource validator and compatibility imports before removing their installed files.
+Production Python is limited to the explicitly remaining provision/bootstrap
+tooling (`data/toolchain.sh`, `managed_python.py`, `probe.py`) and authorized
+metadata/LibreLane bridge/runtime payloads (`stage_metadata_probe.py`,
+`librelane_bridge.py`); upstream LibreLane and TT are still external. Provision
+uses the packaged lock/script and external bash/host Python, retaining its flags
+and bootstrap status mapping. Python probe execution is not CLI dispatch/rendering.
+
+Verification uses private **hardlinked** prefixes from Dune install staging,
+never copies the large library tree. Test replacements unlink private entries
+before writing. Accepted prefixes/evidence/consumer activation were preserved.
+The original installed-prefix suite was refreshed for native discovery, structured
+metadata-probe envelopes and native multiline JSON; its large-cursor reset fixture
+also caught and fixed an OCaml machine-int parser narrowing. A timeout-created
+private prefix was explicitly cleaned; all successful temporary prefixes self-clean.
+
+Commands/results (sequential Dune, every invocation `-j20`):
+
+```sh
+dune build -j20 @install
+python3 -B test/check_native_cli.py
+dune build -j20 @test/flow-cli @test/related-presentation @test/coarse-runner
+python3 -B test/test_installed_prefix.py
+python3 -B test/check_coarse_run.py --installed-hardlink
+```
+
+Native CLI corpus: exact identity parity, **10** cold human/JSON/error presentation
+differentials, **24** contract negatives, own-prefix routing/path defaults and
+missing-helper checks. Empty-PATH queries and kernel file/process traces verify
+no checkout access/Python launch for commands requiring no runtime probe. Original
+installed-prefix **57** tests pass (including nested observation/watch/stage/bridge/
+finalization suites and real lexical venvs); CLI **43**, presentation **8**, runner
+**11** pass. Fresh independently installed-library-linked aggregate consumer:
+**24** lifecycle/cancellation differentials; installed coarse run **15**, aggregate
+**8**, presentation **4**, full postcheck **4**, external signal **10** cases pass.
+No physical EDA was rerun. Sole agent, no spawning or live Git mutations.
+
+## Native coarse aggregate execute (2026-10-14)
+
+Installed `Coarse_execution_service.{execute,to_json}` binds the fixed checked
+`Execution_plan.Coarse` to the existing `Runner`, with typed run/postcheck/collect/
+report/archive callbacks. `bin/experimental_execute.ml` installs
+`hardcaml-asic-experimental-execute`; public CLI4 `execute` execs it authoritatively.
+Production aggregate orchestration calls native services directly. LibreLane CLI,
+TT, simulator and bridge bytes remain external and unchanged. The explicit injected
+Python `execute_sequence` / `ServiceAdapter` seam remains the differential oracle.
+
+The run allocates first, with the existing pending preflight and Classic run paths;
+there is no aggregate allocation or invented journal. Optional full postcheck,
+saved-run best-effort collection, separate report acceptance, and archive-only-after-
+acceptance use the checked plan's gates. Later collection/report errors do not replace
+the first failure. Collection explicitly publishes `results.json`; report is read-only,
+and archive's independent read-only selection API is not implicitly invoked as a CLI
+action. Source run/results records are mutable retained evidence, not checkpoints.
+Native service deadlines, external-tool defaults and 20-CPU/thread policies are reused;
+archive binds absolute gzip, resolved scratch and its existing 120-second budget.
+
+Scoped aggregate signal handling covers callback gaps. Saved run/postcheck interruptions
+retain 130/143 and permit collection; subsequent physical operations are vetoed.
+Signals delivered immediately before callback exceptions remain interruptions.
+Initial run publication/preallocation errors still have no aggregate receipt.
+`Coarse_run_service.Retained_error` now distinguishes terminal publication failure
+after the initial record exists: its typed outcome remains collectable, an earlier
+implementation failure/signal stays primary, and publication evidence stays secondary.
+The old record can remain running when its terminal write is impossible.
+
+Verification (all Dune invocations sequential, `-j20`):
+
+```sh
+dune build -j20 @install @test/ocaml-coarse-execution @test/ocaml-coarse-run @test/flow-cli @test/coarse-runner
+dune build -j20 @install @test/ocaml-collect @test/ocaml-report @test/ocaml-postcheck @test/ocaml-archive
+python3 -B test/check_coarse_run.py --installed-hardlink
+git diff --check
+```
+
+`check_coarse_execution.py` / the independent consumer cover **24** typed lifecycle,
+current Python aggregate differential and cancellation cases: every service failure,
+preallocation versus retained-publication failure, interrupted collection, first-failure
+precedence, disabled archive, malformed report and collection success with rejected
+acceptance. `check_coarse_run.py` adds **8 actual Python aggregate receipt/stderr
+differentials**, **4 human/JSON/verbose presentation differentials**, actual archive
+completion/rejection, malformed runtime output, real permission-denied terminal
+publication, **4 full native/Python aggregate postcheck subprocess differentials**, and **10 external signal
+cases** (implementation plus postcheck probe/TT/compile/replay, both signals).
+Its existing **15 run record differentials** also pass. Related fixtures pass: CLI **43**,
+runner **11**, collection **132 + 4**, report **586 + 15**, postcheck **11**,
+archive **16 differentials + 19 original fixtures**. No full physical EDA was rerun.
+
+The copied-prefix install and some links hit filesystem exhaustion. Only this slice's
+disposable generated consumer executable was removed to make room; no retained prefix
+or evidence was removed. The final installed check uses a NEW hardlinked prefix from
+Dune's install staging (no checkout symlinks), compiles a fresh installed-library
+consumer, denies checkout reads in both copied drivers, and exercises the installed
+public shell launcher, including missing execute-helper failure. Consumer verification
+finishes before its disposable build is removed to leave space for tool fixtures.
+An early fixture blocked readiness instead of TT because it reused the readiness
+`block` key; separate fixture keys corrected that. Driver budgets were expanded for
+the longer sequential full-postcheck fixtures. All final checks pass.
+
+**Top-CLI handoff:** migrate `cli.py` parsing/path defaults/contract validation and
+launcher/version/provision composition next. Preserve CLI4 flag positions, lexical
+interpreter aliases, synthesis rejection of postcheck inputs, full-required inputs,
+explicit archive/force selection, human/JSON stderr separation, and preallocation exit 2
+versus retained 1/130/143/acceptance receipts. Bind this typed aggregate or its installed
+helper, not Python `Operations` service subprocesses or a second sequencer. Keep the
+injected Python fixture seam until parser differentials pass. Public service migration
+is complete; directory reorganization and finer backend invocation remain later work.
+One agent, no spawning or live Git mutations; accumulated user work is preserved.
+
+## Bounded OCaml archive service and public routing (2026-10-14)
+
+Installed `Archive_service` ports OUR `flow/hardcaml_asic_flow/archive.py` policy,
+using the new `Evidence_tar` / `Archive_encoding` primitives. Public CLI4 `archive`
+execs `hardcaml-asic-experimental-archive` without fallback. Transitional
+`Operations.archive` captures the native helper's human/JSON/quiet/verbose output
+and returns its exit code, so aggregate Python execute now consumes native retention.
+The original Python archive API/development script remains the differential oracle.
+
+Typed `inspect ~run_dir` is read-only and returns ordered report sources, report
+bytes, report-selection omissions and the selected complete bundle source/inventory.
+Typed `publish ~runtime ~run_dir ~output ~force ()` returns archive paths, ordered
+selection, publication omissions and the schema-1 evidence record. Completion is
+required; acceptance is not. List omits only missing/empty report selections;
+publication additionally records absent results/preflight records. `--json --list`
+is rejected. Existing public successful human/JSON/verbose bytes and 0/2 exits are
+retained; archive does not run physical tools or create a journal.
+
+The mandatory staged manifest is byte-hashed and identity-correlated even when the
+original bundle is valid. Original roots expanduser/resolve (including aliases),
+then undergo whole-bundle validation; fallback validates a whole staged root,
+never mixes roots. Schema 1 / LibreLane, safe inventory names, lowercase SHA-256,
+duplicates/parent conflicts, source-list linkage and exhaustive `inputs/` metadata
+are checked. Internal source symlinks are rejected. Caller run/output aliases
+resolve; actual `outputs.flow` and `outputs.project` overrides are honored.
+Postcheck input hashes are checked only for nonnull expected values and existing
+files, retaining historical compatibility. Optional copied records are raw bytes,
+including arbitrary/nonfinite evidence, with no strict identity-codec conversion.
+
+Report tar members retain source metadata and policy order. Input packaging emits
+manifest first and sorted inventory, regular 0644/uid=gid=0/mtime=0 members, then
+reopens the gzip/tar and verifies every byte hash and normalized member metadata.
+Reopen limits derive from the actual encoded inventory. File hashing/copying uses
+bounded buffers; memory scales with JSON/inventories, not artifact byte size.
+The helper resolves scratch and uses `/usr/bin/gzip` with a 120-second per-gzip
+deadline; typed callers supply the explicit encoding runtime. Tar/gzip bytes need
+not equal Python's representation; metadata/content/provenance and actual size/hash
+fields are independently verified, and normalized native inputs are repeatable.
+
+Publication uses private sibling staging, copies unrelated user entries (including
+symlinks), and replaces all owned names, including directories/stale postchecks.
+Any populated output, even README-only, needs force. An exclusive sibling directory
+serializes cooperative publishers; a competing publisher fails without clobbering.
+The force check is repeated before publication, and an absent destination uses
+no-replace promotion. Existing output is backed up with one rename, followed by the
+replacement rename; replacement failure rolls back the old tree. There is no fsync
+or crash-transaction guarantee. Parents must remain stable; a killed process can
+leave its lock/staging, and a failed post-publication cleanup can leave a backup.
+The typed optional rename callback is the explicit IO seam for rollback tests.
+
+Verification (sequential Dune invocations, all `-j20`):
+
+```sh
+dune build -j20 @install @test/ocaml-archive @test/flow-cli @test/coarse-runner
+dune build -j20 @test/ocaml-archive-encoding
+python3 -B test/test_archive.py
+dune install -j20 --prefix /tmp/opencode/archive-service-prefix
+python3 -B test/check_archive.py --cli _build/default/bin/experimental_archive.exe --consumer _build/default/test/archive_consumer.exe --installed-prefix /tmp/opencode/archive-service-prefix
+python3 -B test/check_archive.py --cli _build/default/bin/experimental_archive.exe --consumer _build/default/test/archive_consumer.exe --retained-run /home/wayne/devel/jane/p4-observable/runs/60a632eec5fb40e485ca9c549540b31b --smoke-output /tmp/opencode/native-archive-service-smoke
+git diff --check
+```
+
+`check_archive.py` / independently linked `archive_consumer.ml` pass **16 actual
+Python selection/stdout/stderr/provenance/content/metadata differentials**, **19
+original fixtures through native subprocesses**, and the native counterpart of the
+original Python function-injection failure test. The original Python suite passes
+all **20** tests. Additional tests cover tamper/fallback/no-root-merging, invalid
+inventories/linkage, internal links/root aliases/expanduser/absolute overrides,
+missing/empty selections, absent pinned/null-expected postcheck inputs, raw CRLF manifest and
+arbitrary copied evidence bytes, force/directory/stale-name collisions, user links,
+mutation during encoding, actual gzip failure, second-rename rollback, cooperative
+concurrency and a noncooperating README writer. Installed tests compile a fresh
+consumer against only the installed library, copy drivers outside the checkout,
+deny checkout reads, and exercise the installed public shell launcher. CLI **43**,
+runner **11**, and the streaming encoding/interoperability/corruption suite pass.
+
+One rebuild hit filesystem exhaustion during concurrent linking/large-codec tests.
+Only this dispatch's disposable install prefix was removed to reclaim space; the
+build and codec checks then passed and the latest prefix was reinstalled/reverified.
+An attempted `@test/archive` alias does not exist; the actual original suite was
+run directly above. No accumulated user work or other retained prefixes were removed.
+
+The actual retained observable physical run and its original bundle were fully
+content-snapshotted, compared with Python/native read-only list, then archived only
+to NEW `/tmp/opencode/native-archive-service-smoke`. **111 reports**, no selection
+omissions; reports **654,589 bytes**, complete **40-member** input bundle **74,192
+bytes**. Python tarfile independently verified the archived manifest/inventory
+hashes. Every retained run/bundle content digest stayed unchanged. No irrelevant
+intermediate tree was copied and no EDA was invoked.
+
+**Aggregate execute handoff:** consume `Archive_service.publish`'s typed outcome
+after the existing separate acceptance gate; archive itself intentionally requires
+only a completed run. Supply explicit `Archive_encoding.runtime`, preserve quiet
+internal presentation/omission diagnostics and force semantics, and use the returned
+output/report paths in the aggregate receipt. `inspect` is a separate read-only
+selection action, not a publication or acceptance operation. Native aggregate
+execute and top-level parsing remain the service migrations; upstream runtime and
+bridge bytes are unchanged. One agent, no spawning or live Git mutations; all prior
+changes are preserved.
+
+## Bounded OCaml archive encoding (2026-10-14)
+
+Installed `Evidence_tar` and `Archive_encoding` in `hardcaml_asic.execution`.
+This slice supplies encoding/verification primitives for the next archive
+selection/publication slice. At this slice the public archive route still used
+Python; the subsequent service slice above owns the current native route.
+Upstream libraries and signature/protocol/`Evidence_json` implementations are
+unchanged; no dependencies were added.
+
+Publisher integration API:
+
+- `Evidence_tar.source = { path; name; sha256 : string option }`. Names are
+  safe relative UTF-8 paths. Regular sources reject symlink components;
+  optional expected hashes are checked against bytes actually copied, alongside
+  descriptor size/metadata stability. Input packaging requires every hash.
+- `Archive_encoding.runtime = { gzip; scratch; timeout }`, with absolute gzip
+  executable and scratch-directory paths and a positive finite per-gzip timeout.
+  Production uses explicit GNU-compatible gzip arguments, no shell/Python/PATH
+  search, and a complete child environment containing only `LC_ALL=C` (no GZIP).
+- `write ~runtime ~normalized ~output sources` preserves source order and returns
+  `Evidence_tar.member list` with actual `{ name; bytes : int64; sha256; metadata }`.
+  Report mode preserves mode/uid/gid/uname/gname/mtime; report archive determinism
+  is not promised. Output is created exclusively and removed on encoding failure.
+- `write_input_bundle ~runtime ~output ~manifest ~files` takes bundle-relative
+  source names, requires manifest name `manifest.json`, emits
+  `bundle/manifest.json` first, then sorted `bundle/` paths with normalized
+  0644/uid=gid=0/empty owner names/mtime=0. Gzip `-n -9 -c` produces repeatable
+  bytes on the same implementation even when source modes/mtimes change.
+- `verify ~runtime ~limits ~normalized ~expected archive` accepts caller-provided
+  **full tar names** and SHA-256 values; returns actual hash/size/metadata inventory
+  in archive order. `verify_input_bundle ~runtime ~limits ~manifest_sha256
+  ~inventory archive` takes **bundle-relative** inventory without manifest.json
+  and additionally enforces manifest-first/sorted order and normalized metadata.
+- `Evidence_tar.limits = { max_members; max_member_bytes; max_tar_bytes;
+  max_pax_bytes; max_name_bytes }`; byte counts use int64. The decoder rejects
+  invalid checksums/types/sizes, duplicate/extra/missing/conflicting paths,
+  unsupported/global/duplicate PAX extensions, truncation, nonzero member/tail
+  padding and partial tail blocks. Local PAX safely carries long/Unicode paths
+  and metadata. It never extracts anything. `Gzip_failed (supervisor_result,
+  stderr_prefix)` retains the outcome and at most 4096 diagnostic bytes.
+
+The streaming codec uses 64 KiB buffers. Because `Process` intentionally has
+regular-file IO and `/dev/null` stdin, gzip runs over private 0700 tar spools,
+deleted on every normal success/exception path. Disk usage scales with tar size;
+memory scales with inventory/PAX bounds, not file size. Decompression is fully
+waited before parsing so CRC/trailer errors cannot be hidden by an early tar EOF.
+The decompressed-size ceiling is polled during supervision and checked after
+exit; disk usage may overshoot between 10 ms supervisor polls. The timeout covers
+each gzip child, not codec file IO. Existing supervisor main-thread/non-reentrant
+and process-group cleanup semantics apply.
+
+Verification (sequential Dune commands, all `-j20`):
+
+```sh
+dune build -j20 @install @test/ocaml-archive-encoding
+dune install -j20 --prefix /tmp/opencode/archive-encoding-prefix
+python3 -B test/check_archive_encoding.py --consumer _build/default/test/archive_encoding_consumer.exe --installed-prefix /tmp/opencode/archive-encoding-prefix
+```
+
+The independent installed consumer compiled with ocamlfind against the prefix
+and passed the same tests. Fixtures exercise native/Python tarfile interoperability,
+long/Unicode/newline paths, empty/binary/192 MiB files under a 128 MiB address-space
+limit, metadata-preserving reports and deterministic inputs, actual returned
+hash inventory, wrong input order, checksum/type/size/PAX/count/name/duplicate/
+extra/missing/hash/padding/truncation corruption, gzip CRC/truncation/invalid input,
+exclusive-output retention, source symlink/nonregular/hash failures, child exit 7,
+missing executable, timeout/process-group termination, and scratch/output cleanup.
+The shell scripts exist only as disposable failing/slow gzip test fixtures.
+
+## Bounded OCaml segmented finalization (2026-10-14)
+
+Installed `Finalization_record` and `Finalization_service` port OUR provider's
+`finalization.py`. Public `finalize` and `finalization-inspect` delegate to the
+native helper without fallback; a separate installed inspection executable also
+offers human/JSON snapshots. The retained Python API and explicit injected CLI
+fixture seam remain differential oracles. Upstream tools/bridge bytes are preserved.
+
+`Finalization_service.run` allocates and publishes its separate running receipt
+before selection, and returns a private `{ directory; record }` outcome. Optional
+`allocated` delivers the early receipt. `selected` validates one completed fresh
+six-stage execution: exact plan/occurrence correlations, schema-2 publications,
+actual boundary/identity/inventory/external hashes, shared closure/config bytes.
+Resumed stitching is rejected. `Finalization_record` exposes checked status,
+acceptance and arbitrary-precision historical exit status; `read`/`render` are
+read-only and never validate referenced paths or current runtime readiness.
+
+Runtime validation uses the supported exact image and complete bridge/protocol
+byte pins, supervised engine/image re-probes, correlated protocol-v1 requests and
+`Segment_service.verify_reply`'s actual artifact hashes/lengths. The shared Docker
+transport gained explicit validated same-path extra mounts. Requests, commands,
+merged log, correlated transport launch/result and cleanup attempts are retained;
+the schema-1 cleanup-list/client-termination fields retain their public roles.
+Runtime validation is bounded at 120 seconds, probes at 20, owned cleanup at five;
+the existing 20-CPU container/thread limits apply. Physical execution is not rerun.
+
+Mapped evidence uses the official synthesis/signoff states and Python-compatible
+CSV bytes, copied views/constraints/manifest, `Collect_service`'s in-memory context
+and source synthesis state, and finalization-owned provenance/origin boundaries.
+No `run.json` or synthetic synthesis report is created. Optional acceptance calls
+native `Postcheck_service` for external TT/replay, verifies evidence origin and
+simulator binding, then uses native `Report_service` policy/rendering. Source
+selection, resources, copied evidence and postcheck collateral are revalidated.
+Completion without `--accept` remains `not_evaluated`; policy rejection exits 1,
+contract/allocation/helper errors outside an operation exit 2, operation failures
+exit 1, and cancellation retains 130/143 with failure/cleanup diagnostics.
+Checkpoint path binding and existing source stamps remain the same contracts.
+
+Verification (sequential Dune invocations, including installed builds, all `-j20`):
+
+```sh
+dune build -j20 @install @test/ocaml-finalization @test/related-presentation @test/finalization @test/flow-cli @test/ocaml-segment-service @test/execution-transport @test/ocaml-execution-transport @test/ocaml-collect @test/ocaml-report @test/ocaml-postcheck
+python3 -B test/check_finalization.py --installed
+python3 -B test/check_finalization.py --real-smoke
+git diff --check
+```
+
+`check_finalization.py` / the independent linked consumer cover all **16 original
+fixtures**, **26 native/Python invocation differentials**, exact mapped metrics,
+provenance/context and acceptance human bytes. Additional actual subprocess cases
+cover invalid plans/schema/path/bindings, protocol correlation/version/outcome/
+artifact bytes, bridge drift, engine/image changes, input mutation, cleanup failure,
+eight signal cases across probe/runtime/cleanup and postcheck boundaries, public allocation/finalization/inspection presentation,
+immutable unsupported historical snapshots and huge historical exit integers.
+Installed tests copy the driver/fixtures outside the checkout, deny checkout reads,
+build a fresh installed-library consumer and exercise the installed shell launcher.
+Related suites pass: presentation **8**, CLI **43**, segment service **70**, Python
+transport **45**, native transport **34 differentials / 105 negatives / 19 real
+engine cases**, collection **132**, reporting **586**, postcheck **11 differentials**.
+
+The retained accepted operation and its source execution under
+`/tmp/opencode/native-final-integration/` were compared read-only for actual
+selection, normalization and acceptance. A real exact-image closure-validation /
+native-collection smoke wrote only a NEW operation at
+`/tmp/opencode/native-finalization-native-smoke/20261014T090253322287Z_a9251c9a/`:
+completed, acceptance not evaluated, exact Python CSV/results and policy parity.
+All snapshotted retained/source evidence digests were unchanged. No full real TT
+postcheck was run in this dispatch. Prior accumulated work was preserved; one
+agent, no spawning, and no live Git mutations.
+
+**Handoff:** aggregate execute/top-level parsing/archive are the remaining service
+migrations. Consume `Finalization_service.run`'s typed outcome and
+`Finalization_record.to_json`/`render`; preserve the separate operation allocation
+and acceptance gate. The Python finalization API is retained for compatibility
+and testing, not the production public route. Flow profiles remain deferred.
+
+## Bounded OCaml external postcheck (2026-10-14)
+
+Installed `Hardcaml_asic_execution.Postcheck_service.run` now owns our provider's
+completed-full prerequisite, required-input validation/hashes, copied TT precheck
+workspace and technology link, version selection, simulator binding, TT invocation,
+Icarus compilation/VVP replay, and terminal schema-1 check record/outcome. Upstream
+TT/precheck and LibreLane scripts are unchanged. Original accepted evidence is
+untouched. This service does not evaluate acceptance or create a stage journal.
+
+`postcheck_service.mli` exposes a private inspectable outcome with the unchanged
+`check_id`, `check_dir`, `check_record`, `status`, `exit_code` fields and
+`outcome_json`. Required named arguments are `run_dir`, `support_tools`, `pdk_root`,
+`precheck_python`, `testbench`, `testbench_top`, and complete `environment`.
+Optional `context : Evidence_json.t` supports finalization's in-memory evidence
+context (including `evidence_origin`) without fabricating `run.json`;
+`replay_trace` copies/hashes the replay input and supplies VVP's explicit `+trace=`.
+Optional `timeout` is per external invocation; its default is **no limit**, retaining
+long-tool semantics. Cleanup has its own five-second deadline. Paths for the
+precheck interpreter remain lexical, including symlinked venv aliases and `..`.
+
+`bin/experimental_postcheck.ml` installs `hardcaml-asic-experimental-postcheck`.
+Public CLI4 `postcheck` delegates without fallback, with human/JSON/verbose output
+and additive optional `--replay-trace` / `--timeout`. Transitional
+`cli.Operations.postcheck` forwards signals to the helper and returns the same
+Python `phase4.CheckOutcome`; aggregate Python execute therefore consumes the
+native provider. Retained Python `phase4.check` and Python finalization remain
+available as their existing API/differential oracle.
+
+All external launches are sequential. `Process_supervisor` owns host process
+groups; `Execution_transport` owns each fresh simulator container and bounded
+cleanup, including the actual engine client. The installed service itself applies
+a scoped Linux CPU-affinity limit of at most **20 allowed CPUs**, inherited by
+host tools/clients, restores caller affinity, sets tool thread/build-core defaults
+to 20, and uses the existing 20-CPU container quota. These limits and timeout
+semantics are explicitly recorded in additive `resource_limits`. No test-only
+resource wrapper is needed. Host tools are resolved to absolute executables;
+container tools use explicit argv. Only upstream Nix `--run` needs shell syntax,
+with a resolved absolute env executable and shell-quoted interpreter/input argv.
+Both Nix invocations derive `NIX_PATH` from the copied default.nix's fetchTarball
+pin, and KLayout must exactly match copied tool-versions.json. Python KLayout
+must remain 0.28.x. No isolated-Python flags are inserted into this lexical venv.
+
+New records revalidate the actual bound engine and local image ID, reject absent,
+null, native or contradictory simulator bindings, and run only that exact image.
+Historical missing-binding records retain engine/tag discovery, resolving the
+local tag once and replaying its observed exact image. Version probes retain
+separate stdout/stderr files; logged tools stream both descriptors directly into
+the chronological merged `postcheck.log`. Commands are recorded before launch;
+additive process/result and cleanup evidence retain failures. TT failure still
+allows gate compilation/replay in the original sequence. SIGINT/SIGTERM at probes,
+TT, compile, replay or cleanup stop unrelated launches and publish interrupted
+records with 130/143. Failed checks remain evidence, never acceptance.
+
+Verification (sequential Dune commands, including nested installs/independent
+consumer builds, all `-j20`):
+
+```sh
+dune build -j20 @install @test/ocaml-postcheck @test/flow-cli @test/coarse-runner @test/ocaml-collect @test/ocaml-report @test/finalization @test/ocaml-result-store
+python3 -B test/check_postcheck.py --installed
+dune build -j20 @test/ocaml-coarse-run @test/execution-transport
+python3 -B test/test_phase4.py
+```
+
+`check_postcheck.py` / `postcheck_consumer.ml` pass **11 actual Python persisted-field
+and outcome differentials** in source and installed modes, including historical
+and bound success/failure, wrong KLayout, TT failure with continued replay, compile
+failure, VVP failure, and finalization context/replay. Additional actual-subprocess
+checks cover genuine venv metadata mismatch, changed engine/image, missing/null/
+native/contradictory binding, input hashes/copies, pre-allocation failures, explicit
+timeout, inherited affinity, chronological/live logs, helper aliases, public
+replay/timeout, callbacks/no fallback, and **12 signal cases** across six boundaries.
+The fake external engine owns real fixture resource markers; removal failures veto
+success and cancellation removes owned markers where cleanup itself is available.
+Interrupted local subprocesses are checked for termination. Installed tests copy
+the driver outside the checkout, deny checkout reads, invoke the installed shell
+launcher, and build a fresh consumer using only the installed execution library.
+Related regressions pass: CLI **43**, runner **11**, collection **132 differentials
+and 4 original fixtures**, report **586 differentials and 15 original fixtures**,
+finalization **16**, native coarse run **15 differentials**, transport **45**,
+phase4 **26**, and result-store allocation/atomic/parity checks. No full EDA is needed.
+
+**Execute/finalization handoff:** native execute can call `run` and use its outcome
+directly; retain collection and report as separate actions. Native finalization
+can supply `~context` and `~replay_trace`, consume `check_record`, then perform its
+existing evidence-origin/binding checks and separate acceptance/report publication.
+The helper also accepts `--context FILE` for explicit consumers. Finalization's
+Python production route is not switched here; archive and top-level parsing remain
+later slices. No subagents or live Git mutations were used; accumulated work was
+preserved. `Result_store.allocate ~uuid_directory:true` is the additive shared
+allocation option preserving historical `checks/<uuid-hex>` layout.
+
+## Bounded OCaml acceptance/report service (2026-10-14)
+
+Installed `Hardcaml_asic_execution.Report_service` now owns OUR stored-result
+acquisition, pure acceptance and detailed human reporting. Its `.mli` exposes:
+
+- `evaluate ~context results`, private inspectable `{ scope; problems }`, and
+  `accepted` / `exit_code` (pure; no filesystem/tool access).
+- `number` and `render ~run_dir ~context ~results ~source verdict`; supplementary
+  CSV/Markdown/resizer/SDC evidence affects display only, never the verdict.
+- `run ?context ?synthesis_state run_dir`, returning the original normalized
+  `results`, source label, verdict and human bytes. It prefers existing
+  `results.json`; otherwise it calls `Collect_service.collect` in memory. It
+  publishes nothing. Explicit context/state are available for native finalization.
+
+Evidence uses `Evidence_json`, preserving unknown fields, arbitrary-precision
+integers, bool/number distinctions and nonfinite raw evidence; the strict identity
+codec and normalized data model are not repurposed. Acceptance enforces correlated
+nonnull identities, process and requested/completed scope, the collection error
+list, finite nonnegative area/integral counts, zero synthesis error counts, and
+ANY nonnull unavailable reason (including false/empty). Full acceptance additionally
+requires constrained finite nonnegative setup/hold slack below `1e30`, nonempty
+corner names, pass timing/signoff and every required completed postcheck. Synthesis
+scope does not demand physical evidence. Huge integer-to-binary64 overflow is a
+malformed service input (exit 2), never silently Infinity.
+
+`bin/experimental_report.ml` installs `hardcaml-asic-experimental-report`.
+Public CLI4 `report RUN_DIR` execs it without fallback. Accepted/problem/malformed
+exits remain **0/1/2**; `--json` emits only the normalized existing/collected record
+on stdout, with human diagnostics on stderr. Verbose and execute's internal
+diagnostics-only presentation retain their semantics. `cli.Operations.report`
+uses a captured-output callback returning the native exit directly, with no
+duplicated Python policy. The aggregate execute fixture now supplies actual
+accepted synthesis artifacts rather than mocking the retired reporter boundary.
+
+Human byte differentials cover column widths by Unicode code points, Python
+fixed-point rounding/negative zero/large finite numbers, repr/string escaping,
+CSV quotes/CRLF/duplicates/invalid rows/newline corners/nonfinite values, sorted
+precheck Markdown and Unicode whitespace, filtered hold repair lines, and SDC
+display. A failing supplementary Markdown row or negative supplementary CSV slack
+does not override normalized acceptance. STA and upstream tool metrics remain
+external.
+
+Verification (sequential Dune invocations, every invocation including install and
+fresh independent consumer builds uses `-j20`):
+
+```sh
+dune build -j20 @install @test/ocaml-report @test/flow-cli @test/coarse-runner @test/ocaml-collect @test/finalization
+dune build -j20 @install @test/ocaml-report
+python3 -B test/check_report.py --installed
+git diff --check
+```
+
+`check_report.py` / `report_consumer.ml` pass **586 actual Python policy/human
+byte differentials** in source and installed modes, plus all **15 original report
+fixtures**, stored-precedence and failed/accepted in-memory read-only acquisition,
+raw overflow/nonfinite normalization, public routing, callbacks and missing-helper
+checks for all three exits. Installed tests copy the drivers outside the checkout,
+deny checkout reads and build a new consumer using only the installed execution
+library. Related regression: CLI **43**, runner **11**, collection **132 exact
+result/byte differentials** plus its **4 original fixtures**, finalization **16**.
+The final report-only rerun followed correction of a test input that intentionally
+contained collection errors before its accepted-synthesis acquisition case.
+
+Retained accepted finalization
+`/tmp/opencode/native-final-integration/finalizations/20261014T040711301534Z_913453bd/`
+was compared read-only with its actual `operation.json.evidence_context`, stored
+results and detailed supplementary reports; Python/native acceptance passed and
+every retained file digest was unchanged. No EDA was invoked. Accumulated work was
+preserved; no subagents, staging, commits, push, stash or reset were used.
+
+**Next-service handoff:** native execute can consume `run` and its verdict directly;
+native finalization can call `evaluate` / `render` with its own evidence context
+and source, or read-only `run ~context ?synthesis_state`. Finalization still owns
+provenance, evidence-origin/binding checks, result publication and acceptance-report
+publication; its production Python implementation remains on the retained Python
+API until that bounded migration. `flow/.../report.py` remains the actual Python
+differential oracle and development command implementation. In particular,
+`scripts/report.py --runs` newest-run selection remains the documented compatibility
+seam until top-level CLI migration; public report continues requiring an explicit
+run. No finalization or development latest-run route was switched here.
+
+## Bounded OCaml result collection (2026-10-14)
+
+Installed `Hardcaml_asic_execution.Collect_service` ports `phase4.metric/collect`.
+The `.mli` exposes the private metric record, `metric`/`metric_json`, abstract
+schema-1 result, `collect ?context ?synthesis_state run_dir`, `to_json`, and `save`.
+`collect` is read-only; `save` publishes only its caller-selected result destination.
+In-memory context and official synthesis-state input support segmented finalization
+without requiring or fabricating `run.json`/Yosys stat reports. Normalized metric
+values are finite binary64 or unavailable; raw postchecks/cell inventories retain
+their original JSON types. Count integrality/nonnegativity and acceptance remain
+reporter decisions. The metric constructor itself matches Python's wrapper, including
+bool/int/float distinctions and false/empty optional reasons.
+
+`Evidence_json.{parse,read,value,raw_bytes,record_bytes,repr}` is a scoped evidence
+codec with original-byte retention, Python last-key-wins object semantics,
+arbitrary-precision integers and NaN/Infinity/overflow-exponent support. Nonfinite
+numeric evidence becomes a malformed-metric diagnostic/unavailable value during
+collection rather than a parse rejection. Opaque raw evidence and retained
+manifest/hash inputs are never rewritten. `Identity_json` remains strict and is
+not replaced by this decoder. Yojson is now an explicit execution-library
+dependency; grammar is validated by the scoped decoder rather than accepting
+Yojson's extended object/tuple syntax. Nesting is bounded at 256. Finite scalar
+serialization reuses the exact Identity_json formatter. `Result_store.save_bytes`
+shares the existing exclusive temporary/close/atomic rename/cleanup primitive;
+`save_json` continues through its existing finite codec.
+
+The collector retains exact schema-1 metric/check fields, provenance, error order,
+worst-slack-over-all-evidence policy, actual-corner tie preference only for mapped
+states, unconstrained setup/hold modes, source-relative inventories, and sorted
+postchecks. Missing optional reports and malformed optional reports remain distinct;
+required context/manifest/postcheck failures prevent publication. Huge integers
+remain exact in raw data; integer-to-float overflow fails collection as Python does.
+LibreLane and TT computations remain external.
+
+`bin/experimental_collect.ml` installs `hardcaml-asic-experimental-collect`.
+Public CLI4 `collect` execs it without fallback; default/`--json` publish
+`results.json`, `--output` retains explicit destination semantics, and `--stdout`
+is read-only. Human/JSON/quiet/verbose presentation is retained. Explicit run
+selection is required. `cli.Operations.collect` uses a captured-output native
+callback compatible with transitional Python `execute` and its presentation seams.
+Existing CLI fixture tests now exercise native collection rather than mocking
+`phase4.collect`. Python report/postcheck/finalization implementations remain their
+current owners.
+
+Verification (sequential; every Dune invocation including install/consumer `-j20`):
+
+```sh
+dune build -j20 @install @test/ocaml-collect @test/flow-cli @test/coarse-runner @test/ocaml-result-store
+python3 -B test/check_collect.py --installed
+python3 -B test/test_phase4.py && python3 -B test/test_report.py
+git diff --check
+```
+
+`test/check_collect.py` and `collect_consumer.ml` pass **132 exact actual-Python
+result-and-pretty-byte differentials** in both source and installed modes, including
+all four original CollectorTest fixtures. Additional typed-constructor/decoder,
+public helper/launcher, compatibility callback, no-fallback, explicit-run,
+publication-failure and atomic symlink-replacement checks pass. Cases cover Unicode
+CSV corners/quotes/newlines/CRLF, duplicates, multiple sorted postchecks, missing
+fields, malformed reports, excluded raw logs, nonfinite/overflow evidence, booleans,
+huge raw integers and signed integer-to-binary64 rounding through 1000 bits.
+The installed test copies drivers outside the checkout, denies checkout reads,
+and builds a fresh linked consumer using only the installed execution library.
+Related checks: CLI **43**, runner **11**, phase4 **26**, report **15**, and native
+result-store atomic/allocation differential suite pass.
+
+Retained accepted finalization
+`/tmp/opencode/native-final-integration/finalizations/20261014T040711301534Z_913453bd/`
+was read-only compared using its `operation.json.evidence_context` and
+`evidence/synthesis-state.json`; every retained file digest was unchanged.
+Native collection writes and actual Python acceptance passed separately on a
+disposable copy. Collection of failed runs also succeeds without implying acceptance.
+No physical EDA was invoked. Prior preflight/coarse-run work is preserved; no
+subagents or live-repo Git mutations were used.
+
+Report-agent handoff: consume `Collect_service.to_json` via `Evidence_json`, not
+strict `Identity_json`, because raw inventories/postchecks may be nonfinite.
+Port `report.numeric`/acceptance separately (reject bool counts and require finite,
+integral, nonnegative counts where specified); collection success is not a gate.
+Retain `context` for finalization's evidence-origin/binding policy and
+`synthesis_state` for source provenance. Finalization still adds `provenance` and
+`origin_boundary` itself. Keep report/postcheck migration bounded and preserve the
+read-only retained/disposable-write evidence pattern. No finalization route was
+switched in this slice.
+
+## Bounded OCaml coarse run (2026-10-14)
+
+Installed `Hardcaml_asic_execution.Run_record` and `Coarse_run_service.run` expose
+typed outcomes and checked `Execution_plan.Coarse.t` input. The service ports our
+`phase4.run/_run/run_logged` attempt lifecycle, using external `-m librelane` with
+the exact emitted `src/config.json`, `Yosys.Synthesis` endpoint or full Classic.
+Native full remains a pre-allocation error. Bundle manifest/build identity is read
+before allocation; a run-owned pending preflight report precedes
+`Preflight_service.probe`, with its exact report and observed binding retained.
+Its additive optional `cancel` callback checks caller interruption between probes
+while preserving existing callers and standalone readiness behavior.
+Staging copies bundle/support references and checks staged/source manifest bytes.
+Docker re-verifies the bound engine and local image ID in a separate evidence
+directory, then uses the exact bound interpreter flags/image/engine and owned
+cleanup. Docker quota and native/container tool thread settings are capped at 20.
+Commands and merged logs are recorded before launch; terminal records retain
+requested/completed stage, failures, cleanup attempts and SIGINT/SIGTERM 130/143.
+
+`bin/experimental_run.ml` installs `hardcaml-asic-experimental-run`. Public CLI4
+`run` execs it with existing human/JSON presentation and no fallback.
+`cli.Operations.run` uses its JSON outcome through a signal-forwarding subprocess
+callback returning the unchanged Python `phase4.RunOutcome`; the existing Python
+`execute` orchestration now consumes this native run callback. Python phase4 APIs
+remain available for retained fixtures. The runner fixture explicitly injects its
+Python implementation rather than patching the new production native boundary.
+Classic coarse execution creates no native journal.
+
+Verification (sequential, all Dune invocations including install/consumer `-j20`):
+
+```sh
+dune build -j20 @install @test/ocaml-coarse-run @test/flow-cli @test/execution-transport @test/ocaml-preflight
+dune build -j20 @install @test/ocaml-coarse-run @test/coarse-runner
+python3 -B test/check_coarse_run.py --installed
+python3 -B test/check_preflight.py --installed
+python3 -B test/test_phase4.py
+git diff --check
+```
+
+Source and installed subprocess tests pass **15 Python persisted-field/outcome
+differentials** each across native synthesis and Docker synthesis/full, plus exact
+binding, command/log, staged/source manifest mutation, mismatch/dirty collateral,
+execution-time image mismatch, cleanup failure, explicit plans, literal interpreter
+aliases, pending-before-probe, host SIGINT/SIGTERM during readiness and native/Docker
+execution, failed-run collection, public run/execute and authoritative missing-helper
+checks. Installed tests copy drivers outside the checkout, deny checkout reads,
+exercise the installed shell launcher and build/run a fresh linked service consumer.
+CLI **43**, transport **45**, runner **11**, and preflight **24 report differentials**
+pass. Phase4 **all 26 tests** pass, including the authorized disposable Git fixture.
+An initial command used the nonexistent `flow-runner` alias; the correct
+`coarse-runner` alias was subsequently run successfully.
+
+Next wiring: migrate collection and postcheck behind typed outcomes/services, then
+native aggregate `execute` using this service and the existing coarse plan/gates.
+Keep Python callback/data compatibility during that transition. Optional next
+integration is a short real synthesis smoke; no physical EDA was run in this slice.
+Previous preflight work is preserved; no subagents or live-repo Git mutations.
+
+## Standalone OCaml preflight (2026-10-14)
+
+`Hardcaml_asic_execution.Preflight_service.{probe,run}` now owns standalone
+readiness. `probe` accumulates bundle/collateral/runtime issues and actual fields;
+`run` publishes the existing pending report and operation receipt before probes,
+then the actual terminal report and receipt reference. Explicit output validates
+its existing parent first, replaces only the selected report, and allocates no
+operation. Probe failures exit 1, destination/contract errors exit 2, and scoped
+SIGINT/SIGTERM interruption publishes diagnostics with exit 130/143. Interpreter
+paths retain venv symlinks and lexical `..`; bundle/reference paths resolve links.
+
+The production CLI4 route execs installed
+`hardcaml-asic-experimental-preflight` (`bin/experimental_preflight.ml`) without
+fallback. Parsing/defaults and the injected Python Operations test seam remain in
+`cli.py`; coarse `run`/`execute` still use their existing Python preflight internally.
+Native readiness and Docker coarse readiness reuse `Runtime_contract` /
+`Runtime_evidence`, `Process_supervisor`, and `Result_store`, independently of
+`Stage_preparation`. `Runtime_probe` adds separate host/container metadata probes
+and caller cancellation. The installed import-only payload skips all Classic
+inventory imports in metadata-container mode. Docker metadata launches are mount-free,
+network-disabled, read-only, local-image-ID-bound and capped at 20 CPUs, using the
+existing owned-container cleanup. Probe timeout is 20 seconds; cleanup is separately
+bounded. LibreLane and TT remain upstream external tools.
+
+Verification: `test/check_preflight.py` passes **24 full-report Python
+differentials** in source and installed modes, including legacy/explicit policy,
+native/Docker, metadata fallback, Tcl/LibreLane/Python mismatch and dirty collateral.
+Additional checks cover accumulated issues, missing manifests, bad/nonzero runtime
+responses, output validation, actual report references, pending-before-probe,
+host SIGINT/SIGTERM, Docker SIGTERM with owned cleanup, public routing/no fallback,
+and real importlib/Tcl probes through a symlinked venv interpreter with lexical `..`.
+Installed checks copy the driver outside the checkout, deny checkout reads in the
+differential process, exercise the installed shell launcher and build a fresh
+linked execution-library consumer. That consumer verifies legacy-only waiver
+behavior against valid explicit policy.
+
+Commands (sequential, every Dune invocation including nested install/build `-j 20`):
+
+```sh
+dune build -j 20 @install @test/ocaml-preflight @test/ocaml-runtime-contract @test/ocaml-result-store @test/runtime-contract @test/result-store @test/execution-transport
+dune build -j 20 @test/flow-cli @test/ocaml-stage-preparation
+python3 -B test/check_preflight.py --installed
+```
+
+Related checks passed: runtime consumer **2,961 accepted / 1,253 rejected**, runtime
+Python **18**, result-store Python **8**, transport **45**, CLI **43**, and stage
+preparation **51**. The stage-preparation invocation exceeded the initial 120-second
+shell limit; its separate 300-second-budget rerun passed. Retained phase4 regression
+passed **25** tests, excluding the fixture that creates authored Git commits under
+this dispatch's no-author-mutation constraint.
+
+A real bounded metadata-only smoke used the existing consumer bundle
+`bbbda7ff…477`, `_flow_tools/.venv`, TT/PDK and local official LibreLane image:
+**ready**, no issues, seven reference hashes, host Python **3.11.17**, container
+Python **3.13.13**, LibreLane **3.1.0.dev3**, Docker **29.8.1**. Retained report and
+receipt: `/tmp/opencode/standalone-preflight-smoke/operations/20261014T053255431084Z_496eedca/`.
+No physical EDA was invoked.
+
+Coarse-run handoff: call `Preflight_service.probe` with the run-owned evidence
+directory after publishing its pending report, and use the exact returned report
+and observed execution binding. `run` is the standalone allocation/receipt owner;
+it must not allocate a second standalone operation inside a coarse run. Public
+schemas and the existing legacy-only mismatch seam are retained. Phase queue and
+archive ownership remain with the orchestrator. No agents or Git mutations were used.
 
 ## Maintained contract and ownership
 
@@ -57,6 +1233,8 @@ inspect these static declarations without a source checkout or physical tools.
 | Explicit native/Docker bindings, command specifications and owned-container cleanup primitive | `lib/execution/execution_transport.{ml,mli}` |
 | Pure bundle-authoritative runtime policy, metadata/readiness evidence and image/engine identity validation | `lib/execution/runtime_contract.{ml,mli}`, `lib/execution/runtime_evidence.{ml,mli}` |
 | Exclusive attempt allocation, atomic finite JSON records and preflight record constructors | `lib/execution/result_store.{ml,mli}`, `Hardcaml_asic_execution.Result_store` |
+| Standalone readiness, pending/report/receipt lifecycle and public preflight delegation | `lib/execution/preflight_service.{ml,mli}`, `bin/experimental_preflight.ml`, `flow/hardcaml_asic_flow/ocaml_backend.py` |
+| Read-only normalized results acquisition, pure acceptance, detailed human report and public report delegation | `lib/execution/report_service.{ml,mli}`, `bin/experimental_report.ml`, `flow/hardcaml_asic_flow/ocaml_backend.py` |
 | Python coarse-service runtime policy/probes and transport integration | `flow/hardcaml_asic_flow/execution_transport.py`, `runtime_observation.py`, `phase4.py` |
 | Retained Python segment API/fixtures (not public stages dispatch) | `flow/hardcaml_asic_flow/stages.py` |
 | Authoritative OCaml prepared-path segment callbacks and supervised publication validation | `lib/execution/segment_service.{ml,mli}`, `Hardcaml_asic_execution.Segment_service` |
