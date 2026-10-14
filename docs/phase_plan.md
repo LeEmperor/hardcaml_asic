@@ -86,15 +86,26 @@ Continue with one bounded implementation owner per dependent slice; independent
 read-only review may run alongside an implementation owner. Serialize Dune builds
 with `-j 20` and keep external-tool resource limits within the same budget.
 
-1. Add bounded per-operation backend invocation, starting with the validated
-   placement sequence. Prove physical equivalence and required checks/gates;
-   independent step checkpoints need separate evidence.
-2. Finish any useful hardware/project/resource directory organization separately
-   from behavioral changes. Retained Python reference relocation/removal is
-   optional test-maintenance work, not a production dependency.
-3. Repeat integration only for changed boundaries and close out the full
-   infrastructure refactor. Then design/implement the later modularized flow-file
-   and profile feature, including configuration identity and lineage-aware reuse.
+Priority clarified 2026-10-14: named methodologies and parameter experiments are
+the immediate modularized-flow concern, establishing the public active-flow
+boundary before Hardcaml Workbench integration. Finer operation rearrangement is
+not a prerequisite. See the [design record](development/project-flow-catalog.md).
+
+1. Specify and implement project-owned flow/profile catalogs, defaults, discovery,
+   description, resolved preview and fresh named-methodology execution. Preserve
+   effective settings, input identity and preview-to-launch consistency.
+2. Verify an installed headless client through discover/select/preview/run/observe/
+   report using the example project and two meaningful parameter profiles. This
+   establishes the contract Workbench can consume for its active-flow selection.
+3. Add bounded per-operation backend invocation when needed, starting with the
+   validated placement sequence. Prove physical equivalence and required checks/
+   gates; independent step checkpoints need separate evidence.
+4. Add configuration-changing checkpoint reuse with explicit dependency rules and
+   lineage-aware finalization. It is separate from initial fresh profile runs.
+5. Finish useful hardware/project/resource directory organization independently of
+   behavioral changes. Retained Python reference cleanup is optional maintenance.
+   Repeat integration only for changed boundaries and close out the remaining
+   infrastructure work without making cosmetic reorganization a Workbench gate.
 
 The whole refactor is **in progress**. No arbitrary flow files, configurable
 checkpoint branches, or general DAG scheduler are delivered by this milestone.

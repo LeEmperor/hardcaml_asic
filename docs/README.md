@@ -97,6 +97,11 @@ Historical records retain their original API names and commands.
 
 ## Where things live
 
+For the next modularized-flow feature and Workbench's active-flow boundary, see
+[Project flow catalog and named methodologies](development/project-flow-catalog.md).
+This is a proposed contract for discovery, profiles, preview and execution;
+named methodologies take priority over arbitrary backend-step rearrangement.
+
 For human-readable synthesis metrics and cell inventories from existing checkpoints
 or stage workspaces, see [checkpoint and stage reporting](development/checkpoint-reporting.md).
 `hardcaml-asic-flow report TARGET` also retains the existing coarse-run report mode.

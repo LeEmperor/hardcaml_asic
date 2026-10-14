@@ -6,6 +6,12 @@ and responsibility-oriented source organization are delivered as of 2026-10-14.
 Physical and installed-service verification are recorded separately. Finer
 per-operation execution and modularized flows remain later work. Written 2026-10-13.
 
+**Priority clarification (2026-10-14):** the next feature is the
+[project flow catalog and named methodology contract](development/project-flow-catalog.md)
+for Workbench's active-flow integration. Named profiles and fresh parameter
+experiments do not depend on arbitrary per-operation invocation. The active queue
+reflects this ordering; the original infrastructure slices below retain their scope.
+
 See the [implementation record](development/flow-infrastructure-progress.md) and
 [active queue](phase_plan.md#ocaml-first-flow-infrastructure) for delivered
 boundaries, verification, and remaining work. Section 2 preserves the historical
