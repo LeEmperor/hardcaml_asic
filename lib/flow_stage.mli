@@ -3,7 +3,7 @@ open! Core
 (** Tested LibreLane Classic segment boundaries, not individual backend steps.
     Successor checks remain part of the next segment. No stage settings are
     implied by these declarations; project adapter settings remain on [Flow]. *)
-type t = Synthesis | Floorplan | Placement | Cts | Routing | Signoff
+type t = Hardcaml_asic_flow_domain.Stage_id.t = Synthesis | Floorplan | Placement | Cts | Routing | Signoff
 [@@deriving compare, equal, sexp_of]
 
 val all : t list

@@ -33,7 +33,7 @@ done
 bindir=$(CDPATH= cd -- "$(dirname -- "$target")" && pwd -P) || exit 2
 
 package_root=$bindir/../lib/hardcaml_asic/flow
-for module in cli runtime_contract runtime_observation execution_transport; do
+for module in cli ocaml_backend runtime_contract runtime_observation execution_transport; do
 if [ ! -f "$package_root/hardcaml_asic_flow/$module.py" ]; then
     # Deliberately no search for a source checkout to fall back on: an
     # incomplete installation is reported as one.

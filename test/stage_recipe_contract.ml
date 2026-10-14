@@ -70,5 +70,6 @@ let () =
       ; "closure_scope", `String "path_bound"; "acceptance", `String "not_evaluated" ])) in
   printf "%s\n" (Yojson.Safe.to_string (`Assoc
     [ "cases", `List cases; "through", `List through; "composed", `List (describe joined :: compose)
+    ; "stage_order", `List (List.map S.all ~f:name)
     ; "capabilities", capabilities ]))
 ;;

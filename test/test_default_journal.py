@@ -1,269 +1,247 @@
-"""Contract-4 CLI lifecycle, real signals and failed output; no EDA."""
+"""CLI4 lifecycle at the public subprocess boundary; real OCaml control, no EDA."""
 import contextlib
-import io
 import json
-import os
 from pathlib import Path
+import os
 import signal
-import subprocess
-import sys
 import tempfile
 import time
 import unittest
+import sys
+import io
 from unittest.mock import patch
 
-PACKAGE_ROOT = os.environ.get("STAGE_TEST_PACKAGE_ROOT", str(Path(__file__).resolve().parents[1] / "flow"))
-sys.path.insert(0, PACKAGE_ROOT)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hardcaml_asic_flow import cli, flow_observation as obs, result_store, stages
-import test_stages
-
-
-def command(root):
-    return ["stages", str(root / "bundle"), "--endpoint", "synthesis", "--json",
-            "--workspace", str(root / "workspace"), "--checkpoint-store", str(root / "checkpoints"),
-            "--support-tools", str(root / "tt"), "--pdk-root", str(root / "pdk"), "--python", sys.executable]
+from public_cli_fixture import Fixture
+from hardcaml_asic_flow import flow_observation as obs, execution_plan as ep, presentation, cli, ocaml_backend
 
 
 class DefaultJournalTest(unittest.TestCase):
     def setUp(self):
-        self.fixture = test_stages.StagesTest()
-        self.fixture.setUp()
-        self.root = self.fixture.root
+        self.tmp = tempfile.TemporaryDirectory()
+        self.fixture = Fixture(self.tmp.name)
+        self.root = Path(self.tmp.name)
 
     def tearDown(self):
-        self.fixture.tearDown()
+        self.tmp.cleanup()
 
-    def invoke(self, args):
-        out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = cli.main(args)
-        return code, [json.loads(line) for line in out.getvalue().splitlines()]
+    def run_stage(self, extra=(), endpoint="synthesis"):
+        result = self.fixture.invoke([*self.fixture.command(endpoint), "--json", *extra])
+        return result, [json.loads(line) for line in result.stdout.splitlines()]
 
-    def test_default_override_and_resume_new_stream_complete_outputs(self):
-        (self.root / "workspace").mkdir()
-        with patch.object(stages, "prepare", return_value=self.fixture.adapter()):
-            code, (allocation, result) = self.invoke(command(self.root))
-        self.assertEqual(code, 0)
+    def test_default_override_resume_and_plan(self):
+        result, (allocation, execution) = self.run_stage()
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(Path(allocation["attempt"]).parent, self.root / "observations")
-        path = self.root / "workspace" / ("execution-" + result["attempt_id"] + ".json")
-        self.assertEqual(result, json.loads(path.read_text()))
-        initial = result["artifacts"][0]["path"]
-        args = command(self.root)
-        args[args.index("synthesis")] = "floorplan"
-        with patch.object(stages, "prepare", return_value=self.fixture.adapter(initial=initial)):
-            code, (resumed, execution) = self.invoke([*args, "--checkpoint", initial,
-                                                    "--observation-store", str(self.root / "override")])
-        self.assertEqual(code, 0)
+        self.assertEqual(execution, json.loads((self.fixture.workspace / ("execution-" + execution["attempt_id"] + ".json")).read_text()))
+        checkpoint = execution["artifacts"][0]["path"]
+        plan = self.root / "plan.json"
+        plan.write_text(json.dumps(ep.resolve_sequence(["floorplan"], initial_boundary="synthesis").as_dict()))
+        command = self.fixture.command()
+        index = command.index("--endpoint")
+        command[index:index+2] = ["--plan", "plan.json"]
+        result = self.fixture.invoke([*command, "--checkpoint", checkpoint, "--observation-store", "override", "--json"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        resumed, execution = map(json.loads, result.stdout.splitlines())
         self.assertNotEqual(resumed["stream_id"], allocation["stream_id"])
         self.assertEqual(Path(resumed["attempt"]).parent, self.root / "override")
         self.assertEqual(execution["plan"]["initial_boundary"], "synthesis")
-        self.assertFalse(obs.inspect(allocation["attempt"])["writer_active"])
+        self.assertFalse(obs.inspect(resumed["attempt"])["writer_active"])
 
-    def test_preflight_error_and_invalid_plan_before_workspace(self):
-        args = command(self.root)
-        args[args.index("--checkpoint-store") + 1] = str(self.root / "workspace/checkpoints")
-        with patch.object(stages.phase4, "preflight", return_value={"ready": False, "issues": ["fixture unavailable"]}):
-            code, (allocation, terminal) = self.invoke(args)
-        self.assertEqual(code, 2)
-        self.assertEqual(terminal["observation"], obs.inspect(allocation["attempt"]))
-        self.assertEqual(terminal["observation"]["state"]["outcome"]["status"], "failed")
-        self.assertIsNone(terminal["execution_file"])
-        self.assertFalse((self.root / "workspace").exists())
-        report = Path(terminal["observation"]["state"]["preflight_record"])
-        self.assertEqual(json.loads(report.read_text())["issues"], ["fixture unavailable"])
-        recipe = self.root / "invalid.json"
-        recipe.write_text("{}")
-        args = command(self.root)
-        index = args.index("--endpoint")
-        args[index:index + 2] = ["--plan", str(recipe)]
-        with patch.object(stages, "prepare") as prepare:
-            code, (allocation, terminal) = self.invoke(args)
-        prepare.assert_not_called()
+    def test_workspace_named_stage_preflight(self):
+        self.fixture.workspace = self.root / "stage-preflight"
+        self.fixture.store = self.fixture.workspace / "checkpoints"
+        result, (allocation, execution) = self.run_stage()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(execution["status"], "completed")
+        receipts = list((self.root / "stage-preflight-evidence/operations").glob("*/operation.json"))
+        self.assertEqual(len(receipts), 1)
+        receipt = json.loads(receipts[0].read_text())
+        local = receipts[0].parent / receipt["report"]
+        state, _ = obs.load(allocation["attempt"])
+        self.assertEqual(local.read_bytes(), Path(state["preflight_record"]).read_bytes())
+        requests = list((self.fixture.workspace / "project").glob("*-request.json"))
+        physical_ids = {json.loads(p.read_text())["request_id"] for p in requests}
+        records = [json.loads(p.read_text()) for p in self.fixture.workspace.glob("*-transport.json")]
+        self.assertEqual({r["request_id"] for r in records}, physical_ids)
+        events = [json.loads(line) for line in (self.root / "engine-events.jsonl").read_text().splitlines()]
+        names = {r["container_name"] for r in records}
+        self.assertEqual(len([e for e in events if e[:2] == ["rm", "-f"] and e[2] in names]), len(names))
+
+    def test_invalid_plan_before_probes_and_preflight_failure(self):
+        (self.root / "invalid.json").write_text("{}")
+        command = self.fixture.command()
+        index = command.index("--endpoint")
+        command[index:index+2] = ["--plan", "invalid.json"]
+        result = self.fixture.invoke([*command, "--json"])
+        allocation, terminal = map(json.loads, result.stdout.splitlines())
+        self.assertEqual(result.returncode, 2)
         self.assertIsNone(terminal["observation"]["state"]["plan"])
+        self.assertFalse((self.root / "preparation-events.jsonl").exists())
+        self.fixture.env["PREPARATION_MODE"] = "host_mismatch"
+        result, (allocation, terminal) = self.run_stage()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(terminal["observation"], obs.inspect(allocation["attempt"]))
+        self.assertIsNone(terminal["execution_file"])
+        self.assertFalse(self.fixture.workspace.exists())
+        self.fixture.env["PREPARATION_MODE"] = "probe_failure"
+        result, (allocation, terminal) = self.run_stage()
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(terminal["exit_code"], 2)
 
-    def test_allocation_storage_failure_and_missing_parent_no_identity(self):
-        with patch.object(result_store, "allocate", side_effect=OSError("store unavailable")):
-            code, (terminal,) = self.invoke(command(self.root))
-        self.assertEqual(code, 2)
-        for key in ("attempt", "stream_id", "execution_file", "observation"):
-            self.assertIsNone(terminal[key])
-        args = command(self.root)
-        args[args.index("--workspace") + 1] = str(self.root / "missing" / "workspace")
-        code, (terminal,) = self.invoke(args)
-        self.assertEqual(code, 2)
+    def test_missing_parent_busy_and_escape_hatch(self):
+        command = self.fixture.command()
+        command[command.index("--workspace")+1] = "missing/workspace"
+        result = self.fixture.invoke([*command, "--json"])
+        terminal, = map(json.loads, result.stdout.splitlines())
+        self.assertEqual(result.returncode, 2)
         self.assertIsNone(terminal["attempt"])
-        # The allocation failure released the workspace lock.
-        with contextlib.closing(obs.Writer(self.root / "other", workspace=self.root / "workspace",
-                                          checkpoint_store=self.root / "checkpoints", request={})):
-            pass
-
-    def test_busy_across_stores_and_mutually_exclusive_escape_hatch(self):
-        with contextlib.closing(obs.Writer(self.root / "other", workspace=self.root / "workspace",
-                                          checkpoint_store=self.root / "checkpoints", request={})):
-            code, (terminal,) = self.invoke(command(self.root))
-        self.assertEqual(terminal["error"]["code"], "BUSY")
-        self.assertIsNone(terminal["attempt"])
-        self.assertFalse((self.root / "observations").exists())
-        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            cli.main([*command(self.root), "--no-observation", "--observation-store", str(self.root)])
-        (self.root / "workspace").mkdir()
-        with patch.object(stages, "prepare", return_value=self.fixture.adapter()):
-            code, (execution,) = self.invoke([*command(self.root), "--no-observation"])
-        self.assertEqual(code, 0)
+        with contextlib.closing(obs.Writer(self.root / "other", workspace=self.fixture.workspace,
+                                          checkpoint_store=self.fixture.store, request={})):
+            result, (terminal,) = self.run_stage()
+            self.assertEqual(terminal["error"]["code"], "BUSY")
+        result, (execution,) = self.run_stage(["--no-observation"])
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("occurrences", execution)
         self.assertFalse((self.root / "observations").exists())
+        result = self.fixture.invoke([*self.fixture.command(), "--no-observation", "--observation-store", "other"])
+        self.assertEqual(result.returncode, 2)
 
-    def test_aggregate_and_journal_storage_failures_truthful(self):
-        (self.root / "workspace").mkdir()
-        original = result_store.save_json
-        for mode in ("aggregate", "journal", "outcome"):
-            def save(path, value):
-                if ((mode == "aggregate" and Path(path).name.startswith("execution-"))
-                        or (mode == "journal" and value.get("event") in ("finished", "outcome"))
-                        or (mode == "outcome" and value.get("event") == "outcome")):
-                    raise OSError("storage unavailable")
-                original(path, value)
-            with patch.object(result_store, "save_json", save), patch.object(stages, "prepare", return_value=self.fixture.adapter()):
-                code, (allocation, terminal) = self.invoke(command(self.root))
-            self.assertEqual(code, 2)
-            if mode == "outcome":
-                self.assertTrue(Path(terminal["execution_file"]).is_file())
-                self.assertEqual(json.loads(Path(terminal["execution_file"]).read_text())["status"], "completed")
-            else:
-                self.assertIsNone(terminal["execution_file"])
-            state = terminal["observation"]["state"]
-            self.assertEqual(len(state["artifacts"]), 1)
-            if mode == "aggregate":
-                self.assertEqual(state["outcome"]["status"], "failed")
-                self.assertEqual(state["occurrences"][0]["status"], "completed")
-            else:
-                self.assertIsNone(state["outcome"])
-                self.assertEqual(state["occurrences"][0]["status"], "completed" if mode == "outcome" else "running")
-                self.assertIsNotNone(terminal["recording_error"])
+    def test_storage_failure_and_publication_preserved(self):
+        self.fixture.env["JOURNAL_COLLISION"] = "1"
+        result, (allocation, terminal) = self.run_stage()
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertTrue(terminal["recording_error"])
+        execution = json.loads(Path(terminal["execution_file"]).read_text())
+        self.assertEqual(len(execution["artifacts"]), 1)
+        self.assertEqual(execution["status"], "failed")
+        self.assertEqual(Path(allocation["attempt"], "000000000005.json").read_text(), "retained conflict")
 
-    def signal_case(self, mode, signum):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            child = subprocess.Popen([sys.executable, "-B", __file__, "--worker", temporary, mode],
-                env=dict(os.environ, STAGE_TEST_PACKAGE_ROOT=PACKAGE_ROOT), stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, text=True)
-            try:
-                deadline = time.monotonic() + 10
-                while not (root / "ready").exists():
-                    if time.monotonic() > deadline or child.poll() is not None:
-                        self.fail("worker did not reach signal boundary")
-                    time.sleep(.01)
-                child.send_signal(signum)
-                stdout, stderr = child.communicate(timeout=10)
-                self.assertEqual(child.returncode, 128 + signum, stderr)
-                terminal = json.loads(stdout.splitlines()[-1])
-                self.assertEqual(terminal["status"], "interrupted")
-                self.assertEqual(terminal["exit_code"], 128 + signum)
-                self.assertIsNone(terminal["execution_file"])
-                if mode == "allocation":
-                    self.assertIsNone(terminal["attempt"])
-                else:
-                    self.assertFalse(terminal["observation"]["writer_active"])
-                    self.assertEqual(terminal["observation"], obs.inspect(terminal["attempt"]))
-                    self.assertEqual(terminal["observation"]["state"]["outcome"]["status"], "interrupted")
-                    if mode == "prepare":
-                        self.assertEqual(len(stdout.splitlines()), 2)
-                        report = terminal["observation"]["state"]["preflight_record"]
-                        self.assertEqual(json.loads(Path(report).read_text())["diagnostic"]["status"], "interrupted")
-            finally:
-                if child.poll() is None:
-                    child.kill()
-                    child.communicate()
+    def test_aggregate_storage_failure(self):
+        self.fixture.env["EXECUTION_STORAGE_FAULT"] = "1"
+        result, (allocation, terminal) = self.run_stage()
+        self.assertEqual(result.returncode, 2)
+        self.assertIsNone(terminal["execution_file"])
+        self.assertEqual(terminal["observation"]["state"]["outcome"]["status"], "failed")
+        self.assertEqual(len(terminal["observation"]["state"]["artifacts"]), 1)
 
-    def test_real_sigterm_preparation_and_receipt_and_allocation(self):
-        for mode in ("prepare", "receipt", "allocation"):
-            self.signal_case(mode, signal.SIGTERM)
-
-    def test_real_sigint_preparation(self):
-        self.signal_case("prepare", signal.SIGINT)
-
-    def test_terminal_flush_and_signal_handler_restoration(self):
-        previous = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
-        with patch.object(stages, "prepare", side_effect=RuntimeError("rejected")), patch("builtins.print") as output:
-            self.assertEqual(cli.main(command(self.root)), 2)
-        machine = [call for call in output.call_args_list if call.args and str(call.args[0]).startswith('{')]
-        self.assertEqual(len(machine), 2)
-        self.assertTrue(all(call.kwargs.get("flush") for call in machine))
-        self.assertEqual(previous, {s: signal.getsignal(s) for s in previous})
-
-    def test_broken_terminal_stdout_retains_recorded_failure(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            child = subprocess.Popen([sys.executable, "-B", __file__, "--worker", temporary, "broken-terminal"],
-                env=dict(os.environ, STAGE_TEST_PACKAGE_ROOT=PACKAGE_ROOT), stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, text=True)
-            try:
-                allocation = json.loads(child.stdout.readline())
-                child.stdout.close()
-                (root / "proceed").touch()
-                child.wait(timeout=10)
-                self.assertEqual(child.returncode, 2)
+    def test_cli4_timeout_and_publication_exception_exit_semantics(self):
+        for setting in ("SERVICE_EXECUTION_SLEEP", "SERVICE_VALIDATION_EXIT"):
+            with tempfile.TemporaryDirectory() as tmp:
+                fixture = Fixture(tmp)
+                fixture.env[setting] = "10" if setting.endswith("SLEEP") else "17"
+                if setting == "SERVICE_VALIDATION_EXIT":
+                    fixture.env["BRIDGE_FIXTURE_RUNTIME_FILE"] = str(next(p for p in Path("/nix/store").iterdir() if p.is_file()))
+                result = fixture.invoke([*fixture.command(), "--json"])
+                self.assertEqual(result.returncode, 2, result.stderr)
+                allocation, execution = map(json.loads, result.stdout.splitlines())
+                self.assertEqual(execution["exit_code"], 2)
+                self.assertEqual(execution["status"], "failed")
+                self.assertFalse(execution.get("artifacts"))
                 state = obs.inspect(allocation["attempt"])
-                self.assertFalse(state["writer_active"])
-                self.assertEqual(state["state"]["outcome"]["error"], "terminal fixture failure")
-            finally:
-                if child.poll() is None:
-                    child.kill()
-                    child.wait()
-                child.stderr.close()
+                self.assertEqual(state["state"]["outcome"]["exit_code"], 2)
+                calls = [json.loads(line) for line in (Path(tmp) / "engine-events.jsonl").read_text().splitlines()]
+                self.assertTrue(any(call[:2] == ["rm", "-f"] for call in calls))
+                for call in calls:
+                    if call[0] == "run":
+                        self.assertIn("--cpus=20", call)
+                        self.assertIn("_OPENLANE_MAX_CORES=20", call)
+                        self.assertIn("OPENROAD_THREADS=20", call)
+                        self.assertIn("OMP_NUM_THREADS=20", call)
 
-    def test_broken_allocation_stdout_releases_locks_without_preparing(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            read, write = os.pipe()
-            os.close(read)
-            try:
-                child = subprocess.run([sys.executable, "-B", __file__, "--worker", temporary, "broken"],
-                    env=dict(os.environ, STAGE_TEST_PACKAGE_ROOT=PACKAGE_ROOT), stdout=write,
-                    stderr=subprocess.PIPE, text=True, timeout=10)
-            finally:
-                os.close(write)
-            self.assertEqual(child.returncode, 2, child.stderr)
-            attempt, = (root / "observations").iterdir()
-            state = obs.inspect(attempt)
-            self.assertFalse(state["writer_active"])
-            self.assertEqual(state["state"]["outcome"]["status"], "failed")
-            self.assertIsNone(state["state"]["plan"])
-            self.assertFalse((root / "prepared").exists())
-            with contextlib.closing(obs.Writer(root / "other", workspace=root / "workspace",
-                                              checkpoint_store=root / "checkpoints", request={})):
-                pass
+    def test_sigint_sigterm_forwarded_from_public_pid(self):
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            with tempfile.TemporaryDirectory() as tmp:
+                fixture = Fixture(tmp, "probe_timeout")
+                process = fixture.invoke([*fixture.command(), "--json"], live=True)
+                try:
+                    allocation = json.loads(process.stdout.readline())
+                    deadline = time.monotonic() + 10
+                    while not (Path(tmp) / "preparation-events.jsonl").exists():
+                        self.assertIsNone(process.poll())
+                        self.assertLess(time.monotonic(), deadline)
+                        time.sleep(.01)
+                    process.send_signal(signum)
+                    stdout, stderr = process.communicate(timeout=10)
+                    self.assertEqual(process.returncode, 128 + signum, stderr)
+                    terminal = json.loads(stdout.splitlines()[-1])
+                    self.assertEqual(terminal["status"], "interrupted")
+                    self.assertEqual(terminal["observation"], obs.inspect(allocation["attempt"]))
+                    self.assertFalse(terminal["observation"]["writer_active"])
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                        process.communicate()
 
+    def test_broken_allocation_output_releases_lock(self):
+        read, write = os.pipe()
+        os.close(read)
+        try:
+            result = self.fixture.invoke([*self.fixture.command(), "--json"], stdout=write)
+        finally:
+            os.close(write)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        attempt, = (self.root / "observations").iterdir()
+        state = obs.inspect(attempt)
+        self.assertFalse(state["writer_active"])
+        self.assertIsNone(state["state"]["plan"])
+        self.assertEqual(state["state"]["outcome"]["status"], "failed")
 
-def worker(root, mode):
-    root = Path(root)
-    def pause():
-        (root / "ready").touch()
-        time.sleep(60)
-    def prepare(**kwargs):
-        (root / "prepared").touch()
-        if mode == "broken-terminal":
-            while not (root / "proceed").exists():
-                time.sleep(.01)
-            raise ValueError("terminal fixture failure")
-        checked = result_store.durable_preflight(root / "bundle", kwargs["preflight_output"], pause)
-        if checked.status == "interrupted":
-            raise result_store.FlowInterrupted(checked.exit_code - 128)
-        raise AssertionError("unexpected preparation completion")
-    original_print = print
-    def output(*args, **kwargs):
-        if mode == "receipt" and args and "observation_allocated" in str(args[0]):
-            pause()
-        original_print(*args, **kwargs)
-    with patch.object(stages, "prepare", prepare), patch("builtins.print", output):
-        if mode == "allocation":
-            with patch.object(result_store, "allocate", side_effect=lambda _: pause()):
-                return cli.main(command(root))
-        return cli.main(command(root))
+    def test_human_output_exact_renderer_diff(self):
+        result = self.fixture.invoke(self.fixture.command("floorplan"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        attempt, = (self.root / "observations").iterdir()
+        state = obs.inspect(attempt)
+        execution = json.loads(next(self.fixture.workspace.glob("execution-*.json")).read_text())
+        # Render each line with the same print newline convention.
+        lines = []
+        presentation.allocation({"event": "observation_allocated", "attempt": str(attempt), "stream_id": state["stream_id"]}, output=lines.append)
+        presentation.stage_execution(execution, workspace=self.fixture.workspace, output=lines.append)
+        self.assertEqual(result.stdout, "\n".join(lines) + "\n")
+        self.assertEqual(result.stderr, "")
+
+    def test_reader_payload_parity_and_cursor_negatives(self):
+        result, (allocation, execution) = self.run_stage()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        attempt = allocation["attempt"]
+        command = ["observation", "inspect", attempt, "--json"]
+        result = self.fixture.invoke(command)
+        self.assertEqual(json.loads(result.stdout), obs.inspect(attempt))
+        command = ["observation", "read-updates", attempt, "--json", "--stream-id", allocation["stream_id"], "--after", "0"]
+        result = self.fixture.invoke(command)
+        self.assertEqual(json.loads(result.stdout), obs.read_updates(attempt, stream_id=allocation["stream_id"], after=0))
+        for after in ("-1", "999999999999999999999999999999999"):
+            result = self.fixture.invoke([*command[:-1], after])
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(json.loads(result.stdout)["error"]["code"], "RESET_REQUIRED")
+        checkpoint = execution["artifacts"][0]["path"]
+        result = self.fixture.invoke(["checkpoint-inspect", checkpoint, "--restart-to", "floorplan", "--json"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["manifest"], json.loads(Path(checkpoint, "manifest.json").read_text()))
+        result = self.fixture.invoke(["checkpoint-inspect", checkpoint, "--restart-to", "signoff", "--json"])
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("error", json.loads(result.stdout))
+
+    def test_parser_defaults_and_strict_options(self):
+        args = cli.build_parser().parse_args(self.fixture.command())
+        self.assertEqual(args.timeout, 600 if "--timeout" not in self.fixture.command() else 2)
+        command = self.fixture.command()
+        index = command.index("--timeout")
+        del command[index:index+2]
+        self.assertEqual(cli.build_parser().parse_args(command).timeout, 600)
+        self.assertFalse(cli.build_parser().parse_args(command).no_observation)
+        for extra in (["--source", "synthesis"], ["--endpoint", "unknown"], ["--plan", "missing.json"], ["--timeout", "1.5"]):
+            result = self.fixture.invoke([*command, *extra])
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse((self.root / "observations").exists())
+        missing_package = self.root / "prefix/lib/hardcaml_asic/flow/hardcaml_asic_flow"
+        stderr = io.StringIO()
+        with patch.object(ocaml_backend, "PACKAGE", missing_package), contextlib.redirect_stderr(stderr):
+            self.assertEqual(cli.main(command, cwd=self.root), 2)
+        self.assertIn("OCaml backend is missing", stderr.getvalue())
+        self.assertIn("Reinstall", stderr.getvalue())
+        self.assertFalse((self.root / "observations").exists())
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--worker":
-        sys.exit(worker(sys.argv[2], sys.argv[3]))
     unittest.main()

@@ -1,0 +1,5 @@
+(library
+ (name hardcaml_asic_execution)
+ (public_name hardcaml_asic.execution)
+ (libraries cryptokit zarith hardcaml_asic unix spawn)
+ (foreign_stubs (language c) (names process_stubs observation_stubs)))

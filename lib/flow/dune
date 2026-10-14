@@ -1,0 +1,7 @@
+(include_subdirs qualified)
+
+(library
+ (name hardcaml_asic_flow_domain)
+ (public_name hardcaml_asic.flow_domain)
+ (libraries core)
+ (preprocess (pps ppx_jane)))

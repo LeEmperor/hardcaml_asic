@@ -10,6 +10,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import types
 
 from librelane.common import Path as ToolPath
 from librelane.flows import Flow
@@ -24,6 +25,20 @@ SUCCESSORS = {"synthesis": "Checker.YosysUnmappedCells", "floorplan": "OpenROAD.
               "routing": "Odb.RemoveRoutingObstructions"}
 RESTART_TARGETS = {"synthesis": ("floorplan", "placement"), "floorplan": ("placement",),
                    "placement": ("cts",), "cts": ("routing",), "routing": ("signoff",)}
+
+# This literal is part of the bridge digest used by checkpoint compatibility.
+# Load only these verified bytes, including under Python -I (no sys.path edits).
+PROTOCOL_SHA256 = "732c05a5009f0510ec2624f7ddc03e86bb2a20cf824a9bb9c96d947bc0f2e49d"
+
+
+def protocol_module():
+    support = Path(__file__).with_name("backend_protocol.py")
+    source = support.read_bytes()
+    if hashlib.sha256(source).hexdigest() != PROTOCOL_SHA256:
+        raise ValueError("transported backend protocol hash mismatch")
+    module = types.ModuleType("backend_protocol")
+    exec(compile(source, str(support), "exec"), module.__dict__)
+    return module
 
 
 def digest(path):
@@ -107,13 +122,27 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("request", type=Path)
     args = parser.parse_args()
-    request = json.loads(args.request.read_text())
+    protocol = protocol_module()
+    request = protocol.validate_request(protocol.loads(args.request.read_text(encoding="utf-8")))
     if digest(__file__) != request["bridge_sha256"]:
         raise ValueError("transported bridge hash mismatch")
+    if Path(request["reply_path"]).exists():
+        raise ValueError("backend reply must be fresh")
+    try:
+        execute(request)
+        protocol.write_reply(request)
+    except Exception as exc:
+        # Ordinary backend failures have diagnostic replies AND nonzero exit.
+        # BaseException (signals/SystemExit/KeyboardInterrupt) is never completed.
+        protocol.write_reply(request, error=str(exc) or type(exc).__name__)
+        raise
+
+
+def execute(request):
     project, pdk = Path(request["project"]), Path(request["pdk_root"])
     candidate = Path(request["candidate"])
     boundary = request["boundary"]
-    validating = request.get("mode") == "validate_publication"
+    validating = request["operation"] == "validate_publication"
     if not validating:
         candidate.mkdir()  # fresh output only, never read a stale success file
     classic = Flow.factory.get("Classic")

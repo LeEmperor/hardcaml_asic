@@ -1,7 +1,13 @@
 # OCaml-first flow infrastructure and stage decomposition
 
-**Status:** proposed architecture and refactor direction; not implemented by this
-document. Written 2026-10-13.
+**Status:** implementation in progress. The OCaml-owned explicit-stage execution
+milestone is delivered and physically verified as of 2026-10-14; the entire
+refactor is not complete. Written 2026-10-13.
+
+See the [implementation record](development/flow-infrastructure-progress.md) and
+[active queue](phase_plan.md#ocaml-first-flow-infrastructure) for delivered
+boundaries, verification, and remaining work. The current-state inventory below
+describes the starting point; the target layout remains a destination sketch.
 
 **Purpose:** reorganize the provider around explicit stages, backend integration,
 and OCaml-owned execution infrastructure. This builds much of the foundation for
@@ -10,8 +16,8 @@ configuration profiles that compose implementation methodologies.
 
 Modularized flow-file support is a later feature, not a deliverable claimed by
 this infrastructure refactor. The [phase plan](phase_plan.md) remains the active
-implementation queue; the slices below describe dependencies and proposed
-acceptance criteria, not newly scheduled work. The
+implementation queue; the slices below describe dependencies and acceptance
+criteria rather than a second queue. The
 [architecture](architecture.md) describes current ownership and capabilities.
 
 ## 1. Motivation and intended outcome

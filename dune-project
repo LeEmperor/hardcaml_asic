@@ -32,6 +32,8 @@ of them.")
   hardcaml
   yojson
   cryptokit
+   zarith
+   spawn
   ppx_jane
   ppx_hardcaml
   ; Host Python for the installed hardcaml-asic-flow command. conf-python-3 does

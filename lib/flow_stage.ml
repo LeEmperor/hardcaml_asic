@@ -1,24 +1,12 @@
 open! Core
 
-type t = Synthesis | Floorplan | Placement | Cts | Routing | Signoff
+type t = Hardcaml_asic_flow_domain.Stage_id.t = Synthesis | Floorplan | Placement | Cts | Routing | Signoff
 [@@deriving compare, equal, sexp_of]
 
-let all = [ Synthesis; Floorplan; Placement; Cts; Routing; Signoff ]
+let all = Hardcaml_asic_flow_domain.Stage_id.all
 
-let to_string = function
-  | Synthesis -> "synthesis"
-  | Floorplan -> "floorplan"
-  | Placement -> "placement"
-  | Cts -> "cts"
-  | Routing -> "routing"
-  | Signoff -> "signoff"
-;;
-
-let of_string name =
-  match List.find all ~f:(fun stage -> String.equal (to_string stage) name) with
-  | Some stage -> Ok stage
-  | None -> Or_error.errorf "Unknown flow stage %S; use synthesis, floorplan, placement, cts, routing or signoff" name
-;;
+let to_string = Hardcaml_asic_flow_domain.Stage_id.to_string
+let of_string = Hardcaml_asic_flow_domain.Stage_id.of_string
 
 module Closure_scope = struct
   type t = Path_bound [@@deriving equal, sexp_of]
@@ -39,19 +27,14 @@ type capability =
 [@@deriving sexp_of]
 
 let capability stage =
-  let endpoint, successor, restart_targets =
-    match stage with
-    | Synthesis -> "Yosys.Synthesis", Some "Checker.YosysUnmappedCells", [ Floorplan; Placement ]
-    | Floorplan -> "OpenROAD.Floorplan", Some "OpenROAD.DumpRCValues", [ Placement ]
-    | Placement -> "OpenROAD.DetailedPlacement", Some "OpenROAD.CTS", [ Cts ]
-    | Cts -> "OpenROAD.CTS", Some "OpenROAD.STAMidPNR-1", [ Routing ]
-    | Routing -> "OpenROAD.DetailedRouting", Some "Odb.RemoveRoutingObstructions", [ Signoff ]
-    | Signoff -> "Misc.ReportManufacturability", None, []
-  in
+  let module D = Hardcaml_asic_flow_domain in
+  let endpoint = D.Backends.Librelane.Mapping.endpoint stage in
+  let successor = D.Backends.Librelane.Mapping.successor stage in
+  let restart_targets = D.Registry.restart_targets stage in
   { endpoint
   ; successor
   ; restart_targets
-  ; tested_image_id = "sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a"
+  ; tested_image_id = D.Backends.Librelane.Mapping.tested_image_id
   ; closure_scope = Path_bound
   ; acceptance = Not_evaluated
   }

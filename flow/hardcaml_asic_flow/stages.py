@@ -5,6 +5,7 @@ separate prepare service binds runtime once and stages inputs for the CLI. Neith
 segment implementation chooses a transport/store or performs hidden sequencing.
 """
 
+import ast
 import copy
 from dataclasses import dataclass
 import json
@@ -14,6 +15,7 @@ import uuid
 
 from . import checkpoint as checkpoints, execution_transport as transport, phase4, result_store
 from .execution_plan import StagePlan, BOUNDARIES, TESTED_IMAGE
+from . import backend_protocol as protocol
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,20 @@ class SegmentAdapter:
         self.checkpoint_store = Path(checkpoint_store)
         self.initial_checkpoint = initial_checkpoint
         self.current_checkpoint = initial_checkpoint
+        self._completed_requests = {}
+
+    def verify_bridge(self):
+        bridge = self.project / "bridge/librelane_bridge.py"
+        if checkpoints.digest(bridge) != self.compatibility["bridge_sha256"]:
+            raise ValueError("transported bridge changed")
+        pins = [ast.literal_eval(node.value) for node in ast.parse(bridge.read_text()).body
+                if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
+                    and target.id == "PROTOCOL_SHA256" for target in node.targets)]
+        support = bridge.with_name("backend_protocol.py")
+        if (len(pins) != 1 or pins[0] != checkpoints.digest(support)
+                or pins[0] != checkpoints.digest(Path(protocol.__file__))):
+            raise ValueError("transported backend protocol changed")
+        return bridge
 
     def validate(self, plan):
         if not isinstance(plan, StagePlan) or plan.resume != (self.initial_checkpoint is not None):
@@ -56,26 +72,29 @@ class SegmentAdapter:
             manifest = checkpoints.validate(checkpoint, compatibility=self.compatibility,
                                             restart=True, restart_to=boundary)
             source_boundary = manifest["boundary"]
-        bridge = self.project / "bridge/librelane_bridge.py"
-        if checkpoints.digest(bridge) != self.compatibility["bridge_sha256"]:
-            raise ValueError("transported bridge changed")
+        bridge = self.verify_bridge()
         tag = boundary + "-" + uuid.uuid4().hex
         candidate = self.project / "candidates" / tag
         candidate.parent.mkdir(exist_ok=True)
-        request = {"boundary": boundary, "checkpoint": str(checkpoint) if checkpoint else None,
+        request = {"protocol_version": protocol.VERSION, "operation": "execute_segment",
+                   "request_id": tag, "reply_path": str(self.project / (tag + "-reply.json")),
+                   "boundary": boundary, "checkpoint": str(Path(checkpoint).absolute()) if checkpoint else None,
                    "source_boundary": source_boundary,
                    "candidate": str(candidate), "project": str(self.project),
                    "pdk_root": str(self.pdk_root), "tag": tag,
                    "bridge_sha256": self.compatibility["bridge_sha256"]}
         request_path = self.project / (tag + "-request.json")
+        protocol.validate_request(request)
         request_path.write_text(checkpoints.canonical(request) + "\n")
         code = self.launch(bridge, request_path, tag)
         if code:
             return SegmentResult(boundary, candidate, "failed", code)
+        protocol.read_reply(request)
         report = checkpoints.read(candidate / "segment.json")
         if (report.get("status") != "completed" or report.get("boundary") != boundary
                 or report.get("bridge_sha256") != self.compatibility["bridge_sha256"]):
             raise ValueError("missing or inconsistent outer segment completion")
+        self._completed_requests[str(candidate)] = request
         return SegmentResult(boundary, candidate, "completed", 0)
 
     def invoke(self, action, *, best_effort=False):
@@ -85,18 +104,26 @@ class SegmentAdapter:
     def publish(self, action, result):
         if result.exit_code or result.status != "completed" or result.boundary != action.stage:
             raise ValueError("unsuccessful segment cannot be published")
+        request = self._completed_requests.get(str(result.candidate))
+        if request is None or request["boundary"] != result.boundary:
+            raise ValueError("publication requires this adapter's completed backend call")
+        self.verify_bridge()
+        protocol.read_reply(request)
         def validate_runtime(candidate):
-            bridge = self.project / "bridge/librelane_bridge.py"
-            if checkpoints.digest(bridge) != self.compatibility["bridge_sha256"]:
-                raise ValueError("transported publication validator changed")
+            bridge = self.verify_bridge()
             tag = "validate-" + result.boundary + "-" + uuid.uuid4().hex
-            request = {"mode": "validate_publication", "candidate": str(candidate),
+            request = {"protocol_version": protocol.VERSION, "operation": "validate_publication",
+                       "request_id": tag, "reply_path": str(self.project / (tag + "-reply.json")),
+                       "checkpoint": None, "source_boundary": None, "tag": tag,
+                       "candidate": str(candidate),
                        "boundary": result.boundary, "project": str(self.project),
                        "pdk_root": str(self.pdk_root), "bridge_sha256": self.compatibility["bridge_sha256"]}
             request_path = self.project / (tag + "-request.json")
+            protocol.validate_request(request)
             request_path.write_text(checkpoints.canonical(request) + "\n")
             if self.launch(bridge, request_path, tag):
                 raise ValueError("runtime closure validation failed; checkpoint not published")
+            protocol.read_reply(request)
 
         artifact = checkpoints.publish(result.candidate, self.checkpoint_store,
                                        compatibility=self.compatibility, boundary=result.boundary,
@@ -137,6 +164,7 @@ def prepare(*, bundle, support_tools, pdk_root, python, workspace, checkpoint_st
     project = workspace / "project"
     manifest = phase4.read_json(bundle / "manifest.json")
     bridge_source = Path(__file__).with_name("librelane_bridge.py")
+    protocol_source = Path(__file__).with_name("backend_protocol.py")
     compatibility = {"bundle_identity": manifest["identity"], "target": manifest["target"],
                      "requested_tools": manifest["requested_tools"], "binding": binding,
                      "bridge_sha256": checkpoints.digest(bridge_source), "project": str(project),
@@ -152,6 +180,7 @@ def prepare(*, bundle, support_tools, pdk_root, python, workspace, checkpoint_st
                 shutil.copy2(source, target)
         (project / "bridge").mkdir()
         shutil.copyfile(bridge_source, project / "bridge/librelane_bridge.py")
+        shutil.copyfile(protocol_source, project / "bridge/backend_protocol.py")
         checkpoint_store.mkdir(parents=True)
     else:
         checkpoints.validate(initial_checkpoint, compatibility=compatibility, restart=True)

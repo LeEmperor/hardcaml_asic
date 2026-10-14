@@ -4,13 +4,14 @@ import io
 import os
 from pathlib import Path
 import signal
+import shutil
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, os.environ.get("STAGE_TEST_PACKAGE_ROOT", str(Path(__file__).resolve().parents[1] / "flow")))
-from hardcaml_asic_flow import checkpoint as cp, cli, execution_plan as plans, finalization as final, phase4, result_store
+from hardcaml_asic_flow import backend_protocol as protocol, checkpoint as cp, cli, execution_plan as plans, finalization as final, phase4, result_store
 
 
 class FinalizationTest(unittest.TestCase):
@@ -195,6 +196,48 @@ class FinalizationTest(unittest.TestCase):
         self.assertEqual(receipt["status"], "failed")
         self.assertEqual(receipt["binding"], self.binding)
         self.assertIsNone(receipt["results"])
+
+    def test_runtime_validation_requires_correlated_v1_reply_and_artifact_bytes(self):
+        bridge = self.project / "bridge/librelane_bridge.py"
+        bridge.parent.mkdir()
+        for name in ("librelane_bridge.py", "backend_protocol.py"):
+            shutil.copyfile(Path(protocol.__file__).with_name(name), bridge.with_name(name))
+        compatibility = dict(self.compat, bridge_sha256=cp.digest(bridge))
+        publication = Path(self.value["artifacts"][-1]["path"])
+        for case in ("valid", "missing", "wrong_request", "wrong_version", "failed", "changed_bytes", "nonzero"):
+            with self.subTest(case=case):
+                directory = self.root / ("runtime-" + case)
+                directory.mkdir()
+                def logged(argv, *args, **kwargs):
+                    request = protocol.validate_request(protocol.loads(Path(argv[-1]).read_text()))
+                    self.assertEqual(request["operation"], "validate_publication")
+                    self.assertEqual(request["checkpoint"], None)
+                    if case == "missing":
+                        return 0
+                    reply = protocol.reply(request, error="fixture failure" if case == "failed" else None)
+                    if case == "wrong_request":
+                        reply["request_sha256"] = "0" * 64
+                    if case == "wrong_version":
+                        reply["protocol_version"] = 2
+                    if case == "changed_bytes":
+                        reply["artifacts"]["closure.json"]["sha256"] = "0" * 64
+                    Path(request["reply_path"]).write_text(protocol.canonical(reply))
+                    return 1 if case == "nonzero" else 0
+                with patch.object(final.transport, "verify_engine"), \
+                     patch.object(final.transport, "verify_image"), \
+                     patch.object(phase4, "run_logged", side_effect=logged):
+                    if case == "valid":
+                        final.runtime_validate(compatibility, [(publication, {})], directory, {"commands": []})
+                    else:
+                        with self.assertRaises((ValueError, FileNotFoundError)):
+                            final.runtime_validate(compatibility, [(publication, {})], directory, {"commands": []})
+        bridge.with_name("backend_protocol.py").write_text("mutated resource")
+        with patch.object(final.transport, "verify_engine"), \
+             patch.object(final.transport, "verify_image"), \
+             patch.object(phase4, "run_logged") as launch:
+            with self.assertRaisesRegex(ValueError, "backend protocol"):
+                final.runtime_validate(compatibility, [(publication, {})], self.root, {"commands": []})
+            launch.assert_not_called()
 
     def test_interruption_no_success(self):
         _, receipt = self.invoke(runtime_error=result_store.FlowInterrupted(signal.SIGTERM))

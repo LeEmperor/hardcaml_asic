@@ -1,0 +1,34 @@
+(executable
+ (name experimental_observation_read)
+ (modules experimental_observation_read observation_watch)
+ (public_name hardcaml-asic-experimental-observation-read)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution unix))
+
+(executable
+ (name experimental_stages)
+  (modules experimental_stages public_stage_presentation)
+ (public_name hardcaml-asic-experimental-stages)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution unix))
+
+(executable
+ (name experimental_plan_inspect)
+ (modules experimental_plan_inspect)
+ (public_name hardcaml-asic-experimental-plan-inspect)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution))
+
+(executable
+ (name experimental_segment_execute)
+ (modules experimental_segment_execute)
+ (public_name hardcaml-asic-experimental-segment-execute)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution unix))
+
+(executable
+ (name experimental_checkpoint_inspect)
+ (modules experimental_checkpoint_inspect)
+ (public_name hardcaml-asic-experimental-checkpoint-inspect)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution))

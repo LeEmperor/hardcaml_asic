@@ -1,11 +1,16 @@
 # hardcaml_asic architecture
 
-Consolidated 2026-10-12; explicit-stage delivery reconciled 2026-10-13.
+Consolidated 2026-10-12; explicit-stage delivery reconciled 2026-10-13; native
+explicit-stage ownership updated 2026-10-14.
 This document owns system boundaries; the [phase plan](phase_plan.md) owns
 status and sequencing. Default bundle/run/preflight storage and the bounded
 explicit-stage runner, checkpoints, observation and finalization are implemented.
 Start with the [stage quickstart](guides/stage-quickstart.md) or the detailed
 [OCaml recipe guide](guides/ocaml-stage-recipes.md).
+The [OCaml-first refactor record](development/flow-infrastructure-progress.md)
+describes the delivered native stage execution path and stage-domain layout;
+the [remaining queue](phase_plan.md#ocaml-first-flow-infrastructure) tracks the
+broader migration. Modularized flow-file/profile support remains later work.
 The [historical architecture](archive/architecture-2026-09.md) preserves the
 original rationale; the [memory contract](reference/program-memory-contract.md)
 remains normative for `Single_port_ram`.
@@ -49,8 +54,10 @@ provider refresh is used. See the [current acceptance](phase_plan.md#hostcontain
 
 | Layer | Responsibility |
 | --- | --- |
-| OCaml library (`lib/`) | Resource semantics, project declarations, validated design intent and input emission |
-| Installed flow package (`flow/hardcaml_asic_flow/`) | Flow routing, execution records, tool-specific interpretation, acceptance and preservation |
+| OCaml hardware library (`lib/`) | Resource semantics, project declarations, validated design intent and input emission |
+| OCaml flow domain (`lib/flow/`) | Stage/operation contracts, standard compositions and checked LibreLane mappings |
+| OCaml execution library (`lib/execution/`) and native commands (`bin/`) | Explicit-stage preparation, supervision, publication, records, observation and watch |
+| Transitional installed Python package (`flow/hardcaml_asic_flow/`) | Top-level CLI routing, native LibreLane bridge/probes, and remaining coarse/results/finalization/archive services |
 | Hardware project | Design/wrapper semantics, testbench/regressions, declaration, dependency pin and chosen evidence stores |
 | Workbench ASIC adapter | Consume the project's configured public provider interface and translate into feature data |
 | Workbench application | Job supervision, derived catalog/cache, workspace/window/tile state and presentation |
@@ -58,8 +65,9 @@ provider refresh is used. See the [current acceptance](phase_plan.md#hostcontain
 Dependencies remain one-way: hardware project → ASIC library/CLI; Workbench
 adapter → configured project/provider entry point. ASIC never imports Workbench
 application types and does not need a Workbench daemon. Ordinary Dune/tests and
-project regressions need not route through ASIC. Python remains a suitable runner;
-versioned structured data can be decoded into typed OCaml values by Workbench.
+project regressions need not route through ASIC. The hardware library does not
+depend on the execution library. Versioned structured data can be decoded into
+typed OCaml values by Workbench independently of the provider implementation language.
 
 ASIC owns canonical bundles, runs, snapshots, raw evidence, check attempts and
 archives. Workbench owns a rebuildable index, bounded caches, saved selections
@@ -253,13 +261,17 @@ and does not advertise partial input as ready; see
 
 ### Delivered bounded execution and readers
 
-The implementation is modules in the existing installed package, not a backend
-directory rewrite. `execution_plan` and `runner` share sequencing for the coarse
-Classic service plan (implementation, optional postcheck, collection, acceptance,
-optional archive) and opt-in `StagePlan` recipes. CLI presentation is separate;
-collection remains best-effort after coarse failures without replacing the primary
-failure. `Flow.Stage` / `Flow.Recipe` are pure typed OCaml declarations; Python
-`resolve_sequence` and `StagePlan.from_dict` validate the same schema-3 contract.
+The current explicit-stage implementation uses `Hardcaml_asic_execution` and the
+stage-oriented `Hardcaml_asic_flow_domain` library. The public Python dispatcher
+execs the installed native command for `stages` and delegates checkpoint/observation
+queries and watch to native readers. There is no silent Python stage fallback.
+The top-level parser and coarse Classic services (implementation, optional
+postcheck, collection, acceptance, optional archive) remain Python-owned pending
+the next migration slices. Coarse collection remains best-effort after failure
+without replacing the primary failure. `Flow.Stage` / `Flow.Recipe` are pure typed
+OCaml declarations; the native execution models and retained Python readers
+validate the same schema-3 contract. Stage modules now describe all 80 Classic
+occurrences and preparation checks the selected runtime's inventory/settings.
 Recipes are contiguous, fresh from synthesis or resumed immediately after an
 explicit source; no arbitrary DAG/custom steps or per-stage settings are exposed.
 
@@ -278,9 +290,11 @@ configured gates are retained. CTS's later STA/repair belongs to routing; routin
 checkers/fill/extraction belong to signoff. Names are grouping boundaries, not a
 license to skip checks or an acceptance verdict.
 
-`stages` binds the exact tested Docker image/engine once; `librelane_bridge` uses
-official `State.loads` / `Flow.start` without copying orchestration. `checkpoint`
-copies all state views, configuration and hashed host/image-only closure, validates
+Native `stages` binds the exact tested Docker image/engine and rechecks it around
+backend calls. A versioned request/reply protocol invokes `librelane_bridge`, which
+uses official `State.loads` / `Flow.start` without copying backend orchestration.
+Actual per-call transport records retain argv/resources/process/cleanup outcomes.
+The OCaml checkpoint publisher copies all state views, configuration and hashed host/image-only closure, validates
 in the bound runtime, removes write bits and atomically promotes a unique no-clobber
 publication before announcing readiness. Schema-2 checkpoints declare exact restart
 targets and path-bound compatibility. Retain original workspace/input/support/PDK

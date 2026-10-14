@@ -3,8 +3,12 @@
 No nested Dune or EDA. Build the emitter/install first with dune build -j 20.
 --provider-prefix denies source imports and also checks the installed CLI.
 --consumer-executable checks the independently linked specimen recipe command.
+Flow.Stage.capability is the maintained semantic source. The planner's advertised
+capabilities and the bridge's AST-extracted literal maps must agree with it.
 """
 import argparse
+import ast
+import copy
 import json
 import os
 from pathlib import Path
@@ -19,6 +23,99 @@ def strict(text):
     return json.loads(text, parse_constant=reject)
 
 
+BRIDGE_TABLES = ("ENDPOINTS", "SUCCESSORS", "RESTART_TARGETS")
+
+
+def bridge_literals(text):
+    """Read only top-level literal tables; never execute the runtime adapter."""
+    tables = {}
+    for node in ast.parse(text).body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if not isinstance(target, ast.Name) or target.id not in BRIDGE_TABLES:
+                continue
+            assert target.id not in tables, f"duplicate bridge table: {target.id}"
+            assert isinstance(node.value, ast.Dict), f"nonliteral bridge table: {target.id}"
+            keys = [ast.literal_eval(key) for key in node.value.keys]
+            assert len(keys) == len(set(keys)), f"duplicate bridge key: {target.id}"
+            tables[target.id] = ast.literal_eval(node.value)
+    assert set(tables) == set(BRIDGE_TABLES), "missing bridge table"
+    return tables
+
+
+def check_capabilities(capabilities, order, planner, planner_order, bridge):
+    assert list(capabilities) == order, "OCaml capability order drift"
+    assert list(planner_order) == order, "OCaml/planner stage order drift"
+    assert capabilities == planner, "OCaml/planner capability drift"
+    endpoints = {name: c["endpoint"] for name, c in capabilities.items()}
+    successors = {name: c["successor"] for name, c in capabilities.items()
+                  if c["successor"] is not None}
+    # Terminal signoff is deliberately absent from the bridge's restart tables.
+    targets = {name: tuple(c["restart_targets"]) for name, c in capabilities.items()
+               if c["restart_targets"]}
+    for table, expected in zip(BRIDGE_TABLES, (endpoints, successors, targets)):
+        assert bridge[table] == expected, f"OCaml/bridge {table} drift"
+    assert list(bridge["ENDPOINTS"]) == order, "OCaml/bridge stage order drift"
+
+
+def check_drift_negatives(capabilities, order, planner, planner_order, bridge, text):
+    """Prove each checked representation can fail, including sparse terminal maps."""
+    count = 0
+
+    def rejects(label, operation):
+        nonlocal count
+        try:
+            operation()
+        except (AssertionError, ValueError, TypeError):
+            count += 1
+        else:
+            raise AssertionError(f"contract accepted deliberate drift: {label}")
+
+    def verify(p=planner, po=planner_order, b=bridge):
+        check_capabilities(capabilities, order, p, po, b)
+
+    for field in capabilities[order[0]]:
+        changed = copy.deepcopy(planner)
+        changed[order[0]][field] = "deliberate drift"
+        rejects(f"planner {field}", lambda: verify(p=changed))
+    rejects("planner order", lambda: verify(po=tuple(reversed(planner_order))))
+    for table in BRIDGE_TABLES:
+        for mutation in ("value", "missing", "extra"):
+            changed = copy.deepcopy(bridge)
+            key = next(iter(changed[table]))
+            if mutation == "value":
+                changed[table][key] = "deliberate drift"
+            elif mutation == "missing":
+                del changed[table][key]
+            else:
+                changed[table]["unknown"] = "deliberate drift"
+            rejects(f"bridge {table} {mutation}", lambda: verify(b=changed))
+    changed = copy.deepcopy(bridge)
+    changed["ENDPOINTS"] = dict(reversed(list(changed["ENDPOINTS"].items())))
+    rejects("bridge order", lambda: verify(b=changed))
+    for table, value in (("SUCCESSORS", None), ("RESTART_TARGETS", ())):
+        changed = copy.deepcopy(bridge)
+        changed[table]["signoff"] = value
+        rejects(f"bridge terminal {table}", lambda: verify(b=changed))
+    changed = copy.deepcopy(bridge)
+    changed["RESTART_TARGETS"]["synthesis"] = ("floorplan",)
+    rejects("standalone synthesis -> placement", lambda: verify(b=changed))
+    for table in BRIDGE_TABLES:
+        rejects(f"duplicate {table}", lambda: bridge_literals(text + f"\n{table} = {{}}\n"))
+        for literal in ("dict()", "{'synthesis': 'a', 'synthesis': 'b'}"):
+            bad = "\n".join(f"{name} = {literal if name == table else '{}'}"
+                            for name in BRIDGE_TABLES)
+            rejects(f"nonliteral/duplicate key {table}", lambda: bridge_literals(bad))
+        bad = "\n".join(f"{name} = {{}}" for name in BRIDGE_TABLES if name != table)
+        rejects(f"missing {table}", lambda: bridge_literals(bad))
+    # Import and execution poison must be inert under AST-only extraction.
+    assert bridge_literals(text + '\nraise RuntimeError("bridge executed")\n') == bridge
+    assert "hardcaml_asic_flow.librelane_bridge" not in sys.modules
+    assert not any(name == "librelane" or name.startswith("librelane.") for name in sys.modules)
+    return count
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--emitter", required=True, type=Path)
@@ -31,7 +128,16 @@ def main():
     from hardcaml_asic_flow import execution_plan as plans
     assert Path(plans.__file__).resolve().is_relative_to(package_root.resolve())
     payload = strict(subprocess.check_output([str(args.emitter.resolve())], text=True))
-    assert payload["capabilities"] == plans.boundary_capabilities(), "OCaml/backend capability drift"
+    bridge_path = Path(plans.__file__).with_name("librelane_bridge.py")
+    assert bridge_path.resolve().is_relative_to(package_root.resolve())
+    bridge_text = bridge_path.read_text()
+    bridge = bridge_literals(bridge_text)
+    check_capabilities(payload["capabilities"], payload["stage_order"],
+                       plans.boundary_capabilities(), plans.STAGE_ORDER, bridge)
+    negatives = check_drift_negatives(payload["capabilities"], payload["stage_order"],
+                                     plans.boundary_capabilities(), plans.STAGE_ORDER,
+                                     bridge, bridge_text)
+    print(f"Stage capabilities: OCaml/planner/bridge agree; {negatives} deliberate drift negatives rejected (AST only)")
     accepted = rejected = 0
 
     def verify(result, expected):

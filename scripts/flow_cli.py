@@ -7,6 +7,10 @@ uses the checkout's modules and data -- including
 `toolchain.lock` -- without the `python3 -I -B` isolation the installed launcher
 applies. For anything that must behave exactly like an installation, install into
 a prefix and run `$PREFIX/bin/hardcaml-asic-flow`.
+
+Migrated stage execution and checkpoint/observation queries use the same OCaml
+helpers as the installation. Build them with `dune build -j20 @install` first;
+an absent helper is an explicit error, never a Python execution fallback.
 """
 
 import sys

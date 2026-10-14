@@ -97,10 +97,13 @@ Historical records retain their original API names and commands.
 
 ## Where things live
 
-For the proposed OCaml-first execution refactor and stage/step decomposition, see
-[Flow infrastructure refactor](flow-infrastructure-refactor.md). It describes the
-infrastructure foundation for later **modularized flow** support; it is a proposal,
-not delivered flow-file functionality or a replacement implementation queue.
+For the OCaml-first execution refactor and stage/step decomposition, see
+[Flow infrastructure refactor](flow-infrastructure-refactor.md) and its
+[implementation record](development/flow-infrastructure-progress.md). Public
+explicit-stage execution, checkpoints, observation and watch now use OCaml, with
+fresh full-flow/external-acceptance evidence. The broader migration remains in
+progress; **modularized flow** files/profiles remain a later feature. The
+[phase plan](phase_plan.md#ocaml-first-flow-infrastructure) owns the remaining queue.
 
 | Area | Purpose | Start here |
 | --- | --- | --- |

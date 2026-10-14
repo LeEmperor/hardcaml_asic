@@ -277,7 +277,8 @@ def write_bundle(bundle, librelane=STUB_LIBRELANE, python=STUB_PYTHON_MINOR):
 
 
 def build_prefix(prefix):
-    for command in (["dune", "build", "-j", "20", "@install"],
+    for command in (["dune", "build", "-j", "20", "@install", "test/stage_recipe_contract.exe",
+                     "test/backend_protocol_driver.exe", "test/observation_writer_consumer.exe"],
                     ["dune", "install", "-j", "20", "--prefix", str(prefix), "hardcaml_asic"]):
         subprocess.run(command, cwd=REPO, check=True)
 
@@ -316,6 +317,42 @@ class InstalledPrefixTest(unittest.TestCase):
 
     # -- discovery -------------------------------------------------------
 
+    def test_installed_ocaml_planner_bridge_contract_without_checkout_reads(self):
+        # Copy test drivers and the compiled OCaml semantic emitter out first.
+        # The child denies every checkout read, not merely source imports/cwd.
+        with tempfile.TemporaryDirectory(dir=self.elsewhere) as temporary:
+            root = Path(temporary)
+            for name in ("check_stage_recipes.py", "test_stages.py"):
+                shutil.copy2(REPO / "test" / name, root / name)
+            emitter = root / "stage_recipe_contract.exe"
+            shutil.copy2(REPO / "_build/default/test/stage_recipe_contract.exe", emitter)
+            entry = '''import os, runpy, sys
+from pathlib import Path
+checkout, driver = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
+def deny_checkout(event, args):
+    if event == "open" and isinstance(args[0], (str, bytes, os.PathLike)):
+        if Path(os.fsdecode(args[0])).resolve().is_relative_to(checkout):
+            raise RuntimeError("checkout read denied: " + str(args[0]))
+    if event == "import" and (args[0] == "librelane" or args[0].startswith("librelane.")
+                              or args[0] == "hardcaml_asic_flow.librelane_bridge"):
+        raise RuntimeError("runtime bridge import denied")
+sys.addaudithook(deny_checkout)
+sys.path.insert(0, str(driver.parent))
+sys.argv = [str(driver), *sys.argv[3:]]
+runpy.run_path(str(driver), run_name="__main__")
+'''
+            completed = subprocess.run(
+                [sys.executable, "-I", "-B", "-c", entry, str(REPO),
+                 str(root / "check_stage_recipes.py"), "--emitter", str(emitter),
+                 "--provider-prefix", str(self.prefix)],
+                cwd=root, env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(REPO / "flow")},
+                text=True, capture_output=True)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertIn("OCaml/planner/bridge agree", completed.stdout)
+            self.assertIn("deliberate drift negatives rejected (AST only)", completed.stdout)
+            self.assertIn("Recipe contract:", completed.stdout)
+            self.assertIn("Installed checkpoint-inspect:", completed.stdout)
+
     def test_installed_inspector_presentation_suite(self):
         self.assertTrue((self.package / "presentation.py").is_file())
         completed = subprocess.run(
@@ -329,6 +366,33 @@ class InstalledPrefixTest(unittest.TestCase):
         self.assertEqual(missing.returncode, 2)
         self.assertIn("inspection             failed", missing.stdout)
         self.assertTrue(missing.stderr)
+
+    def test_installed_backend_protocol_and_isolated_bridge_without_checkout_reads(self):
+        with tempfile.TemporaryDirectory(dir=self.elsewhere) as temporary:
+            root = Path(temporary)
+            for name in ("check_backend_protocol.py", "bridge_protocol_fixture.py"):
+                shutil.copy2(REPO / "test" / name, root / name)
+            emitter = root / "backend_protocol_driver.exe"
+            shutil.copy2(REPO / "_build/default/test/backend_protocol_driver.exe", emitter)
+            entry = '''import os, runpy, sys
+from pathlib import Path
+checkout, driver = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
+def deny_checkout(event, args):
+    if event == "open" and isinstance(args[0], (str, bytes, os.PathLike)):
+        if Path(os.fsdecode(args[0])).resolve().is_relative_to(checkout):
+            raise RuntimeError("checkout read denied: " + str(args[0]))
+sys.addaudithook(deny_checkout)
+sys.argv = [str(driver), *sys.argv[3:]]
+runpy.run_path(str(driver), run_name="__main__")
+'''
+            completed = subprocess.run(
+                [sys.executable, "-I", "-B", "-c", entry, str(REPO),
+                 str(root / "check_backend_protocol.py"), "--emitter", str(emitter),
+                 "--provider-prefix", str(self.prefix)],
+                cwd=root, env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(REPO / "flow")},
+                text=True, capture_output=True)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertIn("actual bridge and no-publication checks passed", completed.stdout)
 
     def test_installed_stage_interfaces_and_explicit_bridge_resource(self):
         entry = '''import json, sys
@@ -363,7 +427,7 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
                                      "PYTHONPATH": str(REPO / "flow")},
             text=True, capture_output=True)
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("Ran 30 tests", completed.stderr)
+        self.assertIn("Ran 34 tests", completed.stderr)
 
     def test_installed_finalization_suite_and_receipt_cli(self):
         completed = subprocess.run(
@@ -396,7 +460,8 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
         completed = subprocess.run(
             [sys.executable, "-I", "-B", str(REPO / "test/test_related_presentation.py")],
             cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin",
-                                     "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
+                                     "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent),
+                                     "PUBLIC_FLOW_CLI": str(self.prefix / "bin/hardcaml-asic-flow")},
             text=True, capture_output=True)
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("Ran 8 tests", completed.stderr)
@@ -455,26 +520,49 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
             self.assertIn("recorded outcome", watched.stdout)
 
     def test_installed_incremental_watch_suite(self):
-        completed = subprocess.run(
-            [sys.executable, "-I", "-B", str(REPO / "test/test_observation_watch.py")],
-            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin",
-                                    "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
-            text=True, capture_output=True)
+        with tempfile.TemporaryDirectory(dir=self.elsewhere) as temporary:
+            root = Path(temporary)
+            for name in ("test_observation_watch.py", "test_stages.py"):
+                shutil.copy2(REPO / "test" / name, root / name)
+            shutil.copy2(REPO / "_build/default/test/observation_writer_consumer.exe",
+                         root / "observation_writer_consumer.exe")
+            completed = subprocess.run(
+                [sys.executable, "-I", "-B", str(root / "test_observation_watch.py")],
+                cwd=root, env={"PATH": "/usr/bin:/bin", "WATCH_DENY_CHECKOUT": str(REPO),
+                              "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
+                text=True, capture_output=True)
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("Ran 11 tests", completed.stderr)
+        self.assertIn("Ran 16 tests", completed.stderr)
         descriptor = json.loads(self.invoke("observation", "describe", "--json").stdout)
         self.assertTrue(descriptor["capabilities"]["incremental_reader"])
         self.assertEqual(descriptor["supported_schema_versions"], [1, 2])
         self.assertTrue(descriptor["capabilities"]["producer_event_timestamps"])
 
     def test_installed_default_journal_lifecycle_suite(self):
-        completed = subprocess.run(
-            [sys.executable, "-I", "-B", str(REPO / "test/test_default_journal.py")],
-            cwd=self.elsewhere, env={"PATH": "/usr/bin:/bin",
-                                    "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent)},
-            text=True, capture_output=True)
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("Ran 10 tests", completed.stderr)
+        with tempfile.TemporaryDirectory(dir=self.elsewhere) as tmp:
+            root = Path(tmp)
+            for name in ("test_default_journal.py", "public_cli_fixture.py", "stage_preparation_engine.py",
+                         "segment_service_engine.py", "segment_service_fixture.py", "bridge_protocol_fixture.py"):
+                shutil.copy2(REPO / "test" / name, root / name)
+            entry = '''import os, runpy, sys
+from pathlib import Path
+checkout, driver = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
+def deny_checkout(event, args):
+    if event == "open" and isinstance(args[0], (str, bytes, os.PathLike)):
+        if Path(os.fsdecode(args[0])).resolve().is_relative_to(checkout):
+            raise RuntimeError("checkout read denied: " + str(args[0]))
+sys.addaudithook(deny_checkout)
+sys.argv = [str(driver)]
+runpy.run_path(str(driver), run_name="__main__")
+'''
+            completed = subprocess.run(
+                [sys.executable, "-I", "-B", "-c", entry, str(REPO), str(root / "test_default_journal.py")],
+                cwd=root, env={"PATH": "/usr/bin:/bin",
+                              "STAGE_TEST_PACKAGE_ROOT": str(self.package.parent),
+                              "PUBLIC_FLOW_CLI": str(self.prefix / "bin/hardcaml-asic-flow")},
+                text=True, capture_output=True)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("Ran 12 tests", completed.stderr)
 
     def test_managed_python_assets_and_isolated_internal_entry(self):
         self.assertTrue((self.package / "managed_python.py").is_file())
@@ -958,7 +1046,7 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
     def test_installed_required_transport_module_absence_fails_closed(self):
         scratch = Path(self.temporary.name) / "incomplete-transport-prefix"
         shutil.copytree(self.prefix, scratch)
-        for module in ("execution_transport", "runtime_contract", "runtime_observation"):
+        for module in ("ocaml_backend", "execution_transport", "runtime_contract", "runtime_observation"):
             path = scratch / "lib/hardcaml_asic/flow/hardcaml_asic_flow" / f"{module}.py"
             saved = path.read_bytes()
             path.unlink()
@@ -967,6 +1055,24 @@ print(json.dumps({"modules": [m.__file__ for m in (stages, checkpoint, execution
             self.assertEqual(completed.stdout, "")
             self.assertIn(f"{module}.py", completed.stderr)
             path.write_bytes(saved)
+        for helper, arguments in (
+                ("observation-read", ("observation", "describe", "--json")),
+                ("observation-read", ("observation", "watch", "/missing", "--json")),
+                ("checkpoint-inspect", ("checkpoint-inspect", "/missing", "--json")),
+                ("stages", ("stages", "/bundle", "--endpoint", "synthesis", "--support-tools", "/tt",
+                            "--pdk-root", "/pdk", "--python", "/python", "--workspace", "/workspace",
+                            "--checkpoint-store", "/workspace/checkpoints", "--json"))):
+            path = scratch / "bin" / ("hardcaml-asic-experimental-" + helper)
+            saved = path.with_suffix(".retained")
+            path.rename(saved)
+            try:
+                completed = self.invoke(*arguments, command=scratch / "bin/hardcaml-asic-flow")
+                self.assertEqual(completed.returncode, 2)
+                self.assertEqual(completed.stdout, "")
+                self.assertIn("OCaml backend is missing", completed.stderr)
+                self.assertIn("Reinstall", completed.stderr)
+            finally:
+                saved.rename(path)
 
     def test_installed_docker_interruption_cleans_owned_name_and_prints_one_json(self):
         for signum, cleanup_failure in ((signal.SIGINT, False), (signal.SIGTERM, True)):

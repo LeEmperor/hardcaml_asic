@@ -92,8 +92,14 @@ class InspectorPresentationTest(unittest.TestCase):
             self.assertIn(phrase, stdout)
         self.writer.close()
         self.assertIn("writer_lost_or_unknown", self.invoke("observation", "inspect", path)[1])
-        with patch.object(flow_observation, "writer_active", return_value=None):
-            self.assertIn("writer active          unknown", self.invoke("observation", "inspect", path)[1])
+        # Unknown lock evidence is a presentation case; the real OCaml reader
+        # above proves live/lost state without a Python-internal monkeypatch.
+        from hardcaml_asic_flow import presentation
+        value = flow_observation.inspect(path)
+        value["writer_active"] = None
+        lines = []
+        presentation.observation(value, path=path, output=lines.append)
+        self.assertIn("writer active          unknown", "\n".join(lines))
 
     def test_failure_and_unreached_stages_do_not_invent_durations(self):
         self.run_plan(code=2)

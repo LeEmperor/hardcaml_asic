@@ -35,6 +35,14 @@ is absent and not a prerequisite.
 
 ## Existing workflow
 
+The explicit-stage path now uses OCaml-owned execution, checkpoints, journaling,
+and watch, with a focused Python LibreLane adapter. Stage/operation definitions
+are in `lib/flow/stages/`, backend mappings in `lib/flow/backends/librelane/`, and
+execution services in `lib/execution/`. See the
+[refactor progress](docs/development/flow-infrastructure-progress.md) for the
+verified milestone and remaining migration; project-owned modularized flow files
+and profiles are later work.
+
 The lifecycle is declaration → `Elaborated_project` (Hardcaml circuit, metadata,
 intent and resources; no synthesis) → `Resolved_flow` (validated concrete
 TT/LibreLane facts plus the elaborated project) → bundle → separate execution.

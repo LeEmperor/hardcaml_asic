@@ -18,6 +18,8 @@ depends: [
   "hardcaml"
   "yojson"
   "cryptokit"
+  "zarith"
+  "spawn"
   "ppx_jane"
   "ppx_hardcaml"
   "conf-python-3"

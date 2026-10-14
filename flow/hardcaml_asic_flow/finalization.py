@@ -5,13 +5,15 @@ the existing collector, external checks and acceptance reporter. Receipt schema
 1 is a snapshot API, deliberately separate from the terminal stage journal.
 """
 
+import ast
 import csv
 from pathlib import Path
 import shutil
 import signal
+import uuid
 from types import SimpleNamespace
 
-from . import checkpoint, execution_plan, execution_transport as transport
+from . import backend_protocol as protocol, checkpoint, execution_plan, execution_transport as transport
 from . import phase4, report, result_store
 from .flow_observation import strict_read
 
@@ -98,12 +100,24 @@ def runtime_validate(compatibility, publications, directory, receipt):
     bridge = project / "bridge/librelane_bridge.py"
     if checkpoint.digest(bridge) != compatibility["bridge_sha256"]:
         raise ValueError("retained bound bridge changed")
+    pins = [ast.literal_eval(node.value) for node in ast.parse(bridge.read_text()).body
+            if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
+                and target.id == "PROTOCOL_SHA256" for target in node.targets)]
+    support = bridge.with_name("backend_protocol.py")
+    if (len(pins) != 1 or pins[0] != checkpoint.digest(support)
+            or pins[0] != checkpoint.digest(Path(protocol.__file__))):
+        raise ValueError("retained backend protocol changed or unsupported")
     # All selected resolved configurations and closures are byte-identical;
     # validate that shared closure in the exact bound runtime, without Flow.start.
-    request = {"mode": "validate_publication", "candidate": str(publications[-1][0]),
+    tag = "finalize-validate-" + uuid.uuid4().hex
+    request = {"protocol_version": protocol.VERSION, "operation": "validate_publication",
+               "request_id": tag, "tag": tag, "checkpoint": None, "source_boundary": None,
+               "reply_path": str(directory / "runtime-validation-reply.json"),
+               "candidate": str(publications[-1][0]),
                "boundary": "signoff", "project": str(project), "pdk_root": str(pdk),
                "bridge_sha256": compatibility["bridge_sha256"]}
     request_path = directory / "runtime-validation-request.json"
+    protocol.validate_request(request)
     phase4.save(request_path, request)
     name = transport.owned_name()
     argv = transport.docker_command(binding, project.parent, pdk, name=name,
@@ -115,6 +129,7 @@ def runtime_validate(compatibility, publications, directory, receipt):
                          receipt, directory / "operation.json", timeout=120,
                          cleanup=lambda: transport.cleanup(binding, name)):
         raise ValueError("bound runtime closure validation failed")
+    protocol.read_reply(request)
 
 
 def adapt(directory, compatibility, publications, receipt):

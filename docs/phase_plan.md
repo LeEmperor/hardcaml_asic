@@ -1,6 +1,11 @@
 # hardcaml_asic phase plan
 
-Current checkpoint: 2026-10-13 bounded explicit-stage implementation, independent
+Current checkpoint: 2026-10-14 OCaml-owned explicit-stage execution and stage-domain
+decomposition are implemented and physically verified; see the
+[active infrastructure refactor](#ocaml-first-flow-infrastructure). The broader
+OCaml migration and modularized-flow feature remain separate remaining work.
+
+Prior checkpoint: 2026-10-13 bounded explicit-stage implementation, independent
 review and documentation closeout delivered. Coarse runner, six sequential physical
 boundaries, schema-3 OCaml/Python recipes, exact-runtime path-bound checkpoints,
 default CLI per-attempt observation, foreground watch and separate existing-policy finalization passed.
@@ -11,7 +16,67 @@ Python/Tcl and thin bootstrap remain delivered. ASIC P6.5c is partially addresse
 broader P6.5/P6.6 identity/installation gates and committed-pin adoption remain open.
 This is the **only active queue**. [Architecture](architecture.md) owns boundaries;
 [P6 details](development/p6-implementation-plan.md) retain the detailed specification
-and exact delivery evidence. Proposed new work below awaits design discussion.
+and exact delivery evidence. The infrastructure refactor below is authorized;
+other proposed work retains its recorded scope.
+
+## OCaml-first flow infrastructure
+
+Authorized 2026-10-13 and implemented through the native explicit-stage milestone
+on 2026-10-14. The [design](flow-infrastructure-refactor.md) gives the destination;
+the [slice record](development/flow-infrastructure-progress.md) retains APIs,
+commands, independent review findings/fixes, and verification.
+
+### Delivered milestone
+
+- Separate installed `hardcaml_asic.flow_domain` and `hardcaml_asic.execution`
+  libraries; the hardware library does not acquire execution dependencies.
+- Discoverable six-stage domain modules, shared analysis contracts, and a checked
+  LibreLane mapping covering all 80 Classic occurrences. Existing `Flow.Stage`
+  and `Flow.Recipe` remain compatible.
+- Typed plans, Python-compatible finite identity JSON, versioned backend protocol,
+  process supervision, Docker transport, runtime policy/probes, atomic records,
+  checkpoint reading/publication, and the explicit-stage runner in OCaml.
+- Public CLI4 `stages`, checkpoint inspection, observation queries, and watch route
+  to OCaml. The Python bridge remains responsible for native LibreLane API calls.
+- Schema-2 journals and schema-1 readers, actual transport evidence, and retained
+  public command/exit conventions. Completed cleanup avoids unnecessary retry waits.
+
+Verification: `dune runtest -j 20 --force` passed; installed-prefix suite passed
+57 tests, with focused installed cross-language/consumer checks. A fresh private
+consumer installation completed all six physical stages in 1,617.5 seconds, then
+external finalization/acceptance in 677.3 seconds. DRC/LVS/antenna, TT precheck,
+and the 11,429-row gate replay passed. The run audited five checkpoint handoffs,
+twelve correlated backend calls, native watch reconnect/detach, and the effective
+20-CPU quota. Signoff used an explicit 1,800-second budget; its earlier 600-second
+timeout is retained as historical evidence. See
+[current physical evidence](../evidence/librelane-observation/native-final-integration.json).
+
+The consumer recorded pin and normal activation are unchanged; the verified
+private generation and exact commands are in the evidence. Source-artifact
+stamping, cross-machine portability, and committed-pin adoption remain separate.
+
+### Remaining dependency-ordered work
+
+Continue with one bounded implementation owner per dependent slice:
+
+1. Migrate coarse `run`/`execute` and standalone preflight services to the existing
+   OCaml execution primitives; preserve current run records and failure precedence.
+2. Migrate collection, external postcheck, acceptance/reporting, finalization, and
+   archive responsibilities in separate dispatches with historical-reader parity.
+3. Move top-level CLI composition/presentation to OCaml; retire replaced Python
+   implementations after installed/public coverage. Preserve one authoritative
+   writer throughout the transition.
+4. Expand the hybrid layout for storage/results/observation and other established
+   responsibilities without coupling source moves to schema changes.
+5. Add bounded per-operation backend invocation, starting with the validated
+   placement sequence. Prove physical equivalence and required checks/gates;
+   independent step checkpoints need separate evidence.
+6. Repeat integration only for changed boundaries and close out the full
+   infrastructure refactor. Then design/implement the later modularized flow-file
+   and profile feature, including configuration identity and lineage-aware reuse.
+
+The whole refactor is **in progress**. No arbitrary flow files, configurable
+checkpoint branches, or general DAG scheduler are delivered by this milestone.
 
 ## Start here
 
@@ -36,8 +101,8 @@ and exact delivery evidence. Proposed new work below awaits design discussion.
      supplies successful official/physical evidence and bounded installed readers.
      Follow the dependencies below for P6 identity/installation.
 
-This queue records future ordering, not authorization to proceed beyond the
-completed bounded implementation. The [quickstart](guides/stage-quickstart.md) and
+The new infrastructure queue above records the authorized refactor; the historical
+closeouts below retain their original scope. The [quickstart](guides/stage-quickstart.md) and
 [detailed recipes](guides/ocaml-stage-recipes.md) describe the delivered interfaces.
 
 ### Default flow journal closeout

@@ -5,6 +5,7 @@ import io
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -12,7 +13,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.environ.get("STAGE_TEST_PACKAGE_ROOT",
                                str(Path(__file__).resolve().parents[1] / "flow")))
-from hardcaml_asic_flow import checkpoint as cp, cli, execution_plan as plans, runner, stages
+from hardcaml_asic_flow import checkpoint as cp, cli, execution_plan as plans, runner, stages, backend_protocol
 
 
 class StagesTest(unittest.TestCase):
@@ -25,7 +26,9 @@ class StagesTest(unittest.TestCase):
         self.store.mkdir()
         self.bridge = self.project / "bridge/librelane_bridge.py"
         self.bridge.parent.mkdir()
-        self.bridge.write_text("fixture explicitly transported bridge")
+        shutil.copyfile(Path(stages.__file__).with_name("librelane_bridge.py"), self.bridge)
+        shutil.copyfile(Path(stages.__file__).with_name("backend_protocol.py"),
+                        self.bridge.with_name("backend_protocol.py"))
         self.constraints = self.project / "top.sdc"
         self.constraints.write_text("create_clock -period 10 [get_ports clk]")
         self.config = self.project / "config.json"
@@ -75,7 +78,10 @@ class StagesTest(unittest.TestCase):
         def launch(bridge, request, tag):
             self.launches.append(tag)
             raw = json.loads(request.read_text())
-            self.candidate(Path(raw["candidate"]), raw["boundary"], missing=missing)
+            backend_protocol.validate_request(raw)
+            if raw["operation"] == "execute_segment":
+                self.candidate(Path(raw["candidate"]), raw["boundary"], missing=missing)
+            backend_protocol.write_reply(raw)
             return code
         return stages.SegmentAdapter(project=self.project, pdk_root=self.root,
                                      compatibility=self.compat, launch=launch,
@@ -134,13 +140,15 @@ class StagesTest(unittest.TestCase):
         recipe = self.root / "recipe.json"
         recipe.write_text('{"schema_version":3,"stages":["signoff"],'
                           '"stages":["synthesis"],"initial_boundary":null}')
-        with patch.object(stages, "prepare") as prepare, patch("sys.stderr", io.StringIO()):
-            code = cli.main(["stages", str(self.root / "bundle"), "--plan", str(recipe),
-                             "--support-tools", str(self.root / "tt"), "--pdk-root", str(self.root / "pdk"),
-                             "--python", sys.executable, "--workspace", str(self.root / "workspace"),
-                             "--checkpoint-store", str(self.root / "workspace/checkpoints")])
-        self.assertEqual(code, 2)
-        prepare.assert_not_called()
+        from hardcaml_asic_flow import ocaml_backend
+        result = subprocess.run([str(ocaml_backend.binary("stages")), "--bundle", str(self.root / "bundle"), "--plan", str(recipe),
+                              "--support-tools", str(self.root / "tt"), "--pdk-root", str(self.root / "pdk"),
+                              "--python", sys.executable, "--workspace", str(self.root / "workspace"),
+                              "--checkpoint-store", str(self.root / "workspace/checkpoints"),
+                              "--evidence-root", str(self.root / "evidence"), "--json"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("duplicate", result.stderr)
+        self.assertFalse((self.root / "workspace").exists())
 
     def test_failed_segment_cannot_publish(self):
         candidate = self.candidate(self.root / "candidate", status="failed")
@@ -297,6 +305,90 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 7)
         self.assertEqual([o.status for o in result.occurrences], ["failed", "unreached", "unreached"])
         self.assertEqual(result.artifacts, [])
+        self.assertEqual(list(self.store.iterdir()), [])
+
+    def test_publication_validator_requires_correlated_success_reply(self):
+        for mutation in ("missing", "malformed", "mismatched", "version", "failed", "exit"):
+            with self.subTest(mutation=mutation):
+                def launch(bridge, request_path, tag):
+                    raw = backend_protocol.validate_request(backend_protocol.loads(request_path.read_text()))
+                    if raw["operation"] == "execute_segment":
+                        candidate = self.candidate(Path(raw["candidate"]), raw["boundary"])
+                        closure_path = candidate / "closure.json"
+                        closure = cp.read(closure_path)
+                        closure["/nix/store/fixture/runtime.sdc"] = {"sha256": "0" * 64, "bytes": 5}
+                        closure_path.write_text(cp.canonical(closure))
+                        backend_protocol.write_reply(raw)
+                        return 0
+                    reply = backend_protocol.reply(raw)
+                    if mutation == "mismatched":
+                        reply["request_id"] = "other-call"
+                    elif mutation == "version":
+                        reply["protocol_version"] = 2
+                    elif mutation == "failed":
+                        reply.update(outcome="failed", error="backend validation failed", artifacts={})
+                    if mutation != "missing":
+                        Path(raw["reply_path"]).write_text("{" if mutation == "malformed" else cp.canonical(reply))
+                    return 7 if mutation == "exit" else 0
+                adapter = self.adapter()
+                adapter.launch = launch
+                result = runner.execute(plans.resolve_stages("floorplan"), adapter)
+                self.assertEqual(result.exit_code, 2)
+                self.assertEqual(result.artifacts, [])
+                self.assertEqual([o.status for o in result.occurrences], ["failed", "unreached"])
+                self.assertEqual(list(self.store.iterdir()), [])
+
+    def test_zero_exit_segment_requires_valid_reply_and_artifact_evidence(self):
+        for mutation in ("missing", "malformed", "mismatched", "version", "failed", "evidence"):
+            with self.subTest(mutation=mutation):
+                adapter = self.adapter()
+                original = adapter.launch
+                def launch(bridge, request_path, tag):
+                    code = original(bridge, request_path, tag)
+                    raw = backend_protocol.loads(request_path.read_text())
+                    reply_path = Path(raw["reply_path"])
+                    reply = backend_protocol.loads(reply_path.read_text())
+                    if mutation == "missing":
+                        reply_path.unlink()
+                    elif mutation == "malformed":
+                        reply_path.write_text("{")
+                    else:
+                        if mutation == "mismatched":
+                            reply["request_sha256"] = "0" * 64
+                        elif mutation == "version":
+                            reply["protocol_version"] = 2
+                        elif mutation == "failed":
+                            reply.update(outcome="failed", artifacts={}, error="backend failed")
+                        else:
+                            reply["artifacts"]["state.json"]["sha256"] = "0" * 64
+                        reply_path.write_text(cp.canonical(reply))
+                    return code
+                adapter.launch = launch
+                result = runner.execute(plans.resolve_stages("floorplan"), adapter)
+                self.assertEqual(result.exit_code, 2)
+                self.assertEqual(result.artifacts, [])
+                self.assertEqual([o.status for o in result.occurrences], ["failed", "unreached"])
+                self.assertEqual(list(self.store.iterdir()), [])
+
+    def test_protocol_support_mutation_rejected_before_launch(self):
+        self.bridge.with_name("backend_protocol.py").write_text("raise RuntimeError('changed')")
+        result = runner.execute(plans.resolve_stages("synthesis"), self.adapter())
+        self.assertEqual(result.exit_code, 2)
+        self.assertEqual(self.launches, [])
+        self.assertEqual(list(self.store.iterdir()), [])
+
+    def test_interruption_preserves_signal_and_does_not_read_success_reply(self):
+        from hardcaml_asic_flow import result_store
+        adapter = self.adapter()
+        original = adapter.launch
+        def interrupt(*args):
+            original(*args)  # even a valid completed reply cannot mask cancellation
+            raise result_store.FlowInterrupted(15)
+        adapter.launch = interrupt
+        result = runner.execute(plans.resolve_stages("floorplan"), adapter)
+        self.assertEqual(result.exit_code, 143)
+        self.assertEqual(result.artifacts, [])
+        self.assertEqual([o.status for o in result.occurrences], ["interrupted", "unreached"])
         self.assertEqual(list(self.store.iterdir()), [])
 
     def test_publication_failure_marks_occurrence_failed_blocks_successor(self):

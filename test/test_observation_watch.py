@@ -11,13 +11,29 @@ import sys
 import tempfile
 import time
 import unittest
+import shutil
 from unittest.mock import patch
 
 PACKAGE_ROOT = os.environ.get("STAGE_TEST_PACKAGE_ROOT", str(Path(__file__).resolve().parents[1] / "flow"))
 sys.path.insert(0, PACKAGE_ROOT)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hardcaml_asic_flow import flow_observation as obs, execution_plan, cli
+from hardcaml_asic_flow import flow_observation as obs, execution_plan, cli, presentation, ocaml_backend
 import test_stages
+
+NATIVE_ENTRY = '''import os, sys
+from pathlib import Path
+denied = os.environ.get("WATCH_DENY_CHECKOUT")
+def audit(event, args):
+    if event == "import" and args[0] == "hardcaml_asic_flow.flow_observation":
+        raise RuntimeError("Python observation reader is forbidden on public watch")
+    if denied and event == "open" and isinstance(args[0], (str, bytes, os.PathLike)):
+        if Path(os.fsdecode(args[0])).resolve().is_relative_to(Path(denied)):
+            raise RuntimeError("checkout read denied")
+sys.addaudithook(audit)
+sys.path.insert(0, sys.argv.pop(1))
+from hardcaml_asic_flow.cli import main
+sys.exit(main())
+'''
 
 
 class WatchTest(unittest.TestCase):
@@ -38,7 +54,7 @@ class WatchTest(unittest.TestCase):
 
     def watch(self, *flags, attempt=None):
         # Isolated installed tests use exactly the same installed package root.
-        code = "import sys; sys.path.insert(0, sys.argv.pop(1)); from hardcaml_asic_flow.cli import main; sys.exit(main())"
+        code = NATIVE_ENTRY
         child = subprocess.Popen([sys.executable, "-I", "-B", "-c", code, PACKAGE_ROOT,
                                   *flags, "observation", "watch", str(attempt or self.writer.directory),
                                   "--interval", "0.01"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -165,7 +181,7 @@ class WatchTest(unittest.TestCase):
         self.assertIsNone(obs.IncrementalReader(self.writer.directory).poll()[1]["writer_active"])
         for flags in (("--json", "--after", "0"), ("--json", "--stream-id", "wrong", "--after", "0")):
             # Reconnect flags belong after the watch subcommand.
-            code = "import sys; sys.path.insert(0, sys.argv.pop(1)); from hardcaml_asic_flow.cli import main; sys.exit(main())"
+            code = NATIVE_ENTRY
             result = subprocess.run([sys.executable, "-I", "-B", "-c", code, PACKAGE_ROOT,
                                      "observation", "watch", str(self.writer.directory), *flags], capture_output=True, text=True)
             self.assertEqual(result.returncode, 2)
@@ -176,6 +192,171 @@ class WatchTest(unittest.TestCase):
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
                 cli.build_parser().parse_args(["observation", "watch", str(self.writer.directory), "--interval", value])
             self.assertEqual(error.exception.code, 2)
+        # A missing development helper fails without consulting PATH or falling
+        # back to the installed Python incremental reader.
+        with patch.object(ocaml_backend, "PACKAGE", self.root / "provider/flow/hardcaml_asic_flow"), \
+                contextlib.redirect_stdout(io.StringIO()) as stdout, \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(cli.main(["observation", "watch", str(self.writer.directory), "--json"]), 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("OCaml backend is missing", stderr.getvalue())
+        self.assertIn("dune build -j20 @install", stderr.getvalue())
+
+    def test_native_cold_replay_human_parity_and_no_mutation(self):
+        self.finish()
+        before = {p.name: p.read_bytes() for p in self.writer.directory.iterdir()}
+        reader = obs.IncrementalReader(self.writer.directory)
+        updates, status = reader.poll()
+        expected = []
+        presentation.observation_updates(updates, path=self.writer.directory, output=expected.append, elide=False)
+        presentation.observation_status(status, output=expected.append)
+        child = self.watch()
+        stdout, stderr = child.communicate(timeout=5)
+        self.assertEqual(child.returncode, 0, stderr)
+        self.assertEqual(stdout, "\n".join(expected) + "\n")
+        self.assertEqual(before, {p.name: p.read_bytes() for p in self.writer.directory.iterdir()})
+        # Direct helper invocation proves the foreground implementation is native.
+        result = subprocess.run([str(ocaml_backend.binary("observation_read")), "watch",
+                                 str(self.writer.directory), "--json", "--stream-id",
+                                 self.writer.stream_id, "--after", "2"],
+                                env={"PATH": "/unusable", "PYTHONPATH": "/unusable"},
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["event"], "status")
+
+    def test_native_cursor_and_live_prefix_mutation(self):
+        for flags in (("--stream-id", self.writer.stream_id), ("--after", "0"),
+                      ("--stream-id", "foreign", "--after", "0"),
+                      ("--stream-id", self.writer.stream_id, "--after", "-1"),
+                      ("--stream-id", self.writer.stream_id, "--after", "2"),
+                      ("--stream-id", self.writer.stream_id, "--after", "99999999999999999999999")):
+            result = subprocess.run([str(ocaml_backend.binary("observation_read")), "watch",
+                                     str(self.writer.directory), "--json", *flags],
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["error"]["code"], "RESET_REQUIRED")
+        path = self.writer.directory / "000000000001.json"
+        original = path.read_bytes()
+        for mode in ("changed", "replaced", "deleted"):
+            path.write_bytes(original)
+            child = self.watch("--json")
+            self.assertEqual(self.line(child)["event"], "updates")
+            if mode == "deleted":
+                path.unlink()
+            elif mode == "replaced":
+                replacement = path.with_name(".replacement")
+                replacement.write_bytes(original)
+                replacement.replace(path)
+            else:
+                path.write_bytes(original + b" ")
+            stdout, stderr = child.communicate(timeout=5)
+            self.assertEqual(child.returncode, 2, stderr)
+            self.assertEqual(json.loads(stdout.splitlines()[-1])["error"]["code"], "INVALID_RECORD")
+        path.write_bytes(original)
+
+    def test_native_lock_release_terminal_race(self):
+        # Pause the real flock probe after Reader.refresh, then commit the terminal
+        # record and release the actual writer. No production test hooks are used.
+        compiler = shutil.which("cc")
+        self.assertIsNotNone(compiler, "C compiler required for deterministic syscall race")
+        source = self.root / "gate.c"
+        source.write_text(r'''#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <sys/file.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <unistd.h>
+int flock(int fd, int op) {
+  static int once = 0;
+  int (*real_flock)(int,int) = dlsym(RTLD_NEXT, "flock");
+  if (!once && (op & LOCK_NB)) {
+    once = 1;
+    int gate = open(getenv("WATCH_PROBE_READY"), O_CREAT|O_WRONLY, 0600);
+    close(gate);
+    while (access(getenv("WATCH_PROBE_GO"), F_OK)) usleep(1000);
+  }
+  return real_flock(fd, op);
+}
+''')
+        library = self.root / "gate.so"
+        subprocess.run([compiler, "-shared", "-fPIC", str(source), "-o", str(library), "-ldl"], check=True)
+        ready, go = self.root / "ready", self.root / "go"
+        child = subprocess.Popen([str(ocaml_backend.binary("observation_read")), "watch",
+                                  str(self.writer.directory), "--json"],
+                                 env={**os.environ, "LD_PRELOAD": str(library),
+                                      "WATCH_PROBE_READY": str(ready), "WATCH_PROBE_GO": str(go)},
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.children.append(child)
+        deadline = time.monotonic() + 5
+        while not ready.exists():
+            self.assertIsNone(child.poll())
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(.005)
+        self.finish()
+        go.touch()
+        stdout, stderr = child.communicate(timeout=5)
+        self.assertEqual(child.returncode, 0, stderr)
+        lines = [json.loads(s) for s in stdout.splitlines()]
+        self.assertEqual([e["event"] for e in lines[0]["events"]], ["allocated", "outcome"])
+        self.assertEqual(lines[1]["observation_status"], "final")
+
+    def test_native_idle_does_not_reopen_records(self):
+        tracer = shutil.which("strace")
+        self.assertIsNotNone(tracer, "strace required to verify native idle IO")
+        trace = self.root / "watch.trace"
+        child = subprocess.Popen([tracer, "-f", "-e", "trace=openat", "-o", str(trace),
+                                  str(ocaml_backend.binary("observation_read")), "watch",
+                                  str(self.writer.directory), "--json", "--interval", ".01"],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.children.append(child)
+        self.assertEqual(self.line(child)["event"], "updates")
+        time.sleep(.15)
+        self.finish()
+        stdout, stderr = child.communicate(timeout=5)
+        self.assertEqual(child.returncode, 0, stderr)
+        opens = trace.read_text().splitlines()
+        for sequence in (1, 2):
+            name = f"{sequence:012}.json"
+            self.assertEqual(sum(name in line for line in opens), 1, name)
+
+    def test_live_ocaml_writer_detach_reconnect_and_terminal(self):
+        driver = Path(os.environ.get("WATCH_NATIVE_WRITER",
+                      str(Path(__file__).resolve().parent / "observation_writer_consumer.exe")))
+        if not driver.is_file():
+            driver = Path(__file__).resolve().parents[1] / "_build/default/test/observation_writer_consumer.exe"
+        producer = subprocess.Popen([str(driver), str(self.root / "native-observations"),
+                                     str(self.root / "native-work")], stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.children.append(producer)
+        receipt = self.line(producer)
+        attempt = Path(receipt["attempt"])
+        first = self.watch("--json", attempt=attempt)
+        updates = self.line(first)
+        self.assertEqual(updates["events"][0]["event"], "allocated")
+        first.send_signal(signal.SIGINT)
+        _, stderr = first.communicate(timeout=5)
+        self.assertEqual(first.returncode, 130, stderr)
+        self.assertIsNone(producer.poll(), "reader detach killed native producer")
+        watcher = subprocess.Popen([sys.executable, "-I", "-B", "-c", NATIVE_ENTRY, PACKAGE_ROOT,
+                                    "observation", "watch", str(attempt), "--json", "--interval", ".01",
+                                    "--stream-id", updates["stream_id"], "--after", "1"],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.children.append(watcher)
+        self.assertEqual(self.line(watcher)["event"], "status")
+        producer.stdin.write(json.dumps({"event": "outcome", "data": {
+            "status": "failed", "exit_code": 9, "error": "native fixture finished"}}) + "\n")
+        producer.stdin.flush()
+        self.assertTrue(select.select([producer.stdout], [], [], 5)[0])
+        self.assertEqual(producer.stdout.readline().strip(), "ok")
+        stdout, stderr = watcher.communicate(timeout=5)
+        self.assertEqual(watcher.returncode, 0, stderr)
+        lines = [json.loads(s) for s in stdout.splitlines()]
+        self.assertEqual([e["event"] for e in lines[0]["events"]], ["outcome"])
+        self.assertEqual(lines[-1]["outcome"]["exit_code"], 9)
+        # Outcome, not writer shutdown, is the established stop condition.
+        self.assertIsNone(producer.poll())
+        producer.communicate("close\n", timeout=5)
+        self.assertEqual(producer.returncode, 0)
 
     def test_human_delivers_all_twenty_two_events(self):
         fixture = test_stages.StagesTest()
@@ -231,7 +412,7 @@ fixture.tearDown()
         self.children.append(producer)
         self.assertTrue(select.select([producer.stdout], [], [], 10)[0])
         attempt = Path(producer.stdout.readline().strip())
-        entry = "import sys; sys.path.insert(0, sys.argv.pop(1)); from hardcaml_asic_flow.cli import main; sys.exit(main())"
+        entry = NATIVE_ENTRY
         watcher = subprocess.Popen([sys.executable, "-I", "-B", "-c", entry, PACKAGE_ROOT,
                                     "observation", "watch", str(attempt), "--json", "--interval", ".01"],
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -306,7 +487,7 @@ fixture.tearDown()
         self.assertIsNone(producer.poll())
         # Non-pipe stdout failures (e.g. ENOSPC) are reader delivery failures too,
         # without a retry onto the failed output or a shutdown-flush exit 120.
-        code = "import sys; sys.path.insert(0, sys.argv.pop(1)); from hardcaml_asic_flow.cli import main; sys.exit(main())"
+        code = NATIVE_ENTRY
         with open("/dev/full", "w") as full:
             for flags in ([], ["--json"]):
                 failed_output = subprocess.run(
@@ -318,7 +499,7 @@ fixture.tearDown()
                 self.assertNotIn("Exception ignored", failed_output.stderr)
                 self.assertIsNone(producer.poll())
         # Attach at saved cursor through an independent CLI process.
-        code = "import sys; sys.path.insert(0, sys.argv.pop(1)); from hardcaml_asic_flow.cli import main; sys.exit(main())"
+        code = NATIVE_ENTRY
         reconnect = subprocess.Popen([sys.executable, "-I", "-B", "-c", code, PACKAGE_ROOT,
                                       "observation", "watch", str(attempt), "--json", "--stream-id", updates["stream_id"],
                                       "--after", "1", "--interval", ".01"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

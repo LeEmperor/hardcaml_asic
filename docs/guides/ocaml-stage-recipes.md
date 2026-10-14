@@ -83,6 +83,52 @@ contiguous schema-3 contract. Backend successor checkers remain included: CTS en
 at `OpenROAD.CTS`, its later STA/repair work begins routing; routing ends at
 detailed routing, its checkers/fill/extraction begin signoff.
 
+## Discovering operations and source ownership
+
+The installed pure library `hardcaml_asic.flow_domain` exposes
+`Hardcaml_asic_flow_domain`. Dune uses a separate wrapped library and
+`include_subdirs qualified`; hardware consumers gain only this Core-dependent
+declaration library, not execution dependencies. `Flow.Stage.t` aliases its
+`Stage_id.t`, so existing constructors, `Flow.Stage`/`Flow.Recipe` APIs and
+recipe schemas remain compatible.
+
+| Source | Namespace / responsibility |
+| --- | --- |
+| `lib/flow/stage_id.ml`, `registry.ml` | IDs/order and domain operations/restart targets |
+| `lib/flow/stages/{synthesis,floorplan,placement,cts,routing,signoff}/recipe.ml` | Maintained standard domain compositions |
+| `lib/flow/stages/placement/{global_placement,design_repair,detailed_placement}.ml` | Placement operation contracts |
+| `lib/flow/analysis/timing.ml` | Shared pre/mid/post-PNR timing contracts |
+| `lib/flow/backends/librelane/mapping.{ml,mli}` | Exact Classic implementation/artifact/gate/setting mapping; derived endpoints/successors |
+| `lib/execution/classic_contract.{ml,mli}` | JSON discovery and selected-runtime validation |
+
+`Registry.operations Flow.Stage.Placement` describes its domain groups.
+`Backends.Librelane.Mapping.composition Flow.Stage.Placement` expands them into
+21 ordered backend occurrences, including all setup, power/PDN, IO/template,
+header/check, STA, repair/manual and detailed-placement work. Flattening all six
+groups gives Classic's 80 occurrences without omissions. Endpoints and immediate
+successors are derived from this same mapping; the bridge's literal tables are
+still checked inertly against them.
+
+`hardcaml-asic-experimental-plan-inspect recipe.json` returns additive
+`operation_groups` (capability discovery) and `operation_sequence` (the requested
+contiguous plan). Entries carry stable occurrence IDs, semantic operation keys,
+pre/postconditions, effects, native view inputs/outputs, boolean Classic gate
+names/defaults and bounded placement-setting types/units/defaults. Configuration
+uses the unchanged resolved backend configuration and native validation. These
+are descriptive contracts, not per-step override or arbitrary composition APIs.
+
+Gate defaults describe configuration, not observed execution. Entries deliberately
+carry null `execution_evidence`; repeated STA occurrences have separate IDs.
+Runtime preparation import-probes the exact selected Classic and rejects ordered
+ID, implementation, artifact, gate/default or declared placement-setting drift
+before workspace staging. Native artifact sets are sorted (upstream diode-step
+view order can vary by Python process); step order is exact.
+
+The existing `stages --plan` composition is runnable through protocol v1. Physical
+per-step selection/handoffs still require a separate adapter-protocol slice and
+selected-runtime execution/artifact comparison against that coarse path. There
+are no new durable step checkpoint boundaries.
+
 ## Runnable consumer example
 
 The sibling `hardcaml_asic_example` supplies an additive pure companion executable.

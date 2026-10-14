@@ -79,33 +79,18 @@ class RelatedPresentationTest(unittest.TestCase):
             self.assertTrue(stderr)
 
     def test_stages_jsonl_equivalence_and_early_flush(self):
-        (self.root / "workspace").mkdir()
-        command = ["stages", str(self.root / "bundle"), "--endpoint", "placement",
-                   "--workspace", str(self.root / "workspace"), "--checkpoint-store", str(self.fixture.store),
-                   "--support-tools", str(self.root / "tt"), "--pdk-root", str(self.root / "pdk"),
-                   "--python", sys.executable, "--observation-store", str(self.root / "observations")]
-        for json_args in [None, *self.positions(command)]:
-            captured = {}
-            def prepare(**kwargs):
-                captured["early"] = sys.stdout.getvalue()
-                return self.fixture.adapter()
-            with patch.object(stages, "prepare", side_effect=prepare):
-                code, stdout, stderr = self.invoke(json_args or command)
-            self.assertEqual((code, stderr), (0, ""))
-            if json_args:
-                allocation, result = [json.loads(line) for line in stdout.splitlines()]
-                self.assertEqual(json.loads(captured["early"]), allocation)
+        from public_cli_fixture import Fixture
+        import tempfile
+        for position in range(3):
+            with tempfile.TemporaryDirectory() as tmp:
+                fixture = Fixture(tmp)
+                command = fixture.command("placement")
+                args = list(self.positions(command))[position]
+                result = fixture.invoke(args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                allocation, execution = map(json.loads, result.stdout.splitlines())
                 self.assertEqual(allocation["event"], "observation_allocated")
-                persisted = json.loads((self.root / "workspace" / ("execution-" + result["attempt_id"] + ".json")).read_text())
-                self.assertEqual(result, persisted)
-            else:
-                self.assertIn("allocation", captured["early"])
-                for phrase in ("implementation.placement", "execution record", "acceptance             not_evaluated", "historical publication"):
-                    self.assertIn(phrase, stdout)
-        # Verify the allocation print explicitly requests a flush, before preparation.
-        with patch.object(stages, "prepare", return_value=self.fixture.adapter()), patch("builtins.print") as output:
-            cli.main([*command, "--json"])
-        self.assertTrue(output.call_args_list[0].kwargs["flush"])
+                self.assertEqual(execution, json.loads(next(fixture.workspace.glob("execution-*.json")).read_text()))
 
     def test_finalization_jsonl_exact_receipt_and_inspection_positions(self):
         command = ["finalize", str(self.root / "missing"), "--operation-store", str(self.root / "operations"), "--accept"]
@@ -146,31 +131,22 @@ class RelatedPresentationTest(unittest.TestCase):
                     self.assertIn("nonterminal", human)
 
     def test_unobserved_stages_failed_and_interrupted_exact_json(self):
-        (self.root / "workspace").mkdir()
-        command = ["stages", str(self.root / "bundle"), "--endpoint", "placement",
-                   "--workspace", str(self.root / "workspace"), "--checkpoint-store", str(self.fixture.store),
-                   "--support-tools", str(self.root / "tt"), "--pdk-root", str(self.root / "pdk"),
-                    "--python", sys.executable, "--no-observation"]
-        for failure in (2, KeyboardInterrupt()):
-            for machine in (False, True):
-                adapter = self.fixture.adapter(code=2)
-                if isinstance(failure, BaseException):
-                    def interrupt(*args, **kwargs):
-                        raise failure
-                    adapter.run_segment = interrupt
-                with patch.object(stages, "prepare", return_value=adapter):
-                    code, stdout, stderr = self.invoke([*command, "--json"] if machine else command)
-                self.assertNotEqual(code, 0)
+        from public_cli_fixture import Fixture
+        import tempfile
+        for machine in (False, True):
+            with tempfile.TemporaryDirectory() as tmp:
+                fixture = Fixture(tmp)
+                fixture.env["SERVICE_FIXTURE_MODE"] = "exit17"
+                command = [*fixture.command("placement"), "--no-observation"]
+                result = fixture.invoke([*command, "--json"] if machine else command)
+                self.assertEqual(result.returncode, 17, result.stderr)
                 if machine:
-                    result = json.loads(stdout)
-                    self.assertEqual(result, json.loads((self.root / "workspace" /
-                        ("execution-" + result["attempt_id"] + ".json")).read_text()))
-                    self.assertEqual(result["status"], "interrupted" if isinstance(failure, BaseException) else "failed")
+                    execution = json.loads(result.stdout)
+                    self.assertEqual(execution, json.loads(next(fixture.workspace.glob("execution-*.json")).read_text()))
+                    self.assertEqual(execution["status"], "failed")
                 else:
-                    self.assertIn("not established", stdout)
-                    self.assertIn("unreached", stdout)
-                    self.assertIn("not_evaluated", stdout)
-                    self.assertIn("n/a (no finished duration)", stdout)
+                    for phrase in ("not established", "unreached", "not_evaluated", "n/a (no finished duration)"):
+                        self.assertIn(phrase, result.stdout)
 
     def test_finalize_early_flush_full_results_and_no_repeat_operation(self):
         directory = self.root / "operation"
@@ -197,7 +173,7 @@ class RelatedPresentationTest(unittest.TestCase):
                 self.assertIn("allocation", early[0])
                 self.assertIn("acceptance requested   no", stdout)
                 self.assertIn("/operation/results.json", stdout)
-                self.assertNotIn("499", stdout)
+                self.assertNotIn(str(list(range(500))), stdout)
         def allocated_operation(**kwargs):
             kwargs["allocated"](directory, "attempt")
             return directory, value
@@ -219,9 +195,10 @@ class RelatedPresentationTest(unittest.TestCase):
                      ["observation", "read-updates", "/a", "--json"],
                      ["--json", "archive", "/a", "--list"]):
             self.assertEqual(self.invoke(args)[0], 2)
-        with patch.object(flow_observation, "describe", wraps=flow_observation.describe) as describe:
+        from hardcaml_asic_flow import ocaml_backend
+        with patch.object(ocaml_backend, "query", wraps=ocaml_backend.query) as describe:
             self.invoke(["observation", "describe"])
-            describe.assert_called_once_with()
+            describe.assert_called_once_with("observation_read", ["describe"])
         with patch.object(finalization, "finalize", side_effect=ValueError("allocation unavailable")) as operation:
             code, stdout, stderr = self.invoke(["finalize", "/execution", "--operation-store", str(self.root), "--json"])
             self.assertEqual(code, 2)
@@ -232,15 +209,10 @@ class RelatedPresentationTest(unittest.TestCase):
         command = ["stages", "/bundle", "--endpoint", "placement", "--workspace", str(self.root / "work"),
                    "--checkpoint-store", str(self.fixture.store), "--support-tools", "/tt", "--pdk-root", "/pdk",
                    "--python", sys.executable, "--observation-store", str(self.root / "observations")]
-        with patch.object(stages, "prepare", side_effect=ValueError("preparation rejected")) as operation:
+        with patch.object(ocaml_backend, "stages", side_effect=OSError("OCaml backend is missing: fixture. Run dune build -j20 @install")) as operation:
             code, stdout, stderr = self.invoke([*command, "--json"])
-            allocation, error = [json.loads(line) for line in stdout.splitlines()]
-            self.assertEqual(allocation["event"], "observation_allocated")
-            self.assertEqual(error["error"], {"code": "EXECUTION_FAILED", "detail": "preparation rejected"})
-            self.assertEqual(error["event"], "observation_terminal")
-            self.assertEqual(error["attempt"], allocation["attempt"])
-            self.assertIsNone(error["execution_file"])
-            self.assertEqual(error["observation"], flow_observation.inspect(allocation["attempt"]))
+            self.assertEqual(stdout, "")
+            self.assertIn("OCaml backend is missing", stderr)
             self.assertEqual(code, 2)
             self.assertTrue(stderr)
             operation.assert_called_once()

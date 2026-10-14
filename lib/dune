@@ -6,6 +6,6 @@
 (library
  (name hardcaml_asic)
  (public_name hardcaml_asic)
- (libraries core hardcaml yojson cryptokit unix)
+ (libraries core hardcaml yojson cryptokit unix hardcaml_asic.flow_domain)
  (preprocess
   (pps ppx_hardcaml ppx_jane)))

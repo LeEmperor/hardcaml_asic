@@ -1,8 +1,104 @@
 ; P0 lifecycle, registration and selection tests.
 
+(executable
+ (name stage_domain_consumer)
+ (modules stage_domain_consumer)
+ (libraries hardcaml_asic.execution hardcaml_asic.flow_domain))
+
+(rule
+ (alias stage-domain)
+ (deps check_stage_domain.py ../flow/hardcaml_asic_flow/stage_metadata_probe.py)
+ (action (run python3 -B %{dep:check_stage_domain.py}
+   --consumer %{exe:stage_domain_consumer.exe}
+   --inspector %{exe:../bin/experimental_plan_inspect.exe})))
+
+(alias
+ (name runtest)
+ (deps (alias stage-domain)))
+
+(executable
+ (name observation_consumer)
+ (modules observation_consumer)
+ (libraries hardcaml_asic.execution))
+
+(rule
+ (alias ocaml-observation)
+ (deps check_observation.py (source_tree ../flow/hardcaml_asic_flow))
+ (action (run python3 -B %{dep:check_observation.py}
+   --cli %{exe:../bin/experimental_observation_read.exe}
+   --consumer %{exe:observation_consumer.exe})))
+
+(alias
+ (name runtest)
+ (deps (alias ocaml-observation)))
+
+(executable
+ (name stage_preparation_consumer)
+ (modules stage_preparation_consumer)
+ (libraries hardcaml_asic.execution unix))
+
+(rule
+ (alias ocaml-stage-preparation)
+  (deps ../bin/experimental_plan_inspect.exe check_stage_preparation.py stage_preparation_engine.py segment_service_engine.py
+       segment_service_fixture.py bridge_protocol_fixture.py (source_tree ../flow/hardcaml_asic_flow))
+ (action (run python3 -B %{dep:check_stage_preparation.py}
+   --cli %{exe:../bin/experimental_stages.exe} --consumer %{exe:stage_preparation_consumer.exe})))
+
+(executable
+ (name segment_service_consumer)
+ (modules segment_service_consumer)
+ (libraries hardcaml_asic.execution unix))
+
+(rule
+ (alias ocaml-segment-service)
+ (deps check_segment_service.py segment_service_fixture.py bridge_protocol_fixture.py
+       segment_service_engine.py (source_tree ../flow))
+ (action (run python3 -B %{dep:check_segment_service.py}
+   --consumer %{exe:segment_service_consumer.exe}
+   --service %{exe:../bin/experimental_segment_execute.exe})))
+
+(executable
+ (name runner_consumer)
+ (modules runner_consumer)
+ (libraries hardcaml_asic.execution))
+
+(rule
+ (alias ocaml-runner)
+ (deps check_runner.py (source_tree ../flow))
+ (action (run python3 -B %{dep:check_runner.py} --consumer %{exe:runner_consumer.exe})))
+
+(alias
+ (name runtest)
+ (deps (alias ocaml-runner)))
+
+(executable
+ (name checkpoint_publisher_consumer)
+ (modules checkpoint_publisher_consumer)
+ (libraries hardcaml_asic.execution))
+
+(rule
+ (alias ocaml-checkpoint-publisher)
+ (deps check_checkpoint_publisher.py (source_tree ../flow))
+ (action (run python3 -B %{dep:check_checkpoint_publisher.py}
+   --consumer %{exe:checkpoint_publisher_consumer.exe}
+   --reader %{exe:checkpoint_consumer.exe})))
+
+(executable
+ (name checkpoint_consumer)
+ (modules checkpoint_consumer)
+ (libraries hardcaml_asic.execution))
+
+; Explicit alias requires the retained read-only physical fixture trees in /tmp.
+(rule
+ (alias ocaml-checkpoints)
+ (deps check_checkpoints.py (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:check_checkpoints.py}
+   --consumer %{exe:checkpoint_consumer.exe}
+   --inspector %{exe:../bin/experimental_checkpoint_inspect.exe})))
+
 (rule
  (alias observation-watch)
- (deps test_observation_watch.py test_stages.py (source_tree ../flow) ../toolchain.lock)
+ (deps test_observation_watch.py test_stages.py (source_tree ../flow) ../toolchain.lock ../bin/experimental_observation_read.exe observation_writer_consumer.exe)
  (action (run python3 -B %{dep:test_observation_watch.py})))
 
 (alias
@@ -11,7 +107,8 @@
 
 (rule
  (alias default-journal)
- (deps test_default_journal.py test_stages.py (source_tree ../flow) ../toolchain.lock)
+   (deps ../bin/experimental_plan_inspect.exe test_default_journal.py public_cli_fixture.py stage_preparation_engine.py segment_service_engine.py segment_service_fixture.py bridge_protocol_fixture.py
+    ../bin/experimental_stages.exe (source_tree ../flow) ../toolchain.lock)
  (action (run python3 -B %{dep:test_default_journal.py})))
 
 (alias
@@ -20,7 +117,8 @@
 
 (rule
  (alias related-presentation)
- (deps test_related_presentation.py test_stages.py (source_tree ../flow) ../toolchain.lock)
+   (deps ../bin/experimental_plan_inspect.exe test_related_presentation.py test_stages.py public_cli_fixture.py stage_preparation_engine.py segment_service_engine.py segment_service_fixture.py bridge_protocol_fixture.py
+    ../bin/experimental_stages.exe ../bin/experimental_observation_read.exe (source_tree ../flow) ../toolchain.lock)
  (action (run python3 -B %{dep:test_related_presentation.py})))
 
 (alias
@@ -29,7 +127,7 @@
 
 (rule
  (alias inspector-presentation)
- (deps test_inspector_presentation.py test_stages.py (source_tree ../flow) ../toolchain.lock)
+  (deps test_inspector_presentation.py test_stages.py ../bin/experimental_observation_read.exe ../bin/experimental_checkpoint_inspect.exe (source_tree ../flow) ../toolchain.lock)
  (action (run python3 -B %{dep:test_inspector_presentation.py})))
 
 (alias
@@ -47,7 +145,7 @@
 
 (library
  (name hardcaml_asic_test)
- (modules (:standard \ project_api_consumer stage_recipe_contract))
+    (modules (:standard \ stage_domain_consumer project_api_consumer stage_recipe_contract execution_identity_driver execution_plan_consumer backend_protocol_driver process_supervisor_consumer execution_transport_consumer runtime_contract_consumer result_store_consumer checkpoint_consumer checkpoint_publisher_consumer runner_consumer segment_service_consumer stage_preparation_consumer observation_consumer observation_writer_consumer))
  ; The trailing -source-tree-root wins over the one dune passes (%{workspace_root},
  ; .. from here). Works around a ppx_expect v0.18~preview bug: it drops the directory
  ; from the test file's path when registering a test, then rebuilds the path at exit
@@ -170,9 +268,24 @@
  (deps (alias runtime-observation)))
 
 (rule
- (alias execution-transport)
+  (alias execution-transport)
  (deps test_execution_transport.py test_phase4.py (source_tree ../flow) ../toolchain.lock)
- (action (run python3 -B %{dep:test_execution_transport.py})))
+  (action (run python3 -B %{dep:test_execution_transport.py})))
+
+(executable
+ (name execution_transport_consumer)
+ (modules execution_transport_consumer)
+ (libraries hardcaml_asic.execution unix))
+
+(rule
+ (alias ocaml-execution-transport)
+ (deps check_execution_transport.py fake_docker_engine.py (source_tree ../flow))
+ (action (run python3 -B %{dep:check_execution_transport.py}
+              --consumer %{exe:execution_transport_consumer.exe})))
+
+(alias
+ (name runtest)
+ (deps (alias ocaml-execution-transport)))
 
 (alias
   (name runtest)
@@ -191,7 +304,7 @@
 
 (rule
  (alias stage-checkpoint)
- (deps test_stages.py (source_tree ../flow) ../toolchain.lock)
+ (deps test_stages.py ../bin/experimental_stages.exe (source_tree ../flow) ../toolchain.lock)
  (action (run python3 -B %{dep:test_stages.py})))
 
 (alias
@@ -200,7 +313,7 @@
 
 (rule
  (alias flow-observation)
- (deps test_flow_observation.py test_stages.py (source_tree ../flow) ../toolchain.lock)
+ (deps test_flow_observation.py test_stages.py (source_tree ../flow) ../toolchain.lock ../bin/experimental_observation_read.exe)
  (action (run python3 -B %{dep:test_flow_observation.py})))
 
 (alias
@@ -220,5 +333,114 @@
  (action (run python3 -B %{dep:check_stage_recipes.py} --emitter %{exe:stage_recipe_contract.exe})))
 
 (alias
+  (name runtest)
+  (deps (alias ocaml-stage-recipes)))
+
+(executable
+ (name execution_identity_driver)
+ (modules execution_identity_driver)
+ (libraries hardcaml_asic.execution))
+
+(rule
+ (alias execution-identity)
+ (deps check_execution_identity.py (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:check_execution_identity.py}
+              --emitter %{exe:execution_identity_driver.exe})))
+
+(alias
+  (name runtest)
+  (deps (alias execution-identity)))
+
+(executable
+ (name execution_plan_consumer)
+ (modules execution_plan_consumer)
+ (libraries hardcaml_asic.execution))
+
+(rule
+ (alias execution-plans)
+ (deps check_execution_plans.py (source_tree ../flow))
+ (action (run python3 -B %{dep:check_execution_plans.py}
+              --command %{exe:../bin/experimental_plan_inspect.exe}
+              --consumer %{exe:execution_plan_consumer.exe})))
+
+(alias
  (name runtest)
- (deps (alias ocaml-stage-recipes)))
+ (deps (alias execution-plans)))
+
+(executable
+ (name backend_protocol_driver)
+ (modules backend_protocol_driver)
+ (libraries hardcaml_asic.execution))
+
+(rule
+ (alias backend-protocol)
+ (deps check_backend_protocol.py bridge_protocol_fixture.py test_stages.py
+       (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:check_backend_protocol.py}
+              --emitter %{exe:backend_protocol_driver.exe})))
+
+(alias
+  (name runtest)
+  (deps (alias backend-protocol)))
+
+(executable
+ (name process_supervisor_consumer)
+ (modules process_supervisor_consumer)
+ (libraries hardcaml_asic.execution unix))
+
+(rule
+ (alias process-supervisor)
+ (deps check_process_supervisor.py process_child_fixture.py)
+ (action (run python3 -B %{dep:check_process_supervisor.py}
+              --consumer %{exe:process_supervisor_consumer.exe})))
+
+(alias
+  (name runtest)
+  (deps (alias process-supervisor)))
+
+(executable
+ (name runtime_contract_consumer)
+ (modules runtime_contract_consumer)
+ (libraries hardcaml_asic.execution))
+
+(rule
+ (alias ocaml-runtime-contract)
+ (deps check_runtime_contract.py test_runtime_contract.py test_runtime_observation.py
+       (source_tree ../flow) ../toolchain.lock)
+ (action (run python3 -B %{dep:check_runtime_contract.py}
+              --consumer %{exe:runtime_contract_consumer.exe})))
+
+(alias
+ (name runtest)
+ (deps (alias ocaml-runtime-contract)))
+
+(executable
+ (name result_store_consumer)
+ (modules result_store_consumer)
+ (libraries hardcaml_asic.execution unix))
+
+(rule
+ (alias ocaml-result-store)
+ (deps check_result_store.py (source_tree ../flow))
+ (action (run python3 -B %{dep:check_result_store.py}
+              --consumer %{exe:result_store_consumer.exe})))
+
+(alias
+ (name runtest)
+ (deps (alias ocaml-result-store)))
+
+(executable
+ (name observation_writer_consumer)
+ (modules observation_writer_consumer)
+ (libraries hardcaml_asic.execution unix))
+
+(rule
+ (alias ocaml-observation-writer)
+ (deps check_observation_writer.py (source_tree ../flow))
+ (action (run python3 -B %{dep:check_observation_writer.py}
+              --consumer %{exe:observation_writer_consumer.exe}
+              --reader %{exe:../bin/experimental_observation_read.exe})))
+
+(alias
+ (name runtest)
+ (deps (alias ocaml-observation-writer)))

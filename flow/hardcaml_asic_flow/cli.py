@@ -3,9 +3,10 @@
 The dispatcher owns human/explicit-JSON presentation, result-store defaults,
 argument parsing, path and tool-location precedence, exit
 status mapping; the shared runner owns the coarse `execute` composition.
-Every operation below delegates to the runner/collector, the P6.1 reporter, the
-P6.2 archiver or the generic shell provisioner, all of which are siblings in this
-package, so an installed command and a source checkout run the same code.
+Stages exec the linked OCaml preparation/runner/journal implementation;
+checkpoint and observation cold queries delegate to the typed OCaml readers.
+The remaining operations use the Python runner/collector, reporter, archiver
+and provisioner. Foreground watch execs the same native observation helper.
 
 P6.4a packages that dispatcher. It does not add identity or waiver semantics:
 `--dependency-lock` and `--waiver` still parse (so the option surface is settled
@@ -15,7 +16,6 @@ says plainly that source identity is unstamped; see `identity`.
 """
 
 import argparse
-from contextlib import ExitStack
 import json
 import math
 import os
@@ -23,7 +23,6 @@ import signal
 from pathlib import Path
 import subprocess
 import sys
-import time
 
 from . import MINIMUM_PYTHON, archive as archiver, identity, paths, phase4, result_store
 from . import report as reporter
@@ -374,58 +373,8 @@ def positive_interval(value):
 
 
 def observation_watch(args, directory):
-    from . import flow_observation
-
-    class ReaderOutputError(Exception):
-        pass
-
-    def output(line):
-        try:
-            print(line, flush=True)
-        except OSError as exc:
-            raise ReaderOutputError(str(exc)) from exc
-
-    def emit(kind, payload):
-        if args.json:
-            output(json.dumps({**payload, "event": kind}, sort_keys=True, allow_nan=False))
-        elif kind == "updates":
-            presentation.observation_updates(payload, path=directory, output=output, elide=False)
-        else:
-            presentation.observation_status(payload, output=output)
-
-    try:
-        reader = flow_observation.IncrementalReader(directory, stream_id=args.stream_id, after=args.after)
-        last_status = None
-        while True:
-            updates, status = reader.poll()
-            if updates["events"]:
-                emit("updates", updates)
-            if status != last_status:
-                emit("status", status)
-                last_status = status
-            if status["outcome"] is not None:
-                return 0
-            if status["writer_active"] is not True:
-                return 3
-            time.sleep(args.interval)
-    except KeyboardInterrupt:
-        return 130
-    except ReaderOutputError:
-        # Avoid Python's shutdown flush producing a second diagnostic/exit 120.
-        silence_broken_stdout()
-        return 2
-    except (flow_observation.ObservationError, OSError, ValueError, TypeError) as exc:
-        value = {"contract": flow_observation.CONTRACT, "schema_version": 1,
-                 "error": {"code": getattr(exc, "code", "INVALID_RECORD"), "detail": str(exc)}}
-        print(f"observation watch: {exc}", file=sys.stderr)
-        try:
-            if args.json:
-                output(json.dumps(value, sort_keys=True))
-            else:
-                presentation.inspection_error("observation", directory, value, output=output)
-        except ReaderOutputError:
-            silence_broken_stdout()
-        return 2
+    from . import ocaml_backend
+    return ocaml_backend.watch(args, directory)
 
 
 def silence_broken_stdout():
@@ -640,35 +589,58 @@ def main(argv=None, operations=None, environ=None, cwd=None):
         return 0
     environ = os.environ if environ is None else environ
     cwd = Path.cwd() if cwd is None else Path(cwd)
+    if args.command == "stages" or args.command == "checkpoint-inspect" or (
+            args.command == "observation" and args.query != "watch"):
+        from . import ocaml_backend
+        try:
+            if args.command == "stages":
+                return ocaml_backend.stages(args, cwd, absolute, interpreter_absolute)
+            if args.command == "checkpoint-inspect":
+                path = absolute(args.checkpoint, cwd)
+                command = ["--json", str(path)]
+                if args.compatibility:
+                    command += ["--compatibility", str(absolute(args.compatibility, cwd))]
+                if args.restart_to:
+                    command += ["--restart-to", args.restart_to]
+                code, value = ocaml_backend.query("checkpoint_inspect", command)
+                if args.json:
+                    print(json.dumps(value, sort_keys=True, allow_nan=False))
+                elif code:
+                    presentation.inspection_error("checkpoint", path, value)
+                else:
+                    presentation.checkpoint(value, path=path, restart_to=args.restart_to)
+                if code:
+                    print(f"checkpoint-inspect: {value['error']}", file=sys.stderr)
+            else:
+                path = absolute(args.attempt, cwd) if hasattr(args, "attempt") else "describe"
+                command = [args.query]
+                if args.query != "describe":
+                    command.append(str(path))
+                if args.query == "read-updates":
+                    command += ["--stream-id", args.stream_id, "--after", str(args.after)]
+                code, value = ocaml_backend.query("observation_read", command)
+                if args.json:
+                    print(json.dumps(value, sort_keys=True, allow_nan=False))
+                elif code:
+                    presentation.inspection_error("observation", path, value)
+                elif args.query == "describe":
+                    presentation.observation_description(value)
+                elif args.query == "read-updates":
+                    presentation.observation_updates(value, path=path)
+                else:
+                    presentation.observation(value, path=path)
+                if code:
+                    print(f"observation {args.query}: {value['error']['detail']}", file=sys.stderr)
+            return code
+        except OSError as exc:
+            print(f"hardcaml-asic-flow: {exc}", file=sys.stderr)
+            return 2
     def allocated(value):
         if args.json:
             print(json.dumps(value), flush=True)
         else:
             presentation.allocation(value, output=lambda line: print(line, flush=True))
 
-    if args.command == "checkpoint-inspect":
-        from . import checkpoint
-        try:
-            path = absolute(args.checkpoint, cwd)
-            expected = (checkpoint.read(absolute(args.compatibility, cwd)) if args.compatibility else
-                        checkpoint.read(path / "manifest.json")["compatibility"])
-            manifest = checkpoint.validate(path, compatibility=expected, restart_to=args.restart_to)
-            value = {"validation": "host_only", "runtime_closure_validated": False,
-                              "compatibility_source": "expected" if args.compatibility else "recorded",
-                              "manifest": manifest}
-            if args.json:
-                print(json.dumps(value, sort_keys=True, allow_nan=False))
-            else:
-                presentation.checkpoint(value, path=path, restart_to=args.restart_to)
-            return 0
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            value = {"validation": "host_only", "error": str(exc)}
-            print(f"checkpoint-inspect: {exc}", file=sys.stderr)
-            if args.json:
-                print(json.dumps(value, sort_keys=True))
-            else:
-                presentation.inspection_error("checkpoint", absolute(args.checkpoint, cwd), value)
-            return 2
     if args.command in ("finalize", "finalization-inspect"):
         from . import finalization, checkpoint
         try:
@@ -706,148 +678,12 @@ def main(argv=None, operations=None, environ=None, cwd=None):
                 presentation.inspection_error("finalization", absolute(
                     args.attempt if args.command == "finalization-inspect" else args.execution, cwd), value)
             return 2
-    if args.command == "observation":
-        from . import flow_observation
-        if args.query == "watch":
+    if args.command == "observation" and args.query == "watch":
+        try:
             return observation_watch(args, absolute(args.attempt, cwd))
-        try:
-            value = (flow_observation.describe() if args.query == "describe" else
-                     flow_observation.inspect(absolute(args.attempt, cwd)) if args.query == "inspect" else
-                     flow_observation.read_updates(absolute(args.attempt, cwd), stream_id=args.stream_id, after=args.after))
-            if args.json:
-                print(json.dumps(value, sort_keys=True, allow_nan=False))
-            elif args.query == "describe":
-                presentation.observation_description(value)
-            elif args.query == "read-updates":
-                presentation.observation_updates(value, path=absolute(args.attempt, cwd))
-            else:
-                presentation.observation(value, path=absolute(args.attempt, cwd))
-            return 0
-        except (flow_observation.ObservationError, OSError, ValueError, TypeError) as exc:
-            value = {"contract": flow_observation.CONTRACT, "schema_version": 1,
-                     "error": {"code": getattr(exc, "code", "INVALID_RECORD"), "detail": str(exc)}}
-            print(f"observation {args.query}: {exc}", file=sys.stderr)
-            if not args.json:
-                presentation.inspection_error("observation", absolute(args.attempt, cwd)
-                    if hasattr(args, "attempt") else "describe", value)
-            else:
-                print(json.dumps(value))
+        except OSError as exc:
+            print(f"observation watch: {exc}", file=sys.stderr)
             return 2
-    if args.command == "stages":
-        from . import stages, execution_plan, runner, flow_observation
-        writer = None
-        execution_file = None
-        scope = ExitStack()
-
-        def broken_stdout():
-            # Avoid a second failed flush at interpreter shutdown changing exit 2
-            # to 120. Only redirect the already broken command output descriptor.
-            try:
-                descriptor = sys.stdout.fileno()
-                with open(os.devnull, "w") as sink:
-                    os.dup2(sink.fileno(), descriptor)
-            except (AttributeError, OSError, ValueError):
-                pass
-
-        def terminal_error(exc, status, exit_code):
-            # Also covers failures delivering the allocation receipt, before run().
-            recording_error = None
-            if writer is not None and writer.state["outcome"] is None:
-                try:
-                    writer.append("outcome", {"status": status, "exit_code": exit_code, "error": str(exc)})
-                except Exception as failure:
-                    recording_error = str(failure)
-            observation = None
-            if writer is not None:
-                writer.close()
-                try:
-                    observation = flow_observation.inspect(writer.directory)
-                except Exception as failure:
-                    recording_error = str(failure)
-            value = {"contract": flow_observation.CONTRACT, "schema_version": 1,
-                     "event": "observation_terminal", "status": status, "exit_code": exit_code,
-                     "attempt": str(writer.directory) if writer else None,
-                     "stream_id": writer.stream_id if writer else None,
-                     "execution_file": str(execution_file) if execution_file else None,
-                     "observation": observation, "recording_error": recording_error,
-                     "error": {"code": getattr(exc, "code", "INTERRUPTED" if status == "interrupted" else "EXECUTION_FAILED"),
-                               "detail": str(exc)}}
-            if args.json and not args.no_observation and not isinstance(exc, BrokenPipeError):
-                try:
-                    print(json.dumps(value, sort_keys=True, allow_nan=False), flush=True)
-                except BrokenPipeError:
-                    broken_stdout()
-            if isinstance(exc, BrokenPipeError):
-                broken_stdout()
-
-        try:
-            scope.enter_context(result_store.interruption_handlers())
-            if not args.no_observation:
-                root = (absolute(args.observation_store, cwd) if args.observation_store else
-                        absolute(args.workspace, cwd).parent / "observations")
-                writer = flow_observation.Writer(root,
-                    workspace=absolute(args.workspace, cwd), checkpoint_store=absolute(args.checkpoint_store, cwd),
-                    request={"caller_cwd": str(cwd.resolve()), **{k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}})
-                allocated({"contract": flow_observation.CONTRACT, "schema_version": 1,
-                                   "event": "observation_allocated", "stream_id": writer.stream_id,
-                                   "attempt": str(writer.directory)})
-            def resolve_plan():
-                initial = absolute(args.checkpoint, cwd)
-                source_boundary = None
-                if initial is not None:
-                    from . import checkpoint
-                    source_boundary = checkpoint.read(initial / "manifest.json")["boundary"]
-                plan = (execution_plan.StagePlan.from_dict(flow_observation.strict_read(absolute(args.plan, cwd)))
-                        if args.plan else execution_plan.resolve_stages(args.endpoint, initial_boundary=source_boundary))
-                if plan.resume != (args.checkpoint is not None):
-                    raise ValueError("stage plan resume must match the supplied checkpoint")
-                return plan
-            def prepare():
-                return stages.prepare(
-                bundle=absolute(args.bundle, cwd), support_tools=absolute(args.support_tools, cwd),
-                pdk_root=absolute(args.pdk_root, cwd), python=interpreter_absolute(args.python, cwd),
-                workspace=absolute(args.workspace, cwd),
-                checkpoint_store=absolute(args.checkpoint_store, cwd),
-                initial_checkpoint=absolute(args.checkpoint, cwd), timeout=args.timeout,
-                preflight_output=writer.directory / "preflight.json" if writer else None)
-            def persist(execution):
-                nonlocal execution_file
-                path = absolute(args.workspace, cwd) / ("execution-" + execution.attempt_id + ".json")
-                result_store.save_json(path, execution.as_dict())
-                execution_file = path
-            execution = (writer.run(resolve_plan, prepare, finalize=persist) if writer else
-                         runner.execute(resolve_plan(), prepare()))
-            value = execution.as_dict()
-            if writer is None:
-                persist(execution)
-            if args.json:
-                print(json.dumps(value, sort_keys=True, allow_nan=False), flush=True)
-            else:
-                presentation.stage_execution(value, workspace=absolute(args.workspace, cwd))
-            for occurrence in value.get("occurrences", []):
-                if occurrence.get("error"):
-                    print(f"stages: {occurrence['action_key']}: {occurrence['error']}", file=sys.stderr)
-            if execution.exit_code:
-                print(f"stages: {execution.status} (exit {execution.exit_code})", file=sys.stderr)
-            return execution.exit_code
-        except (result_store.FlowInterrupted, KeyboardInterrupt) as exc:
-            code = 128 + getattr(exc, "signum", signal.SIGINT)
-            terminal_error(exc, "interrupted", code)
-            print(f"stages: interrupted: {exc}", file=sys.stderr)
-            if not args.json:
-                print("Stage execution interrupted; no terminal result is available here.\n"
-                      "Inspect the allocated observation if present; acceptance is not established.")
-            return code
-        except Exception as exc:
-            terminal_error(exc, "failed", 2)
-            print(f"hardcaml-asic-flow: {exc}", file=sys.stderr)
-            if not args.json:
-                presentation.inspection_error("stage execution", absolute(args.workspace, cwd), {"error": str(exc)})
-            return 2
-        finally:
-            if writer is not None:
-                writer.close()
-            scope.close()
     resolve_paths(parser, args, environ, cwd)
     validate_contract(parser, args)
     operations = operations or Operations()
