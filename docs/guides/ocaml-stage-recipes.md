@@ -1,8 +1,8 @@
 # OCaml stage declarations and recipes
 
-Delivered and independently reviewed 2026-10-13. For a short execution path, see
-the [stage quickstart](stage-quickstart.md); [current closeout](../phase_plan.md#explicit-stage-refactor-closeout)
-links full checks and actual physical/postcheck evidence.
+Typed OCaml construction of explicit-stage recipes and named methodology plans,
+and how they reach the installed `stages` command. For the short command-line
+path, see the [stage quickstart](stage-quickstart.md).
 
 The public `Hardcaml_asic.Flow.Stage` and `Flow.Recipe` modules describe the
 provider's opt-in explicit-stage execution contract. The same modules are also
@@ -128,29 +128,13 @@ This renders exactly schema 3:
   are abstract: callers cannot forge an unchecked record. There is no raw backend
    JSON argument or per-stage settings API.
 
-The retired, SOURCE-only Python counterpart is `hardcaml_asic_flow.execution_plan`.
-It is no longer installed: use the typed OCaml API above or native `stages --plan`.
-Optional `PYTHONPATH=/path/to/checkout/flow` permits deprecated reference/oracle
-imports, not installed support. This Python API break leaves package 0.1.0 and
-CLI4 unchanged solely because the CLI contracts are unchanged.
-
-```python
-from hardcaml_asic_flow.execution_plan import StagePlan, resolve_sequence
-
-recipe = resolve_sequence(["placement", "cts", "routing", "signoff"],
-                          initial_boundary="floorplan")
-assert StagePlan.from_dict(recipe.as_dict()) == recipe
-```
-
-`resolve_stages(endpoint, initial_boundary=...)` expands endpoint shorthand;
-schema-2 endpoint/resume readers remain compatible. Schema 3 has exactly
-`schema_version`, `stages`, `initial_boundary`, with null source for fresh recipes.
-
-The SOURCE-only Python segment reference can resume synthesis directly through placement.
-Composable recipes deliberately include floorplan, matching the provider's
-contiguous schema-3 contract. Backend successor checkers remain included: CTS ends
-at `OpenROAD.CTS`, its later STA/repair work begins routing; routing ends at
-detailed routing, its checkers/fill/extraction begin signoff.
+Composable recipes always include every intervening boundary, matching the
+provider's contiguous schema-3 contract (going directly from synthesis to placement
+is only a standalone segment capability). Backend successor checkers stay
+included: CTS ends at `OpenROAD.CTS` and its later STA/repair work begins routing;
+routing ends at detailed routing and its checkers/fill/extraction begin signoff.
+The retired Python `execution_plan` module is no longer installed; use this API or
+`stages --plan`.
 
 ## Discovering operations and source ownership
 
@@ -168,7 +152,7 @@ recipe schemas remain compatible.
 | `lib/flow/stages/placement/{global_placement,design_repair,detailed_placement}.ml` | Placement operation contracts |
 | `lib/flow/analysis/timing.ml` | Shared pre/mid/post-PNR timing contracts |
 | `lib/flow/backends/librelane/mapping.{ml,mli}` | Exact Classic implementation/artifact/gate/setting mapping; derived endpoints/successors |
-| `lib/execution/classic_contract.{ml,mli}` | JSON discovery and selected-runtime validation |
+| `lib/execution/backends/librelane/classic_contract.{ml,mli}` | JSON discovery and selected-runtime validation |
 
 `Registry.operations Flow.Stage.Placement` describes its domain groups.
 `Backends.Librelane.Mapping.composition Flow.Stage.Placement` expands them into
@@ -219,7 +203,7 @@ For a fresh implementation, select an existing published bundle and explicit
 toolchain roots, then request a new workspace whose parent already exists.
 CLI journaling defaults to `<resolved-workspace-parent>/observations`. Keep an
 explicit override outside that workspace; `--no-observation` is a mutually
-exclusive single-object-output escape hatch. Python adapter/runner APIs still
+exclusive single-object-output escape hatch. Standalone runner APIs still
 choose no store implicitly:
 
 ```sh
@@ -235,40 +219,12 @@ hardcaml-asic-flow stages "$BUNDLE" --plan /tmp/floorplan-recipe.json \
   --observation-store "$OBSERVATIONS"
 ```
 
-Execution prints a flushed allocation receipt and human stage/publication summary
-(add `--json` for allocation/terminal JSONL) and retains an
-`execution-<attempt>.json`. Use the receipt's explicit attempt path for inspection:
-
-```sh
-hardcaml-asic-flow observation describe
-hardcaml-asic-flow observation describe --json
-hardcaml-asic-flow observation inspect /absolute/path/to/observation-attempt
-hardcaml-asic-flow observation inspect /absolute/path/to/observation-attempt --json
-hardcaml-asic-flow observation watch /absolute/path/to/observation-attempt
-hardcaml-asic-flow observation watch /absolute/path/to/observation-attempt --stream-id STREAM_ID --after CURSOR --json
-hardcaml-asic-flow observation read-updates /absolute/path/to/observation-attempt --stream-id STREAM_ID --after 0
-hardcaml-asic-flow observation read-updates /absolute/path/to/observation-attempt --stream-id STREAM_ID --after 0 --json
-hardcaml-asic-flow checkpoint-inspect /absolute/path/to/floorplan-checkpoint --restart-to placement
-hardcaml-asic-flow checkpoint-inspect /absolute/path/to/floorplan-checkpoint --restart-to placement --json
-```
-
-Watch follows in-process and read-only; reconnect stream/cursor must be supplied
-together. Machine delivery is complete flushed updates/status JSONL; reader Ctrl-C
-does not interrupt execution. See [envelopes, exits and limits](flow.md#foreground-incremental-watch).
-Both inspectors default to readable plain-text reports; machine readers must add
-`--json` for the full unchanged payload. With `--json`, checkpoint success (exit 0) returns
-`validation: "host_only"`, `runtime_closure_validated: false`,
-`compatibility_source: "recorded"`, and the validated manifest. It checks manifest
-identity/location, all copied files/views, host external closure and requested
-restart eligibility. `--compatibility EXPECTED_JSON` compares against the caller's
-expected compatibility object instead of the recorded object, and reports
-`compatibility_source: "expected"`. Failures return exit 2 and, with `--json`, a JSON
-`error` string. Diagnostics use stderr. `--restart-to` validates a transition only;
-it does not resume execution. Observation endpoint completion is distinct from
-full physical completion and acceptance; checkpoint metrics are accumulated evidence.
-Reading does not publish, mutate, allocate, launch containers or validate image-only
-files. The execution adapter validates runtime closure and current compatibility
-before physical work; host inspection is not a substitute.
+Execution prints a flushed allocation receipt and a human stage/publication
+summary (add `--json` for allocation/terminal JSONL), and keeps an
+`execution-<attempt>.json`. Watch, inspect and `checkpoint-inspect` the result as
+shown in the [stage quickstart](stage-quickstart.md#watch-and-inspect); the exact
+payloads, exit codes and host-only validation semantics are in the
+[flow guide](flow.md#default-persistent-stage-observation-schema-2-reads-schema-1).
 
 To resume, pass `/tmp/resume-recipe.json` as `--plan`, the floorplan publication as
 `--checkpoint`, and **the retained original workspace and checkpoint-store paths**
@@ -333,14 +289,6 @@ provider mismatch rejection, installed checkpoint inspection and independently
 linked specimen output. It exercises no physical EDA. Use a new private prefix for
 reproduction; the independently linked specimen requires the same current library.
 
-Final independent verification passed 36 accepted / 1819 rejected recipe cases,
-all 42 consumer endpoint/source combinations, capability/handoff/composition
-equality and installed host-only reader success/failure checks. The forced full
-suite and 51-case installed-prefix suite also passed; stage regressions total 30.
-These are API/packaging checks. Actual six-stage physical execution, observed
-execution and existing-policy external acceptance are separately recorded in
-[slice 4](../../evidence/librelane-observation/slice4-physical.json),
-[slice 5](../../evidence/librelane-observation/slice5-observed.json) and
-[slice 6](../../evidence/librelane-observation/slice6-finalization.json).
-Full Workbench integration, store-wide journal/idempotency/fsync, execution recovery
-and segmented artifact archive/GC remain outside this API.
+These are API and packaging checks; they run no physical EDA. Real six-stage
+physical, observed and accepted executions are recorded separately in the
+[phase plan](../phase_plan.md#explicit-stage-refactor-closeout).

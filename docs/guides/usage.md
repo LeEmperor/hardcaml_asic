@@ -1,20 +1,21 @@
-# Initial user workflow
+# User workflow
 
-This is the primary path from a Hardcaml design to preserved evidence for the
-implemented ASIC flow. The supported physical path is deliberately narrow:
-Tiny Tapeout `6x4`, IHP `ihp-sg13cmos5l`, and LibreLane. Registered memory is
-available as a behavioral simulation model or explicit synthesizable flops;
-there is no implemented SRAM macro backend.
+The end-to-end path from a Hardcaml design to preserved evidence. The supported
+physical path is deliberately narrow: Tiny Tapeout `6x4`, IHP `ihp-sg13cmos5l`
+and LibreLane. Registered memory is available as a behavioral simulation model or
+explicit synthesizable flops; there is no SRAM macro backend.
 
-The lifecycle has three separate layers:
+The workflow has three separate layers:
 
-1. Install one pinned `hardcaml_asic` package containing the OCaml library and
-   `hardcaml-asic-flow` CLI. Declare, elaborate, simulate and emit a bundle.
-2. Explicitly provision the external PDK and toolchain. The installed CLI ships
-   its runtime modules and provisioning data; repository scripts are development
-   adapters, not a separately maintained implementation.
-3. Run the immutable bundle, collect results, and preserve both the complete
-   bundle and the selected run evidence.
+1. **Library:** install one pinned `hardcaml_asic` package, then declare,
+   elaborate, simulate and emit a bundle. No tools or PDK are involved.
+2. **Environment:** provision the external PDK and toolchain explicitly.
+3. **Execution:** run the immutable bundle, collect and interpret the results,
+   and archive the evidence.
+
+Each step links to the guide that owns its details. The earlier version of this
+page, which used the deprecated `phase4.py` development commands, is in the
+[archive](../archive/usage-guide-2026-10-15.md).
 
 ## 1. Install an exact revision
 
@@ -27,7 +28,8 @@ opam pin add --no-action hardcaml_asic \
 opam install hardcaml_asic
 ```
 
-A consumer Dune stanza uses the installed wrapped library directly:
+This installs the OCaml libraries and the `hardcaml-asic-flow` command together.
+A consumer Dune stanza uses the wrapped library directly:
 
 ```lisp
 (executable
@@ -35,20 +37,21 @@ A consumer Dune stanza uses the installed wrapped library directly:
  (libraries core hardcaml hardcaml_asic))
 ```
 
-This does not require a sibling directory named `../hardcaml_asic`. A local,
-isolated-prefix installation is also supported and exercised by
-[`test/package_consumer_smoke.sh`](../../test/package_consumer_smoke.sh). See
-[consumer installation](consumer-installation.md) for both installation routes
-and exact collateral resolution.
+No sibling `../hardcaml_asic` checkout is needed. An isolated-prefix
+installation is also supported, and
+[`test/package_consumer_smoke.sh`](../../test/package_consumer_smoke.sh)
+exercises it. See [consumer installation](consumer-installation.md) for both
+routes, and the [consumer dependency workflow](../development/consumer-dependency-workflow.md)
+for developing a consumer against a local provider checkout.
 
 ## 2. Declare the project
 
-A design implements `Project.Design`: Hardcaml input/output interfaces, a top
-module name, and `create context inputs`. Resource constructors receive that
-context. The following is a declaration excerpt, not a complete executable;
-[`examples/tt_bundle_example.ml`](../../examples/tt_bundle_example.ml) is the
-maintained runnable example with the complete `Design` modules, all 24 pin
-descriptions, bundle source enumeration, and error handling.
+A design implements `Project.Design`: Hardcaml `I`/`O` interfaces, a top module
+`name`, and `create : Elaboration_context.t -> Signal.t I.t -> Signal.t O.t`.
+Resource constructors receive that context. The excerpt below is not a complete
+program. [`examples/tt_bundle_example.ml`](../../examples/tt_bundle_example.ml)
+is the maintained runnable example, with complete `Design` modules, all 24 pin
+descriptions, source-input enumeration and error handling.
 
 ```ocaml
 open Core
@@ -78,34 +81,40 @@ let project (design : (module Project.Design)) pinout ~source_inputs =
   |> Or_error.ok_exn
 ```
 
-`Tt_cmos5l.I` and `Tt_cmos5l.O` are optional conveniences for the required TT
-boundary. `Tt_cmos5l.overrides ()` supplies the pinned template defaults, and
-`Tt_cmos5l.synchronised_reset` and `Tt_cmos5l.gate` are opt-in helpers. The
-consumer still owns reset semantics, behavior while `ena` is low, and arbitration
-of `uio_out`/`uio_oe`; the harness only supplies the pins. Every `ui`, `uo`, and
-`uio` bit needs a meaningful `Pinout.t` description. Declare the primary clock
-and any real min/max I/O timing assumptions; do not fabricate board timing.
-The [target reference](../reference/target-reference.md) defines the accepted boundary,
-timing subset, protected settings, and optional helper behavior.
+What the consumer owns:
 
-Resource policy is mandatory. Prefer explicit `Flops` for the currently
-supported memory path. `Exact` rejects a shape without an exact technology
-mapping. `Exact_or_flop_fallback` permits flops only as a recorded fallback;
-it is not an implicit or silent choice.
+- **TT boundary:** `Tt_cmos5l.I`/`Tt_cmos5l.O` are optional conveniences, and
+  `Tt_cmos5l.overrides ()` supplies the pinned template defaults.
+  `Tt_cmos5l.synchronised_reset` and `Tt_cmos5l.gate` are opt-in helpers. Reset
+  semantics, behavior while `ena` is low, and arbitration of `uio_out`/`uio_oe`
+  remain the consumer's.
+- **Pinout:** every `ui`, `uo` and `uio` bit needs a meaningful `Pinout.t`
+  description.
+- **Timing:** declare the primary clock and any real min/max I/O timing
+  assumptions. Do not fabricate board timing.
+- **Resource policy** is mandatory:
+  - `Flops` is the currently supported memory path.
+  - `Exact` rejects a shape without an exact technology mapping.
+  - `Exact_or_flop_fallback` allows flops only as a recorded fallback, never a
+    silent one.
+
+The [target reference](../reference/target-reference.md) defines the accepted
+boundary, timing subset, protected settings and helper behavior.
 
 ## 3. Simulate and elaborate resources
 
-`Project.elaborate project ~mode:Simulation` builds diagnostic behavioral
-resources for Hardcaml simulation. `~mode:Implementation` selects and builds
-synthesizable implementations. `Project.elaborate_for_flow project` performs
-implementation elaboration plus target, interface, timing, and adapter
-validation before emission. `Project.elaborate` returns an abstract
-`Elaborated_project.t`: the circuit plus metadata, intent and resources, not a
-synthesis result. `Project.elaborate_for_flow` returns a private `Resolved_flow.t`
-with concrete TT/LibreLane facts and the original `elaborated_project` field.
-None invokes an EDA tool or reads a PDK.
+| Call | Returns | Use |
+| --- | --- | --- |
+| `Project.elaborate project ~mode:Simulation` | `Elaborated_project.t` | Behavioral resources for Hardcaml simulation |
+| `Project.elaborate project ~mode:Implementation` | `Elaborated_project.t` | Synthesizable implementations |
+| `Project.elaborate_for_flow project` | `Resolved_flow.t` | Implementation elaboration plus target, interface, timing and adapter validation |
 
-Run the maintained PDK-free memory path:
+An elaborated project is the circuit plus metadata, intent and resources, not a
+synthesis result. A resolved flow adds concrete TT/LibreLane facts and keeps the
+original in its `elaborated_project` field. None of these invoke an EDA tool or
+read a PDK.
+
+Run the maintained PDK-free memory example:
 
 ```sh
 dune exec examples/memory_example.exe
@@ -113,239 +122,212 @@ dune exec examples/memory_example.exe -- --rtl /tmp/memory_example.v
 ```
 
 `Single_port_ram` is a whole-word 1RW memory with one-cycle registered reads.
-When disabled, its output holds. Output after a write, reading an unwritten word,
-and an out-of-range address are unspecified. The behavioral model uses poison to
-make misuse visible; implementation flops have no reset or initialization.
-The consumer must own validity, bounds checks, accepted-access gating, and
-response validity. Reset consumer metadata rather than assuming reset clears
-hardware storage. The [memory example](memory-example.md) and normative
-[memory contract](../reference/program-memory-contract.md) give the complete behavior.
+When disabled, its output holds. These are all unspecified: output after a
+write, reading an unwritten word, and an out-of-range address. The behavioral
+model uses poison to make misuse visible, and the flop implementation has no
+reset or initialization. The consumer therefore owns validity, bounds checks,
+access gating and response validity, and must reset its own metadata rather than
+assume reset clears storage. See the [memory example](memory-example.md) and the
+normative [memory contract](../reference/program-memory-contract.md).
 
 ## 4. Emit and inspect an immutable bundle
 
-From this repository, this maintained command needs no PDK and writes only to a
-new or empty directory:
+From this repository, with no PDK, into a new directory:
 
 ```sh
 BUNDLE=$(mktemp -d)/bundle
 dune exec examples/tt_bundle_example.exe -- memory "$BUNDLE"
 ```
 
-A consumer owns a project constructor and declares every source input needed to
-reproduce generation via `Project.create ~source_inputs`. The default `[]` permits
-ordinary elaboration, but emission rejects it before design construction. Pass the
-consumer repository and destination as execution arguments to
-`Project.emit_bundle project ~source_root ~output_dir`; do not use the library
-checkout as the consumer source root. Optional `?inputs` supplies target inputs.
+In a consumer:
 
-Emission defaults to a separate Simulation elaboration; `~include_simulation:false`
-skips it and uses synthesis sources for simulation. Shared orchestration resolves,
-renders, then writes; lower-level `Bundle.render`/`Bundle.write` remain available.
-Explicit writing is non-atomic, but starts only after rendering succeeds. For a
-store, `Project.emit_bundle_to_store` publishes/reuses verified immutable inputs.
-Tool execution is separate. The FIFO exposes `Fifo_asic.project ()` and
-`bin/project.exe describe|emit|preflight|run`: default emit uses
-`ROOT/_flow_results/bundles`, preflight saves operations, and run requires a stage
-and performs implementation only. Description is local S-expression or a JSON
-wrapper, with no elaboration or I/O. See the concrete OCaml and shell
-[entrypoint examples](bundle-emission.md#project-centered-entry-point) and the
-[dependency transition](consumer-installation.md).
+- **Declare every source input** that generation depends on, via
+  `Project.create ~source_inputs`. The default `[]` is fine for ordinary
+  elaboration, but emission rejects it before constructing the design.
+- **Emit** with `Project.emit_bundle project ~source_root ~output_dir`, where
+  `source_root` is the *consumer* repository, never the library checkout.
+  Optional `?inputs` supplies target inputs. `~include_simulation:false` skips
+  the separate simulation elaboration and reuses synthesis sources.
+- **Store-based emission:** `Project.emit_bundle_to_store` publishes, or reuses,
+  a verified immutable identity-addressed bundle instead of writing a directory.
+- **Project CLI:** a consumer typically wraps all this in a small CLI. The
+  example's `bin/project.exe describe|emit|preflight|run` emits into
+  `ROOT/_flow_results/bundles` by default.
 
-Inspect `manifest.json` before execution. The bundle contains synthesis RTL in
-`src/`, independently elaborated behavioral RTL in `simulation/`, generated SDC
-and LibreLane configuration, TT metadata, and exact copies of declared generator
-inputs under `inputs/`. Never compile the two RTL source sets together.
+See the [bundle guide](bundle-emission.md), including its
+[project entry point](bundle-emission.md#project-centered-entry-point).
 
-The manifest identity is the build identity. It covers emitted bytes, source
-input bytes and Git status, and source revision. A formatting-only source change
-or a new commit can therefore change the identity while generated RTL/config/SDC
-remain byte-identical. A later flow attempt receives a separate random run ID in
-`run.json`; do not use that execution identity as the build identity. The
-[bundle guide](bundle-emission.md) is authoritative for layout and provenance.
+Inspect `manifest.json` before running anything. The bundle contains:
 
-Treat the emitted directory as immutable. If configuration or constraints are
-wrong, fix the declaration and emit a fresh bundle; never patch `config.json`,
-SDC, RTL, metadata, or the manifest before a run.
+- synthesis RTL in `src/` and independently elaborated behavioral RTL in
+  `simulation/`;
+- the generated SDC and LibreLane configuration;
+- TT metadata;
+- exact copies of the declared source inputs under `inputs/`.
+
+**Never compile the two RTL sets together.**
+
+The manifest identity is the **build identity**. It covers emitted bytes, source
+input bytes and Git status, and source revision, so a formatting-only change or a
+new commit can change it even when the generated RTL is byte-identical. Each flow
+attempt gets a separate random run ID in `run.json`; never use that as the build
+identity.
+
+Treat the bundle as immutable. If the configuration or constraints are wrong,
+fix the declaration and emit a fresh bundle. Never patch `config.json`, SDC, RTL,
+metadata or the manifest.
 
 ## 5. Prepare the external environment
 
-The installed provisioning spelling is shown in [installation](consumer-installation.md#resolve-ttlibrelane-collateral).
-The commands below retain the repository-development route and therefore use a
-checkout at the same `ASIC_REV`; that checkout is not required by the installed CLI:
+Provision with the installed command. No source checkout is needed:
 
 ```sh
-ASIC_SOURCE=/absolute/path/to/hardcaml_asic-source
-git clone https://github.com/LeEmperor/hardcaml_asic.git "$ASIC_SOURCE"
-git -C "$ASIC_SOURCE" checkout --detach "$ASIC_REV"
 TOOLCHAIN=/absolute/path/to/asic-toolchain
-TOOLCHAIN="$TOOLCHAIN" "$ASIC_SOURCE/bootstrap.sh"
-source "$TOOLCHAIN/toolchain-env.sh"
+hardcaml-asic-flow provision --toolchain "$TOOLCHAIN"
+hardcaml-asic-flow provision --toolchain "$TOOLCHAIN" --check   # read-only readiness check
 ```
 
-Provisioning fetches substantial external collateral and the LibreLane image;
-it is never part of elaboration or emission. `bootstrap.sh --check` is read-only.
-See [bootstrapping](bootstrap.md) for prerequisites, disk use, pins, offline and
-native options. The shared CLI is installed with the library. Its source stamp,
-strict provisioning semantics and final independent-installation acceptance are
-still ASIC P6.5/P6.6 work; these instructions do not close those gates.
+Provisioning fetches substantial external collateral (TT support tools, the IHP
+PDK, LibreLane and precheck venvs, a managed Python/Tcl runtime) and the
+LibreLane container image. It needs Bash, Git, Docker and Nix on the host, and is
+never part of elaboration or emission. In a checkout of this repository,
+`./bootstrap.sh` does the same and also checks the OCaml layer.
 
-## 6. Preflight, execute, and collect
+See [bootstrapping](bootstrap.md) for prerequisites, disk use, offline and
+container options, and troubleshooting. See
+[consumer installation](consumer-installation.md#resolve-ttlibrelane-collateral)
+for how collateral is resolved and the managed-Python details.
 
-These development examples use scripts from `$ASIC_SOURCE`. They delegate to the
-installed package's source implementation but retain some historical output and
-option spellings. Current provider CLI contract **4** defaults to human summaries;
-machine callers must request `--json` (raw payload, diagnostics on stderr).
-Its run/execute store defaults to `<caller-cwd>/_flow_results/runs`;
-`--runs` remains an override. The project CLI
-defaults to the discovered/explicit project's `_flow_results` instead. The
-[current command matrix](flow.md#default-result-store-and-cli-contract-3) covers
-activation, simple emit/preflight commands and roots. The installed `run --json`
-returns final JSON, whereas
-the development adapter below prints a path. See the installed command's `--help`
-and [installation guide](consumer-installation.md) for the public boundary:
+## 6. Preflight, execute and collect
+
+Pass `--toolchain` (or set `TOOLCHAIN`) and the CLI fills in the support-tools,
+PDK and venv paths. Results go to `_flow_results/` under your working directory
+unless `--results-root` or `--runs` says otherwise.
 
 ```sh
-RUNS=/absolute/path/to/run-storage
+hardcaml-asic-flow preflight "$BUNDLE" --toolchain "$TOOLCHAIN"
 
-python3 "$ASIC_SOURCE/scripts/phase4.py" preflight "$BUNDLE" \
-  --support-tools "$TT" --pdk-root "$PDK_ROOT" --python "$FLOW_PY" \
-  --output "$RUNS/preflight.json"
+# Expensive: mapped synthesis. Prints the new run directory.
+hardcaml-asic-flow run "$BUNDLE" --toolchain "$TOOLCHAIN" --stage synthesis
 
-# Expensive: mapped synthesis.
-python3 "$ASIC_SOURCE/scripts/phase4.py" run "$BUNDLE" \
-  --support-tools "$TT" --pdk-root "$PDK_ROOT" --python "$FLOW_PY" \
-  --runs "$RUNS" --stage synthesis
-
-# More expensive: replace synthesis with full for place, route, and signoff.
+RUN=/absolute/path/printed-by-run
+hardcaml-asic-flow collect "$RUN"
+hardcaml-asic-flow report "$RUN"
 ```
 
-The run command prints the new `run.json` path even on failure. Set `RUN` to its
-parent, then collect any completed or partial attempt:
+`--stage full` (much more expensive) adds place, route and signoff. A completed
+full run then needs the external postchecks, TT precheck and gate-level
+simulation of the final netlist:
 
 ```sh
-RUN=/absolute/path/printed-run-directory
-python3 "$ASIC_SOURCE/scripts/phase4.py" collect "$RUN" \
-  --output "$RUN/results.json"
-python3 "$ASIC_SOURCE/scripts/report.py" "$RUN"
+hardcaml-asic-flow postcheck "$RUN" --toolchain "$TOOLCHAIN" \
+  --testbench /absolute/path/to/testbench.v --testbench-top TOP
+hardcaml-asic-flow collect "$RUN"
+hardcaml-asic-flow report "$RUN"
 ```
 
-For a completed full run, the required postchecks are also expensive:
+`execute` runs that whole fixed sequence in one command, and can archive at the
+end:
 
 ```sh
-python3 "$ASIC_SOURCE/scripts/phase4.py" postcheck "$RUN" \
-  --support-tools "$TT" --pdk-root "$PDK_ROOT" \
-  --precheck-python "$PRECHECK_PY" --testbench /absolute/path/to/testbench.v
-python3 "$ASIC_SOURCE/scripts/phase4.py" collect "$RUN" \
-  --output "$RUN/results.json"
-python3 "$ASIC_SOURCE/scripts/report.py" "$RUN"
+hardcaml-asic-flow execute "$BUNDLE" --toolchain "$TOOLCHAIN" --stage full \
+  --testbench /absolute/path/to/testbench.v --testbench-top TOP \
+  --archive /absolute/path/to/evidence-directory
 ```
 
-`scripts/flow.sh` is the convenience driver for this repository's maintained
-examples: it fills in the example, testbench and reference paths and hands every
-operation to the same dispatcher the installed command runs. It takes one command
-per invocation, and with no arguments it prints its help rather than starting a
-**full expensive run**. `STAGE` is required by `run` and `execute`, and a resumed
-operation requires `RUN`: the newest run under `$RUNS` is never guessed.
-`report.py --runs "$RUNS"` remains a development spelling that selects newest by
-modification time; prefer an explicit `RUN` for evidence. The
-[flow guide](flow.md) owns full command details, version waivers, native
-execution, failure records, and the driver's environment variables.
+Notes:
+
+- Output is a human summary by default. Scripts must pass `--json` (CLI
+  contract 4).
+- `run` prints its run directory even on failure, and you can collect a failed
+  or partial run.
+- Later operations always take an explicit `RUN`; the newest run is never
+  guessed.
+
+Beyond a single coarse run:
+
+- **Explicit stages** (synthesis → floorplan → placement → cts → routing →
+  signoff) with checkpoints, restart and a live journal you can watch from
+  another shell: see the [stage quickstart](stage-quickstart.md).
+- **Named flows and parameter profiles** declared by your project: see
+  [named flows](named-flows.md).
+
+The [flow guide](flow.md) owns full command details, storage defaults, exit
+codes, the `scripts/flow.sh` development driver and the observation schemas.
 
 ## 7. Interpret and preserve results
 
 Keep these claims distinct:
 
 - `process_status: completed` means the requested flow stage completed.
-- Mapped synthesis additionally needs mapped cells/area and zero synthesis
-  errors, inferred latches, and unmapped instances.
-- Physical timing needs a full run with setup and hold results at the reported
-  corners and no unconstrained modes.
-- Physical acceptance also needs antenna/DRC/LVS plus TT precheck and the
+- **Mapped synthesis** additionally needs mapped cells/area and zero synthesis
+  errors, inferred latches and unmapped instances.
+- **Physical timing** needs a full run with setup and hold results at the
+  reported corners and no unconstrained modes.
+- **Physical acceptance** also needs antenna/DRC/LVS, TT precheck and the
   design-specific final-netlist verification.
 
-Missing metrics remain `null`/`unknown` with an unavailable reason; they are not
-passes or zeroes. The reporter checks the requested stage against both the run
-record and collected result. A completed synthesis-only run exits zero only with
-valid mapped cell/area evidence, no collection errors, and explicit zero values
-for all three synthesis checks; it labels physical timing, signoff, and
-postchecks as not evaluated. A full request never falls back to that policy: it
-must complete the full stage and additionally provide constrained setup/hold
-timing, passing DRC/LVS/antenna, and passing TT precheck and final-netlist
-verification. Unknown or contradictory stages and absent or malformed required
-evidence exit nonzero.
+Missing metrics remain `null`/`unknown` with a reason; they are never passes or
+zeroes. `report` checks the requested stage against both the run record and the
+collected results:
 
-Archive one explicit run. The standard archiver retains both selected run
-evidence and the complete immutable input bundle:
+- **Synthesis run:** exits 0 only with valid mapped cell/area evidence, no
+  collection errors, and explicit zeros for all three synthesis checks.
+  Physical timing, signoff and postchecks are labelled *not evaluated*.
+- **Full request:** never falls back to the synthesis policy. It must complete
+  the full stage and also provide constrained setup/hold timing; passing
+  DRC/LVS/antenna; and passing TT precheck and final-netlist verification.
+- Unknown or contradictory stages, and absent or malformed required evidence,
+  exit nonzero.
+
+Archive one explicit run. The archive keeps the selected run evidence **and** the
+complete immutable input bundle:
 
 ```sh
 EVIDENCE=/absolute/path/to/evidence-directory
-python3 "$ASIC_SOURCE/scripts/archive.py" "$RUN" --list
-python3 "$ASIC_SOURCE/scripts/archive.py" "$RUN" --output "$EVIDENCE"
+hardcaml-asic-flow archive "$RUN" --list                  # preview the selection
+hardcaml-asic-flow archive "$RUN" --output "$EVIDENCE"
 ```
 
-The result contains `reports.tar.gz`, `input-bundle.tar.gz`,
-`input-bundle.sha256`, the plain JSON records, and `archive.json`. The input
-tarball contains the original manifest bytes and exactly its declared files,
-including copied source inputs and both RTL source sets. The archiver verifies
-manifest/run identity, every declared hash, and source-copy metadata. It prefers
-the original `run.json.bundle`; if that path has disappeared, the staged
-`RUN/project` is used only when it is an exact complete copy. Undeclared run,
-tool, PDK, and support files are excluded.
+The result has `reports.tar.gz`, `input-bundle.tar.gz`, `input-bundle.sha256`, the
+plain JSON records and `archive.json`. The input tarball holds the original
+manifest bytes and exactly its declared files, including copied source inputs and
+both RTL sets. Every hash is verified on the way in, and undeclared run, tool, PDK
+and support files are excluded.
 
-Restore and verify without the original checkout, bundle, run directory, PDK, or
-opam switch:
-
-```sh
-RESTORE=$(mktemp -d)
-(cd "$EVIDENCE" && sha256sum --check input-bundle.sha256)
-tar -xzf "$EVIDENCE/input-bundle.tar.gz" -C "$RESTORE"
-python3 - "$RESTORE/bundle" "$EVIDENCE/run.json" <<'PY'
-import hashlib, json, pathlib, sys
-bundle, run_path = map(pathlib.Path, sys.argv[1:])
-manifest_bytes = (bundle / "manifest.json").read_bytes()
-manifest = json.loads(manifest_bytes)
-run = json.loads(run_path.read_text())
-assert hashlib.sha256(manifest_bytes).hexdigest() == run["manifest_sha256"]
-assert manifest["identity"] == run["build_identity"]
-for entry in manifest["files"]:
-    assert hashlib.sha256((bundle / entry["path"]).read_bytes()).hexdigest() == entry["sha256"], entry["path"]
-print("verified", len(manifest["files"]), "bundle files for", run["run_id"])
-PY
-```
-
-Running preflight or executing the restored bundle still needs the exact
-separately recorded toolchain and external collateral. Archives produced before
-this capability may lack `input-bundle.tar.gz`; reports alone cannot reconstruct
-the omitted generated RTL or source copies. The consumer's
-[clean-staging P5.4 record](../../../scaf/tinytapeout/reports/2026-09-20-p0.5c-clean-staging-physical.md)
-documents the earlier manual procedure and remains historical evidence.
+The evidence directory can be verified with no checkout, original bundle, run
+directory, PDK or opam switch. The
+[restore-and-verify recipe](flow.md#archiving-and-restoring-evidence) shows how.
+Re-running the restored bundle still needs the separately recorded toolchain and
+collateral. Archives made before complete-input preservation may lack
+`input-bundle.tar.gz`, and reports alone cannot reconstruct the generated RTL.
 
 ## Diagnostics and limits
 
-- Unsupported target or shape: only TT `6x4` with IHP CMOS5L resolves for flow;
-  unsupported combinations fail before emission.
-- Missing/conflicting policy: every resource needs one applicable policy;
-  duplicate selectors, unused rules, unsupported `Exact`, and unavailable exact
-  mappings are errors rather than implicit fallback.
-- Override conflicts: clock, generated source list, die/floorplan/PDK values,
-  target constraints, and `MACROS` are protected. Change their typed owner, not
-  a raw LibreLane override.
-- Bundle input errors: declared `source_inputs` (lower-level `input_paths`) must be nonempty, relative, present files
-   inside a committed Git source root. Explicit output must be new or empty;
-   identity-addressed stores allow only complete verified exact reuse.
-- Environment errors: preflight reports missing/mismatched tools, revisions,
-  hashes, PDK views, support tools, Python, and container image without installing
-  or silently substituting them.
-- Memory: no SRAM macro backend is implemented. Explicit flop synthesis evidence
-  does not prove memory placement/routing feasibility, and the successful
-  observable physical run does not prove memory physical feasibility.
-- The pinned LibreLane ABC renderer passes a `cell/pin` token where ABC expects a
-  cell name. This invalidates ABC's printed delay estimate, not the recorded
-  mapped cells/area or the separate post-route OpenSTA result; see the consumer's
-  [P5.3 analysis](../../../scaf/tinytapeout/reports/2026-09-20-p0.7-memory-synthesis.md#abc-diagnostics).
-- Commercial adapters, additional targets/flows and broader memory/resource
-  support remain future work. The shared CLI is installed; source-artifact
-  identity and the remaining independent-installation gates are still open.
+- **Unsupported target or shape:** only TT `6x4` with IHP CMOS5L resolves for
+  the flow. Other combinations fail before emission.
+- **Missing or conflicting policy:** every resource needs exactly one applicable
+  policy. Duplicate selectors, unused rules, unsupported `Exact` and unavailable
+  exact mappings are errors, not implicit fallbacks.
+- **Override conflicts:** clock, generated source list, die/floorplan/PDK values,
+  target constraints and `MACROS` are protected. Change their typed owner, not a
+  raw LibreLane override.
+- **Bundle input errors:**
+  - Declared `source_inputs` must be nonempty, relative, existing files inside a
+    committed Git source root.
+  - An explicit output directory must be new or empty.
+  - Identity-addressed stores allow only complete, verified, exact reuse.
+- **Environment errors:** preflight reports missing or mismatched tools,
+  revisions, hashes, PDK views, support tools, Python and container image. It
+  never installs or silently substitutes them.
+- **Memory:** no SRAM macro backend exists. Flop synthesis evidence does not
+  prove memory placement/routing feasibility.
+- **ABC delay print:** the pinned LibreLane ABC renderer passes a `cell/pin`
+  token where ABC expects a cell name. That invalidates only ABC's printed delay
+  estimate, not mapped cells/area or the post-route OpenSTA results (tracked as
+  ASIC T.1).
+- **Not yet available:** commercial adapters, other targets and flows, broader
+  memory/resource support, and source-artifact identity in `--version` (ASIC P6.5).
 
-The phase-by-phase records are linked from the [implementation plan](../phase_plan.md),
-but they are evidence and history rather than the onboarding route.
+Status and history are in the [phase plan](../phase_plan.md); they are not part
+of the onboarding route.

@@ -1,36 +1,36 @@
 # Consuming `hardcaml_asic` from another project
 
-The Dune project version is `0.1.0`. It installs one wrapped library named
-`hardcaml_asic`; a consumer writes `(libraries hardcaml_asic)` in its Dune stanza
-and uses modules such as `Hardcaml_asic.Project` and
-`Hardcaml_asic.Single_port_ram`. The generated [`hardcaml_asic.opam`](../../hardcaml_asic.opam)
-lists the library's OCaml dependencies. Registry publication is unnecessary.
+One opam package, `hardcaml_asic` (version 0.1.0), installs:
 
-Before adopting the current development provider, apply the
-[source-breaking API migration](../phase_plan.md#public-api-rename-migration-and-evidence):
-`Build` → `Elaborated_project`, `Resolved_build` → `Resolved_flow`, resolved
-field `build` → `elaborated_project`, and `Bundle.render ?simulation_build` →
-`?simulation_project`. There are no aliases. The FIFO specimen is migrated;
-`hardcaml_protemu` still requires separate migration before adopting this provider.
-This checkpoint publishes no new release or dependency pin.
+| Library / binary | Use |
+| --- | --- |
+| `hardcaml_asic` | The wrapped hardware library: `Hardcaml_asic.Project`, `Single_port_ram`, `Bundle`, `Tt_cmos5l`, … |
+| `hardcaml_asic.flow_domain` | Stage, catalog, methodology, profile and parameter types, for projects that declare named flows |
+| `hardcaml_asic.execution` | Typed OCaml access to execution, records and observation |
+| `hardcaml-asic-flow` | The flow CLI, plus `hardcaml-asic-experimental-*` service helpers it routes to |
 
-The project-centered API adds constructor `?source_inputs`, the inventory getter,
-declaration-only `Project.describe`, shared `Project.emit_bundle` and
-`emit_bundle_to_store` / `Bundle.publish`. The migrated FIFO owns
-`Fifo_asic.project ()` and `project describe|emit|preflight|run`; see the
-[entrypoint guide](bundle-emission.md#project-centered-entry-point).
-Its recorded `1714764859274f80a9f5ad207421a04601824e99` baseline cannot supply this
-API. Recorded refresh now rejects it without replacing the current selection.
-Use explicit [development refresh and activation](../development/consumer-dependency-workflow.md#implemented-commands)
-until the owner commits a suitable provider candidate and deliberately adopts it
-in the consumer record. The successful local refresh is not a published release
-or P6 source stamp.
+A consumer writes `(libraries hardcaml_asic)` in its Dune stanza and adds the
+sub-libraries only if it needs them. The generated
+[`hardcaml_asic.opam`](../../hardcaml_asic.opam) lists the OCaml dependencies.
+No registry publication is needed.
+
+**Breaking changes to know about:**
+
+- The public API rename has no aliases: `Build` → `Elaborated_project`,
+  `Resolved_build` → `Resolved_flow`, the resolved field `build` →
+  `elaborated_project`, and `Bundle.render ?simulation_build` →
+  `?simulation_project`
+  ([details](../phase_plan.md#public-api-rename-migration-and-evidence)).
+- `Project.create ?source_inputs` must be nonempty before emission. Emission goes
+  through `Project.emit_bundle` / `Project.emit_bundle_to_store`
+  ([entry-point guide](bundle-emission.md#project-centered-entry-point)).
+- The installed Python service APIs are retired ([below](#the-installed-hardcaml-asic-flow-command)).
 
 ## Pin the library source
 
-Choose a full commit hash containing the package files and record it in the
-consumer's dependency documentation or lockfile. A branch name alone can move.
-From any directory, with an opam switch that has the OxCaml/Hardcaml toolchain:
+Choose a full commit hash containing the package files and record it in your
+dependency documentation or lockfile; a branch name can move. With an opam switch
+that has the OxCaml/Hardcaml toolchain:
 
 ```sh
 ASIC_REV=<full-hardcaml_asic-commit-hash>
@@ -38,13 +38,12 @@ opam pin add --no-action hardcaml_asic "git+https://github.com/LeEmperor/hardcam
 opam install hardcaml_asic
 ```
 
-The consumer's `dune` file can then name `hardcaml_asic` directly. Pinning changes
-that opam switch; use a project-local switch if the consumer should have an
-isolated dependency set. Upgrade by changing `ASIC_REV` deliberately and
-rebuilding. This package does not need to live in a sibling directory with a
-specific name.
+Pinning changes that opam switch, so use a project-local switch for an isolated
+dependency set. Upgrade by changing `ASIC_REV` deliberately and rebuilding. The
+package does not need to live in a sibling directory.
 
-For a build from a local source snapshot, install to an isolated prefix instead:
+To build from a local source snapshot without touching the shared switch, install
+to an isolated prefix:
 
 ```sh
 cd /path/to/hardcaml_asic
@@ -55,15 +54,15 @@ cd /path/to/consumer
 OCAMLPATH="$PREFIX/lib${OCAMLPATH:+:$OCAMLPATH}" dune build
 ```
 
-That route installs no package into the shared opam switch. The source snapshot
-used for the prefix must be recorded separately; a dirty worktree cannot be
-represented by a Git commit hash. [`test/package_consumer_smoke.sh`](../../test/package_consumer_smoke.sh)
-checks this path with a fresh prefix and an unrelated Dune project under `/tmp`.
+Record the source snapshot separately; a dirty worktree cannot be identified by a
+commit hash. [`test/package_consumer_smoke.sh`](../../test/package_consumer_smoke.sh)
+checks this route with a fresh prefix and an unrelated Dune project.
+
+For day-to-day development of a consumer against a local provider checkout, the
+example uses an isolated refresh/activation workflow with recorded and development
+modes; see the [consumer dependency workflow](../development/consumer-dependency-workflow.md).
 
 ## The installed `hardcaml-asic-flow` command
-
-Since P6.4a the same package installs the flow tooling beside the library, so a
-consumer pins one revision for both:
 
 ```text
 $PREFIX/bin/hardcaml-asic-flow                            native OCaml command
@@ -72,206 +71,160 @@ $PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/        nine private runtime m
 $PREFIX/lib/hardcaml_asic/flow/hardcaml_asic_flow/data/   toolchain.sh, toolchain.lock, managed-python.json, version.txt
 ```
 
-The command works through `PATH` and through a symlink to it. It finds its
-modules and data relative to its own installed location only; it does not search
-for a source checkout, and an incomplete installation is reported rather than
-worked around. `--help` and `--version` need no Git, OCaml toolchain, PDK,
-container, Python or provisioning.
+The command works through `PATH` or a symlink. It finds its modules and data
+relative to its own installed location only, never searches for a source
+checkout, and reports an incomplete installation instead of working around it.
+**Only the standard `--prefix` layout is supported**: the launcher expects
+`../lib/hardcaml_asic/flow` relative to itself.
 
-The runtime-nine allowlist is `__init__`, `backend_protocol`, `librelane_bridge`,
-`stage_metadata_probe`, `probe`, `runtime_observation`, `runtime_contract`,
-`managed_python`, `paths`. The consumer validator requires all nine, all four data
-files and executable native CLI/helpers. Source validation checks the actual
-`bin/dune` `flow_cli` executable/public name, not a comment in `flow/dune`.
+Host requirements:
 
-**Python API break:** installed `execution_plan`, `flow_observation`,
-`IncrementalReader`, service/collector/report/archive and compatibility CLI imports
-are retired. Use the native CLI or typed `hardcaml_asic.execution` OCaml library.
-Optional `PYTHONPATH=/path/to/checkout/flow` exposes retained deprecated SOURCE-only
-references, not the installed public implementation or equivalent support.
-Package 0.1.0 and CLI4 stay unchanged only because CLI contracts stay unchanged.
-The sixteen retired install entries are `__main__`, `archive`, `cli`,
-`ocaml_backend`, `checkpoint`, `stages`, `identity`, `execution_transport`,
-`execution_plan`, `phase4`, `report`, `presentation`, `result_store`, `runner`,
-`flow_observation`, `finalization`; their sources remain in the checkout.
-The recorded dependency pin and normal refresh/activation workflow are preserved;
-this cleanup does not adopt a revision or select a global development generation.
+| Operation | Needs |
+| --- | --- |
+| `--help`, `--version`, `collect`, `report`, `archive` | Nothing beyond the installation |
+| `provision` | Python ≥ 3.9 (declared as `conf-python-3`), POSIX shell, Bash, Git, `timeout`, usual Unix utilities |
+| `preflight`, `run`, `stages`, `postcheck`, `finalize --accept` | Provisioned collateral plus Docker; postcheck also needs Nix |
 
-Provisioning/host-probe requirements: Python 3.9 or newer (declared as
-`conf-python-3`) and a POSIX shell. Provisioning also needs Bash, Git and the usual Unix utilities.
-Running and postchecking a design need Docker, LibreLane and Nix. Installing the
-package fetches none of those, and `--version`, `--help`, `collect`, `report` and
-`archive` need none of them.
+Installing the package fetches none of the external tools.
 
-**Installing the package only supports the standard `--prefix` layout.** Placing
-the library and the command under independently chosen directories is not
-supported; the launcher expects `../lib/hardcaml_asic/flow` relative to itself.
+The installed Python runtime is exactly nine modules: `__init__`,
+`backend_protocol`, `librelane_bridge`, `stage_metadata_probe`, `probe`,
+`runtime_observation`, `runtime_contract`, `managed_python` and `paths`.
 
-Two things are not yet true of `--version`, and will not be until P6.5: it does
-not report a source revision or checkout state, and it does not verify that the
-linked OCaml library was built from the same artifact as the command. It says so
-in both its human and `--json` output rather than implying otherwise.
+**Python API break:** the installed `execution_plan`, `flow_observation`,
+`IncrementalReader`, service/collector/report/archive and compatibility CLI
+imports are retired. Use the CLI or the `hardcaml_asic.execution` OCaml library.
+Their sources remain in the checkout as references. The retired modules are
+`__main__`, `archive`, `cli`, `ocaml_backend`, `checkpoint`, `stages`,
+`identity`, `execution_transport`, `execution_plan`, `phase4`, `report`,
+`presentation`, `result_store`, `runner`, `flow_observation` and
+`finalization`. `PYTHONPATH=/path/to/checkout/flow` reaches them, but that is not
+installed support. Package 0.1.0 and CLI contract 4 are unchanged because the
+CLI contract itself is unchanged.
 
-### CLI contract 4 migration
+Until ASIC P6.5, `--version` reports no source revision or checkout state and
+does not verify that the linked OCaml library was built from the same artifact as
+the command. It says so explicitly in both human and `--json` output.
 
-The current provider advertises `cli_contract.version = 4` in `--version --json`.
-This is distinct from package 0.1.0, record schema 1 and unstamped source identity.
-Human summaries are now the default: active machine calls must explicitly pass
-`--json`. `--verbose` writes diagnostics only to stderr. Run/execute no longer
-require `--runs`: the default is `<caller-cwd>/_flow_results/runs`, with explicit
-`--results-root` and `--runs` overrides. Standalone preflight saves an operation
-and report by default; `--output FILE` writes only that file, requiring its parent.
-`collect --json` still writes normal results; legacy `collect --stdout` and report
-remain read-only. Archive JSON list is unsupported. The example accepts exactly
-contracts 2 and 3 before dispatch and selects project-relative defaults; unknown
-versions remain rejected. Contract 3 extends human defaults to stages, all observation
-queries, checkpoint and finalization inspectors, and finalize. Add `--json` to every
-parsing invocation; observed stages and finalize remain JSONL, including the flushed
-early receipt. This stdout-default change is intentionally not CLI backward compatible.
-See the [full command/storage matrix](flow.md#default-result-store-and-cli-contract-3).
-Contract 4 makes fresh/resumed `stages` journal by default under
-`<resolved-workspace-parent>/observations`. Parse allocation/terminal JSONL or
-explicitly use `--no-observation`; `--observation-store` remains an override.
-Caught preparation failures/interruption now deliver the defined terminal envelope
-with recorded observation facts and a result path only when actually published.
-The example's contract-2/3 gates must migrate to 4 in flow-journal slice 3 before
-refreshing; slice 1 does not refresh the sibling installation.
-After that migration, development consumers refresh the private prefix through their existing
-dependency script, then source `current/activate.sh` in the shell running Dune and
-the CLI. Refresh cannot activate its parent shell. The example's recorded pin is
-still historical and lacks the required Project API; use explicit development
-mode until owner adoption. See [integration evidence](../development/human-readable-flow-output.md#slice-3--independent-integration-2026-10-13).
-`scripts/phase4.py` retains its historical development path-only run spelling.
+### Migrating from earlier CLI contracts
+
+`--version --json` reports `cli_contract.version = 4`, which is separate from
+package 0.1.0, record schema 1 and source identity. Changes since contract 1:
+
+- **Human output is the default.** Every parsing invocation must pass `--json`.
+  Observed `stages` and `finalize` emit JSONL with a flushed early receipt.
+  `--verbose` writes only to stderr. This is intentionally not backward
+  compatible.
+- **Default stores.** `run`/`execute` no longer require `--runs`; they default to
+  `<caller-cwd>/_flow_results/runs` (override with `--results-root` or `--runs`).
+  Standalone preflight saves an operation and report by default, and
+  `--output FILE` writes only that file.
+- **Default journals (contract 4).** Fresh and resumed `stages` journal under
+  `<workspace-parent>/observations`. Parse the allocation/terminal JSONL, or pass
+  `--no-observation`. Caught preparation failures and interruptions deliver a
+  defined terminal envelope.
+- Unchanged: `collect --json` still writes `results.json`; `collect --stdout` and
+  `report` stay read-only; `archive --list --json` is unsupported.
+
+The example accepts exactly contracts 2, 3 and 4 for Classic operations and
+requires 4 for `project run --endpoint`. After refreshing a consumer's private
+prefix, source its `current/activate.sh` in the shell that runs Dune and the CLI
+(a refresh cannot activate its parent shell). The full matrix is in the
+[flow guide](flow.md#default-result-store-and-cli-contract-4).
 
 ## Resolve TT/LibreLane collateral
 
-`toolchain.lock` supplies exact support-tools and PDK commits, LibreLane and
-Python versions, and ships as the installed command's runtime data. Its values
-mirror the library's emitted `manifest.json`;
-[`check_bundle.py`](../../test/check_bundle.py) checks that copy for drift. Once a
-bundle exists, the bundle is authoritative and preflight rejects collateral that
+`toolchain.lock` supplies exact support-tools and PDK commits and the LibreLane
+and Python versions, and ships as the installed command's runtime data. Its
+values mirror the library's emitted `manifest.json`, and
+[`check_bundle.py`](../../test/check_bundle.py) checks the copy for drift. Once a
+bundle exists, the bundle is authoritative, and preflight rejects collateral that
 disagrees with it.
 
 ```sh
 TOOLCHAIN=/path/for/asic-toolchain
-TOOLCHAIN="$TOOLCHAIN" hardcaml-asic-flow provision
+hardcaml-asic-flow provision --toolchain "$TOOLCHAIN"
 source "$TOOLCHAIN/toolchain-env.sh"
 ```
 
-Normal provisioning uses the installed provider's pinned **managed Python** when
-new venvs need a base. It retains the runtime under `$TOOLCHAIN/python/`; the
-LibreLane and precheck venvs remain separate user environments. Existing venvs
-are checked in place and need no base acquisition when both already exist.
-A wrong existing Python version requires explicit repair, never automatic recreation.
+- **New venvs** use the pinned **managed Python** by default, kept under
+  `$TOOLCHAIN/python/`. `provision --python /path/to/python3.11` is the explicit
+  external override. Its major/minor must match the lock, and it must provide
+  `venv`, `ensurepip` and headless Tcl. An invalid override fails before anything
+  is written, and there is no host-discovery fallback.
+- **Existing venvs** are checked in place. A wrong Python version needs explicit
+  repair, never automatic recreation.
+- **`toolchain-env.sh`** exports `ASIC_TOOLCHAIN`, `TT`, `PDK`, `PDK_ROOT`,
+  `FLOW_PY` and `PRECHECK_PY`. Values are safely quoted, and existing nonempty
+  environment values win.
+- **Execution `--python`** selects the *flow venv interpreter* (normally
+  `$TOOLCHAIN/.venv/bin/python`). Its lexical path is kept, including symlinks,
+  so the base Python is never selected by accident.
 
-`provision --python /path/to/python3.11` is the explicit **external base override**
-for new venvs; both bootstraps forward it. Its actual major/minor must match the
-lock, with `venv`, `ensurepip` and working headless Tcl. An invalid override fails
-before managed acquisition or collateral writes; there is no host-discovery or
-other-minor fallback. No public `--python-only` mode exists.
+`provision --check --no-container --toolchain "$TOOLCHAIN"` is bounded and
+read-only. It does no downloads, installation, root creation, env rewrite,
+container execution or Nix evaluation. It checks:
+
+- the LibreLane metadata, import and Tcl;
+- the precheck Python, its exact-pinned requirement metadata, and the `klayout`
+  import.
+
+Imports run installed package code, so the checks assume trusted tools. Nix
+availability is only a nonfatal diagnostic. With container checks enabled, the
+official image's Python and LibreLane metadata are checked too
+([runtime policy](flow.md#runtime-policy-and-launch-binding)).
+
+A consumer's thin bootstrap should delegate to the installed provider, with no
+copied pins, no source fallback and no automatic provider refresh. The example
+selects `--toolchain` > `TOOLCHAIN` > its own absolute `_flow_tools/`; see
+[consumer check](bootstrap.md#consumer-check).
+
+Validate an emitted bundle against the installed collateral:
+
+```sh
+hardcaml-asic-flow preflight "$BUNDLE" --toolchain "$TOOLCHAIN"
+```
+
+Preflight checks the bundle's file hashes, external reference hashes and
+requested tool revisions and versions. It reports a mismatch instead of silently
+using nearby collateral. [Bootstrapping](bootstrap.md) covers provisioning, and
+[execution and results](flow.md) covers running. When emitting, pass your **own**
+repository as the source root and list your own source inputs. Never pass the
+library checkout.
 
 ### Managed Python integrity and initial platform
 
 The installed [archive pin](../../flow/hardcaml_asic_flow/data/managed-python.json)
-selects CPython **3.11.17 / PBS 20261009**, `x86_64-unknown-linux-gnu`,
-`install_only_stripped`: **30,808,475 bytes**, SHA-256
-`89db7607ebadb77a64709d159b86555d995368ec385a2ab33b00477790c543b0`.
-Official release digest and SHA256SUMS matched. Acquisition verifies size/digest
-before extraction or execution, bounds extraction and rejects unsafe paths/links
-and special members. It probes the private stage and relocated final runtime,
-then publishes a receipt. Generation directories are retained and never replaced,
-including failed/unready generations; repair is an explicit owner action.
+selects:
 
-Initial support is **Linux glibc x86_64 >= 2.17**, not universal portability.
-Atomic no-replace publication uses x86_64 Linux `renameat2` syscall 316 and
-requires kernel/filesystem support; unsupported publication fails explicitly.
-The actual accepted host used glibc **2.39**, kernel **6.8**. This distribution
-supplies Python/Tcl resources without Python 3.11 or Tcl system packages. The host
-CLI still requires Python **>= 3.9**; OS libraries/certificates and Docker/Nix
-remain separate prerequisites/storage.
+- CPython **3.11.17 / PBS 20261009**, `x86_64-unknown-linux-gnu`,
+  `install_only_stripped`;
+- **30,808,475 bytes**, SHA-256
+  `89db7607ebadb77a64709d159b86555d995368ec385a2ab33b00477790c543b0`.
 
-`--check` only inspects the receipt and probes readiness: no lock/cache creation
-or archive acquisition. `--offline` permits acquisition from the verified archive
-cache, fails on a cache miss and never falls back to another interpreter; it is
-not generally read-only. Archive integrity plus a local receipt is **not P6.5
-source/runtime attestation** or proof of the current extracted tree's every byte.
+Acquisition verifies size and digest before extraction or execution, bounds
+extraction, and rejects unsafe paths, links and special members. It probes the
+staged runtime and then the relocated final one before publishing a receipt.
+Generations are kept and never replaced, including failed ones; repair is an
+explicit action.
 
-The [actual runtime evidence](../../evidence/managed-python/actual-runtime.json)
-records Tcl **9.0.4**, Tk **9.0**, OpenSSL **3.5.9**, two disposable pip venvs and
-wheel-only LibreLane **3.1.0.dev3** with official `TclUtils._eval_env` returning 42.
-This is Tcl smoke acceptance, not official Flow-case or physical acceptance.
-To reproduce that experiment from the provider root, explicitly opt in to archive
-acquisition and wheel downloads (this is not a read-only check or Dune test):
+- **Platform:** initial support is **Linux glibc x86_64 ≥ 2.17**. Atomic
+  no-replace publication uses `renameat2` and needs kernel/filesystem support,
+  and unsupported publication fails explicitly. The distribution supplies Python
+  and Tcl without system packages. OS libraries, certificates, Docker and Nix
+  remain separate prerequisites.
+- **`--check`** only inspects the receipt and probes readiness.
+- **`--offline`** may install from the verified archive cache, fails on a cache
+  miss, and never falls back to another interpreter. It is not read-only.
+- **Not attestation:** archive integrity plus a local receipt is not P6.5
+  source/runtime attestation.
+
+[Runtime evidence](../../evidence/managed-python/actual-runtime.json) records
+Tcl 9.0.4, Tk 9.0, OpenSSL 3.5.9 and wheel-only LibreLane 3.1.0.dev3 evaluating
+official Tcl. To reproduce that experiment, you must explicitly opt in to
+downloads; it is not a read-only check:
 
 ```sh
 python3 -I -B experiments/managed_python/accept.py \
   --example /absolute/path/to/hardcaml_asic_example --acquire-and-install
 ```
-
-`provision --check --no-container --toolchain "$TOOLCHAIN"` performs bounded
-read-only checks: no downloads, installation, root creation, env rewrite,
-container execution or Nix evaluation. It checks LibreLane metadata/import and
-Tcl, and precheck Python, exact-pinned requirement metadata and the `klayout`
-import when support-tools requirements are available. Unsupported requirement
-syntax is diagnosed without pip resolution. Python probes use `-I -B`; Git
-probes disable optional locks. Imports execute installed package code, so these
-checks assume trusted installed tools. The host also needs Bash and `timeout`.
-Nix availability remains a nonfatal bootstrap diagnostic, not proof of evaluation
-or daemon access. `--no-container` skips both engine and image queries and does
-not certify native EDA readiness. Preflight now checks host Tcl readiness; native
-capabilities beyond these probes remain unmodeled. With container checks enabled,
-the shared observer checks the official image's distribution-supported Python
-and exact LibreLane metadata. See [runtime policy](flow.md#runtime-policy-and-launch-binding).
-
-The generated shell file exports `ASIC_TOOLCHAIN`, `TT`, `PDK`, `PDK_ROOT`,
-`FLOW_PY`, and `PRECHECK_PY`. Single-quoted literal defaults safely preserve
-spaces and apostrophes, and existing nonempty values win. Checks inspect this
-file as data for expected paths; matching previous-format files are retained.
-In contrast to provisioning, **preflight/run `--python` selects the flow venv
-interpreter**, normally `$TOOLCHAIN/.venv/bin/python`.
-Interpreter paths retain their lexical spelling, including venv and parent
-symlinks, so execution does not accidentally select the base Python.
-
-The example's thin bootstrap uses the installed provider, with no required source
-checkout, copied pins, source fallback or automatic refresh. Root precedence is
-explicit `--toolchain` > `TOOLCHAIN` > absolute example `_flow_tools/`.
-Provider library refresh is separate. In the user's shell, first
-`source .dev/asic/current/activate.sh`, then `./bootstrap.sh --check`;
-the final actual check including container exits 0. The earlier five-gap result
-is historical. See [consumer check](bootstrap.md#consumer-check) and
-[dated acceptance](../phase_plan.md#hostcontainer-runtime-policy-closeout).
-
-To validate an emitted consumer bundle against the actual installed collateral:
-
-```sh
-hardcaml-asic-flow preflight "$BUNDLE" \
-  --support-tools "$TT" --pdk-root "$PDK_ROOT" --python "$FLOW_PY"
-```
-
-Preflight checks the bundle's file hashes, external reference hashes, and
-requested tool revisions and versions. It will report a mismatch instead of
-silently using nearby collateral. The [bootstrap guide](bootstrap.md) explains
-provisioning and the [execution guide](flow.md) covers subsequent
-run and collection commands; both still describe the repository's own
-`scripts/` entry points, which are development adapters onto these same modules.
-A consumer passes its own repository as `Bundle.render`'s `source_root` and
-explicitly lists its own source inputs; it does not pass the library source
-checkout as the consumer's source root.
-
-Installed-operation integration (ASIC P6.4b) is delivered. Source-artifact
-identity and the remaining independent-installation gates are ASIC P6.5/P6.6.
-Historical consumer migration is ASIC P7; it is not a prerequisite for a new
-consumer such as `hardcaml_asic_example`.
-
-## P5.1 check in this worktree
-
-`test/package_consumer_smoke.sh` built the package into a temporary prefix, built
-an independent Dune executable using `(libraries hardcaml_asic)`, and ran it:
-`address=2 storage=32`. `opam lint hardcaml_asic.opam` passed. The source base
-revision at this check was `53b8d8b5506a9215de7ad15b44eaa0286d0e3893`;
-the package additions are uncommitted, so that hash alone does not identify the
-checked snapshot. Protemu subsequently pinned
-`a257424c3ae31fd6ee10cea052cc7577f15d2677`; the P5.4 clean-staging record in
-the [phase plan](../archive/phase-plan-through-p6.4b.md#8-p5--reference-consumer-adoption-and-initial-usage)
-builds that exact revision into an isolated prefix and resolves it without a
-sibling path dependency.

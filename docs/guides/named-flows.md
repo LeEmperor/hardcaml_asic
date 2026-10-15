@@ -1,8 +1,10 @@
 # Named flows and parameter profiles
 
-The first named-methodology milestone is implemented. Project discovery,
-description, preview and execution work independently of Workbench. Workbench or
-any other client can consume the same public interfaces.
+A project can declare named flows (methodologies) and parameter profiles, and
+any client can discover, preview and run them through the project's CLI. This
+works without Workbench, and Workbench or any other client uses the same public
+interfaces. The ownership model is in the
+[architecture](../architecture.md#9-named-methodologies-and-profiles).
 
 The current backend recipe is `librelane.classic.v1`, with fresh, contiguous
 physical-stage prefixes. Profiles configure supported parameters before bundle
@@ -26,13 +28,13 @@ The initial typed parameter surface is synthesis strategy (`AREA 0` through
 `AREA 3`, `DELAY 0` through `DELAY 4`) and boolean ABC buffering. Other LibreLane
 parameters are not automatically exposed by this catalog version.
 
-## Install and activate the current development provider
+## Install and activate the provider
 
 From `hardcaml_asic_example`, in the existing OCaml environment:
 
 ```bash
 python3 -B scripts/asic_dependency.py refresh \
-  --source /home/wayne/devel/jane/hardcaml_asic \
+  --source /absolute/path/to/hardcaml_asic \
   --mode development
 source .dev/asic/current/activate.sh
 
