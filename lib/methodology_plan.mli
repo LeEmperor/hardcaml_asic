@@ -1,7 +1,7 @@
 open! Core
 
 (** Immutable version-1 resolved preparation evidence. Main owns its canonical algorithm
-    (Plan_json); these identities are configuration/preview identities, not P6 source
+    (Flow.Plan_json); these identities are configuration/preview identities, not P6 source
     stamps, tool observations or execution attempt identities. *)
 type t
 
@@ -9,8 +9,8 @@ val to_yojson : t -> Yojson.Safe.t
 val to_string : t -> string
 val of_yojson : Yojson.Safe.t -> t Or_error.t
 val of_string : string -> t Or_error.t
-val methodology : t -> Flow.Catalog.resolved
-val effective_parameters : t -> Resolved_flow.Effective_parameter.t list
+val methodology : t -> Hardcaml_asic_flow_domain.Catalog.resolved
+val effective_parameters : t -> Elaboration.Resolved.Effective_parameter.t list
 val project_name : t -> string
 val bundle_identity : t -> string
 val recipe : t -> Flow.Recipe.t
@@ -27,7 +27,7 @@ module Prepared : sig
   type t
 
   val plan : t -> t_plan
-  val bundle : t -> Bundle.t
+  val bundle : t -> Elaboration.Bundle.t
 end
 
 (** Resolve catalog before elaboration, render the exact bundle ONCE in memory, derive the
@@ -36,13 +36,13 @@ end
     [catalog_inputs] enter Bundle's input inventory. Publish Prepared.bundle later,
     without rerendering. *)
 val prepare
-  :  ?inputs:Target.Inputs.t
-  -> ?selection:Flow.Selection.t
-  -> ?request:Flow.Parameter.assignment list
+  :  ?inputs:Platform.Target.Inputs.t
+  -> ?selection:Hardcaml_asic_flow_domain.Selection.t
+  -> ?request:Hardcaml_asic_flow_domain.Parameter.assignment list
   -> ?include_simulation:bool
   -> ?catalog_inputs:string list
   -> ?expected_plan_identity:string
-  -> catalog:Flow.Catalog.t
+  -> catalog:Hardcaml_asic_flow_domain.Catalog.t
   -> endpoint:Flow.Stage.t
   -> Project.t
   -> source_root:string

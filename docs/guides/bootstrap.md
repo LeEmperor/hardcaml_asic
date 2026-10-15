@@ -282,10 +282,10 @@ what ends up in an emitted bundle and what preflight checks collateral against:
 
 | Pin | Defined in |
 | --- | --- |
-| `support_tools_revision` | `lib/target.ml`, `Inputs.reference_cmos5l_6x4` |
-| `pdk_revision` | `lib/target.ml`, `Inputs.reference_cmos5l_6x4` |
-| `librelane_version` | `lib/bundle.ml`, the `requested_tools` object |
-| `python` | `lib/bundle.ml`, the `requested_tools` object |
+| `support_tools_revision` | `lib/platform/target.ml`, `Inputs.reference_cmos5l_6x4` |
+| `pdk_revision` | `lib/platform/target.ml`, `Inputs.reference_cmos5l_6x4` |
+| `librelane_version` | `lib/elaboration/bundle.ml`, the `requested_tools` object |
+| `python` | `lib/elaboration/bundle.ml`, the `requested_tools` object |
 
 `toolchain.lock` is a **copy** of those values, because the provisioner runs
 before anything can be built and cannot ask the library. The copy cannot drift:
@@ -303,7 +303,7 @@ declaration means the same thing on any machine and behind any mirror.
 
 To change a pin:
 
-1. change it in `lib/target.ml` or `lib/bundle.ml`;
+1. change it in `lib/platform/target.ml` or `lib/elaboration/bundle.ml`;
 2. change it in `toolchain.lock`;
 3. run `dune runtest`, which fails if you changed only one of the two;
 4. run `./bootstrap.sh`, which re-resolves the affected checkout or environment

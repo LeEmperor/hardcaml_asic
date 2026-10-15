@@ -44,7 +44,7 @@ let () =
   let module Design = struct
     include Oracle.Observable
     let create context i =
-      let mode = Elaboration_context.mode context in
+      let mode = Elaboration.Context.mode context in
       calls := mode :: !calls;
       (match mode with
        | Simulation when !reject_simulation -> failwith "simulation rejected"
@@ -82,35 +82,35 @@ let () =
   calls := [];
   expect_failure "target" "flow resolution failed"
     (project ~target_override:
-       { harness = Tiny_tapeout { tiles = T1x1 }; technology = Technology.ihp_sg13cmos5l } ()) ();
-  assert (List.equal Elaboration_mode.equal !calls [ Implementation ]);
+       { harness = Tiny_tapeout { tiles = T1x1 }; technology = Resource.Technology.ihp_sg13cmos5l } ()) ();
+  assert (List.equal Elaboration.Mode.equal !calls [ Implementation ]);
   calls := [];
   reject_simulation := true;
   expect_failure "simulation" "simulation rejected" p ();
-  assert (List.equal Elaboration_mode.equal !calls [ Simulation; Implementation ]);
+  assert (List.equal Elaboration.Mode.equal !calls [ Simulation; Implementation ]);
   calls := [];
   let fallback =
     Project.emit_bundle ~include_simulation:false p ~source_root
       ~output_dir:(output "fallback") |> Or_error.ok_exn
   in
-  assert (List.equal Elaboration_mode.equal !calls [ Implementation ]);
+  assert (List.equal Elaboration.Mode.equal !calls [ Implementation ]);
   let open Yojson.Safe.Util in
   assert (Yojson.Safe.equal (member "simulation_sources" (Bundle.manifest fallback))
            (member "synthesis_sources" (Bundle.manifest fallback)));
   calls := [];
   let stored_fallback, _ = Project.emit_bundle_to_store ~include_simulation:false p
       ~source_root ~store_dir:(output "fallback store") |> Or_error.ok_exn in
-  assert (List.equal Elaboration_mode.equal !calls [ Implementation ]);
+  assert (List.equal Elaboration.Mode.equal !calls [ Implementation ]);
   assert (String.equal (Bundle.identity stored_fallback) (Bundle.identity fallback));
   reject_simulation := false;
   calls := [];
   let default_bundle = Project.emit_bundle p ~source_root
       ~output_dir:(output "default") |> Or_error.ok_exn in
-  assert (List.equal Elaboration_mode.equal !calls [ Simulation; Implementation ]);
+  assert (List.equal Elaboration.Mode.equal !calls [ Simulation; Implementation ]);
   calls := [];
   let stored_default, _ = Project.emit_bundle_to_store p ~source_root
       ~store_dir:(output "default store") |> Or_error.ok_exn in
-  assert (List.equal Elaboration_mode.equal !calls [ Simulation; Implementation ]);
+  assert (List.equal Elaboration.Mode.equal !calls [ Simulation; Implementation ]);
   assert (String.equal (Bundle.identity stored_default) (Bundle.identity default_bundle));
   let explicit_bundle = Project.emit_bundle ~include_simulation:true p ~source_root
       ~output_dir:(output "explicit") |> Or_error.ok_exn in
@@ -192,7 +192,7 @@ let () =
   let declaration_before = Project.describe p in
   calls := [];
   let area_bundle = Project.render_bundle ~methodology:area p ~source_root |> Or_error.ok_exn in
-  assert (List.equal Elaboration_mode.equal !calls [ Simulation; Implementation ]);
+  assert (List.equal Elaboration.Mode.equal !calls [ Simulation; Implementation ]);
   let delay_bundle = Project.render_bundle ~methodology:delay p ~source_root |> Or_error.ok_exn in
   assert (not (String.equal (Bundle.identity area_bundle) (Bundle.identity delay_bundle)));
   List.iter (Bundle.paths area_bundle) ~f:(fun path ->

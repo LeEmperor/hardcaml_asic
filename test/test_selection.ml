@@ -11,7 +11,7 @@ open! Hardcaml
 open! Hardcaml_asic
 open! Expect_test_helpers_core
 
-let fixture_macro : Technology.Macro.t =
+let fixture_macro : Resource.Technology.Macro.t =
   { name = "fixture_macro_8"
   ; collateral =
       [ { role = Simulation_model; reference = "fixture/macro_8.v" }
@@ -23,13 +23,13 @@ let fixture_macro : Technology.Macro.t =
 ;;
 
 let technology_with_width_8_mapping =
-  Technology.create_exn
+  Resource.Technology.create_exn
     ~name:"fixture-tech"
     ~resource_mappings:
       [ { request = Fixture.Store.request ~width:8; macro = fixture_macro } ]
 ;;
 
-let elaborate ?(mode = Elaboration_mode.Implementation) ?design ~technology policy =
+let elaborate ?(mode = Elaboration.Mode.Implementation) ?design ~technology policy =
   let%bind.Or_error policy in
   let%bind.Or_error project = Fixture.project ?design ~technology ~policy () in
   Project.elaborate project ~mode
@@ -53,7 +53,7 @@ let%expect_test "exact mapping is selected and carries its collateral" =
     |> ok_exn
   in
   let status = List.last_exn (Elaborated_project.resources elaborated_project) in
-  print_s [%sexp (status : Resource_record.t)];
+  print_s [%sexp (status : Resource.Record.t)];
   [%expect
     {|
     ((id status)
@@ -80,7 +80,7 @@ let%expect_test "exact mapping is selected and carries its collateral" =
 ;;
 
 let%expect_test "missing exact mapping fails with the instance and requested contract" =
-  show ~technology:Technology.ihp_sg13cmos5l (Resource_policy.create ~default:Exact []);
+  show ~technology:Resource.Technology.ihp_sg13cmos5l (Resource_policy.create ~default:Exact []);
   [%expect
     {|
     (("design construction failed"
@@ -96,7 +96,7 @@ let%expect_test "missing exact mapping fails with the instance and requested con
 
 let%expect_test "a different contract is not matched to a nearby mapping" =
   let technology =
-    Technology.create_exn
+    Resource.Technology.create_exn
       ~name:"fixture-tech"
       ~resource_mappings:
         [ { request = Fixture.Store.request ~width:16; macro = fixture_macro } ]
@@ -176,7 +176,7 @@ let%expect_test "repeated selectors are ambiguous" =
 
 let%expect_test "an instance with no applicable policy fails" =
   show
-    ~technology:Technology.ihp_sg13cmos5l
+    ~technology:Resource.Technology.ihp_sg13cmos5l
     (Resource_policy.create [ rule (subtree "left") Flops ]);
   [%expect
     {|
@@ -193,7 +193,7 @@ let%expect_test "an instance with no applicable policy fails" =
 
 let%expect_test "a rule matching no registered resource fails finalization" =
   show
-    ~technology:Technology.ihp_sg13cmos5l
+    ~technology:Resource.Technology.ihp_sg13cmos5l
     (Resource_policy.create ~default:Flops [ rule (instance "left/bfu") Exact ]);
   [%expect
     {|
@@ -210,7 +210,7 @@ let%expect_test "a rule outranked on every resource it matches fails finalizatio
   (* [subtree "left"] matches only left/buf, which the instance rule decides. Its [Exact]
      cannot be satisfied by this technology, so it would fail registration if it applied. *)
   show
-    ~technology:Technology.ihp_sg13cmos5l
+    ~technology:Resource.Technology.ihp_sg13cmos5l
     (Resource_policy.create
        ~default:Flops
        [ rule (subtree "left") Exact; rule (instance "left/buf") Flops ]);
@@ -230,7 +230,7 @@ let%expect_test "a rule outranked on only some of its resources is live" =
   let design = Fixture.design ~within:"core" () in
   show
     ~design
-    ~technology:Technology.ihp_sg13cmos5l
+    ~technology:Resource.Technology.ihp_sg13cmos5l
     (Resource_policy.create
        [ rule (subtree "core") Flops; rule (instance "core/left/buf") Flops ]);
   [%expect {|
@@ -246,7 +246,7 @@ let%expect_test "a rule outranked on only some of its resources is live" =
 let%expect_test "simulation elaboration still applies policy" =
   show
     ~mode:Simulation
-    ~technology:Technology.ihp_sg13cmos5l
+    ~technology:Resource.Technology.ihp_sg13cmos5l
     (Resource_policy.create ~default:Exact []);
   [%expect
     {|
@@ -270,9 +270,9 @@ let%expect_test "simulation elaboration still applies policy" =
   print_s
     [%message
       ""
-        ~selection:(status.selection : Selection.t)
-        ~elaborated_as:(status.elaborated_as : Resource_record.Elaborated_as.t)
-        ~sources:(status.sources : Resource_record.Source.t list)];
+        ~selection:(status.selection : Resource.Selection.t)
+        ~elaborated_as:(status.elaborated_as : Resource.Record.Elaborated_as.t)
+        ~sources:(status.sources : Resource.Record.Source.t list)];
   [%expect
     {|
     ((selection (
@@ -285,7 +285,7 @@ let%expect_test "simulation elaboration still applies policy" =
 
 let%expect_test "malformed technology capability and selectors are rejected" =
   require_does_raise (fun () ->
-    Technology.create_exn
+    Resource.Technology.create_exn
       ~name:"fixture-tech"
       ~resource_mappings:
         [ { request = Fixture.Store.request ~width:8; macro = fixture_macro }

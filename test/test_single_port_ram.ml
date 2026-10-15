@@ -102,11 +102,11 @@ let trace =
 let run_scoreboard mode =
   let elaborated_project = elaborate ~mode ~policy:(policy Flops) () |> ok_exn in
   let record = List.hd_exn (Elaborated_project.resources elaborated_project) in
-  assert (String.equal (Resource_id.to_string record.id) "program");
+  assert (String.equal (Resource.Id.to_string record.id) "program");
   assert (
-    Resource_request.equal
+    Resource.Request.equal
       record.request
-      (Resource_request.create_exn
+      (Resource.Request.create_exn
          ~kind:"single_port_ram"
          ~contract:
            [%sexp
@@ -119,10 +119,10 @@ let run_scoreboard mode =
              }]));
   let expected_source =
     match mode with
-    | Simulation -> Resource_record.Source.Generated_behavioral_model
+    | Simulation -> Resource.Record.Source.Generated_behavioral_model
     | Implementation -> Generated_synthesis_rtl
   in
-  assert (List.equal Resource_record.Source.equal record.sources [ expected_source ]);
+  assert (List.equal Resource.Record.Source.equal record.sources [ expected_source ]);
   let sim = Cyclesim.create (Elaborated_project.circuit elaborated_project) in
   let set port value =
     Cyclesim.in_port sim port
@@ -145,7 +145,7 @@ let run_scoreboard mode =
         then
           failwithf
             "%s cycle %d: disabled output changed"
-            (Elaboration_mode.sexp_of_t mode |> Sexp.to_string)
+            (Elaboration.Mode.sexp_of_t mode |> Sexp.to_string)
             cycle
             ());
     expected
@@ -159,7 +159,7 @@ let run_scoreboard mode =
       if not (Bits.equal actual wanted)
       then
         failwithf "cycle %d: expected %02x, got %s" cycle value (Bits.to_bstr actual) ());
-    if Elaboration_mode.equal mode Simulation
+    if Elaboration.Mode.equal mode Simulation
     then (
       let poison =
         if operation.write
@@ -231,24 +231,24 @@ let%test_unit "RAM inventory is repeatable and fallback is recorded" =
   let explicit = elaborate ~mode:Implementation ~policy:(policy Flops) () |> ok_exn in
   let repeated = elaborate ~mode:Implementation ~policy:(policy Flops) () |> ok_exn in
   assert (
-    List.equal Resource_record.equal
+    List.equal Resource.Record.equal
       (Elaborated_project.resources explicit) (Elaborated_project.resources repeated));
   let fallback =
     elaborate ~mode:Implementation ~policy:(policy Exact_or_flop_fallback) () |> ok_exn
   in
   let selected = (List.hd_exn (Elaborated_project.resources fallback)).selection in
-  assert (Selection.Implementation.equal selected.implementation Flops);
+  assert (Resource.Selection.Implementation.equal selected.implementation Flops);
   assert (
-    Selection.Reason.equal
+    Resource.Selection.Reason.equal
       selected.reason
-      (Selection.Reason.Flop_fallback { no_exact_mapping_in = "ihp-sg13cmos5l" }))
+      (Resource.Selection.Reason.Flop_fallback { no_exact_mapping_in = "ihp-sg13cmos5l" }))
 ;;
 
 let%test_unit "an unimplemented macro mapping cannot masquerade as RAM hardware" =
   let elaborated_project = elaborate ~mode:Implementation ~policy:(policy Flops) () |> ok_exn in
   let request = (List.hd_exn (Elaborated_project.resources elaborated_project)).request in
   let technology =
-    Technology.create_exn
+    Resource.Technology.create_exn
       ~name:"test-macro-technology"
       ~resource_mappings:[ { request; macro = { name = "test_macro"; collateral = [] } } ]
   in
@@ -257,7 +257,7 @@ let%test_unit "an unimplemented macro mapping cannot masquerade as RAM hardware"
   in
   let simulation = Project.elaborate project ~mode:Simulation |> ok_exn in
   let record = List.hd_exn (Elaborated_project.resources simulation) in
-  assert (Resource_record.Elaborated_as.equal record.elaborated_as Behavioral_model);
+  assert (Resource.Record.Elaborated_as.equal record.elaborated_as Behavioral_model);
   match Project.elaborate project ~mode:Implementation with
   | Ok _ -> failwith "unimplemented macro backend was accepted"
   | Error error ->

@@ -346,13 +346,13 @@ consumer separately verifies that it never depends on those unspecified values.
 
 ## 10. Project integration decisions
 
-Resource construction takes the temporary `Elaboration_context` belonging to one
+Resource construction takes the temporary `Elaboration.Context` belonging to one
 project elaboration, registers the resource, and continues to return read data.
 The implemented signature is:
 
 ```ocaml
 val create
-  :  Elaboration_context.t
+  :  Elaboration.Context.t
   -> ?name:string
   -> Config.t
   -> clock:Signal.t

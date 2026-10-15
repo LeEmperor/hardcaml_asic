@@ -75,11 +75,15 @@ to the phase plan for current status.
   persisted journals versus live UI events, cancellation and daemon failure.
   Mostly proposed.
 
-**Conventions and planned work**
+**Conventions**
 
 - [Comment and formatting guidelines](development/comment_guidelines.md)
+
+**Source layout**
+
 - [`lib/` namespace reorganization](development/lib-namespace-reorganization.md):
-  planned, not started.
+  the move of `flow_domain/` and `execution/` to the repo root and the qualified
+  `lib/` groups. Implemented 2026-10-15.
 
 ## Separate tracks
 

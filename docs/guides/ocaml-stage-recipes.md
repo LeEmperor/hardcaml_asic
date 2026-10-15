@@ -5,8 +5,8 @@ and how they reach the installed `stages` command. For the short command-line
 path, see the [stage quickstart](stage-quickstart.md).
 
 The public `Hardcaml_asic.Flow.Stage` and `Flow.Recipe` modules describe the
-provider's opt-in explicit-stage execution contract. The same modules are also
-available as `Flow_stage` and `Flow_recipe`; their `.mli` files are the API
+provider's opt-in explicit-stage execution contract. Their sources are
+`lib/flow/stage.ml` and `lib/flow/recipe.ml`, and their `.mli` files are the API
 reference. Construction and JSON rendering are pure and require no toolchain.
 
 `Project.create ~flow:(Flow.librelane Hardening)` still selects project adapter
@@ -147,12 +147,12 @@ recipe schemas remain compatible.
 
 | Source | Namespace / responsibility |
 | --- | --- |
-| `lib/flow/stage_id.ml`, `registry.ml` | IDs/order and domain operations/restart targets |
-| `lib/flow/stages/{synthesis,floorplan,placement,cts,routing,signoff}/recipe.ml` | Maintained standard domain compositions |
-| `lib/flow/stages/placement/{global_placement,design_repair,detailed_placement}.ml` | Placement operation contracts |
-| `lib/flow/analysis/timing.ml` | Shared pre/mid/post-PNR timing contracts |
-| `lib/flow/backends/librelane/mapping.{ml,mli}` | Exact Classic implementation/artifact/gate/setting mapping; derived endpoints/successors |
-| `lib/execution/backends/librelane/classic_contract.{ml,mli}` | JSON discovery and selected-runtime validation |
+| `flow_domain/stage_id.ml`, `registry.ml` | IDs/order and domain operations/restart targets |
+| `flow_domain/stages/{synthesis,floorplan,placement,cts,routing,signoff}/recipe.ml` | Maintained standard domain compositions |
+| `flow_domain/stages/placement/{global_placement,design_repair,detailed_placement}.ml` | Placement operation contracts |
+| `flow_domain/analysis/timing.ml` | Shared pre/mid/post-PNR timing contracts |
+| `flow_domain/backends/librelane/mapping.{ml,mli}` | Exact Classic implementation/artifact/gate/setting mapping; derived endpoints/successors |
+| `execution/backends/librelane/classic_contract.{ml,mli}` | JSON discovery and selected-runtime validation |
 
 `Registry.operations Flow.Stage.Placement` describes its domain groups.
 `Backends.Librelane.Mapping.composition Flow.Stage.Placement` expands them into

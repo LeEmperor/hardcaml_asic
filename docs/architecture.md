@@ -39,9 +39,9 @@ Workbench application integration, and source-artifact stamping (ASIC P6.5a).
 
 | Layer | Responsibility |
 | --- | --- |
-| Hardware library `hardcaml_asic` (`lib/`) | Resource semantics, project declarations, validated design intent and input emission |
-| Flow domain `hardcaml_asic.flow_domain` (`lib/flow/`) | Stage/operation contracts, standard compositions, checked LibreLane mapping, catalogs, methodologies, profiles and parameters |
-| Execution library `hardcaml_asic.execution` (`lib/execution/`) and native commands (`bin/`) | Public CLI parsing, defaults, identity, routing and rendering; all computation services, supervision, publication, records, observation and watch |
+| Hardware library `hardcaml_asic` (`lib/`) | Resource semantics, project declarations, validated design intent and input emission. Qualified groups `Resource`, `Flow`, `Platform` and `Elaboration`; `lib/hardcaml_asic.ml` is the curated public surface (see the [namespace reorganization record](development/lib-namespace-reorganization.md)) |
+| Flow domain `hardcaml_asic.flow_domain` (`flow_domain/`) | Stage/operation contracts, standard compositions, checked LibreLane mapping, catalogs, methodologies, profiles and parameters |
+| Execution library `hardcaml_asic.execution` (`execution/`) and native commands (`bin/`) | Public CLI parsing, defaults, identity, routing and rendering; all computation services, supervision, publication, records, observation and watch |
 | Installed Python runtime (`flow/hardcaml_asic_flow/`) | Exactly nine modules (`__init__`, `backend_protocol`, `librelane_bridge`, `stage_metadata_probe`, `probe`, `runtime_observation`, `runtime_contract`, `managed_python`, `paths`) plus four data files. Calls the official LibreLane API, probes runtimes and provisions |
 | Retired Python sources | Sixteen former service modules kept in the checkout only as references and test oracles. Their installed imports are a deliberate Python API break |
 | Hardware project (e.g. the example) | Design and wrapper semantics, testbenches, declaration, flow catalog, dependency pin and chosen evidence stores |
@@ -67,11 +67,11 @@ not runtime path requirements.
 
 ### Current native execution source map
 
-`lib/execution/dune` defines one public `hardcaml_asic.execution` library with
+`execution/dune` defines one public `hardcaml_asic.execution` library with
 `(include_subdirs unqualified)`. The directories organize source only; they are
 not namespaces, and every `Hardcaml_asic_execution.*` module name is unchanged.
 
-| Source directory under `lib/execution/` | Modules / responsibility |
+| Source directory under `execution/` | Modules / responsibility |
 | --- | --- |
 | Root | `Runner`, `Execution_plan`, `Coarse_execution_service`, `Coarse_run_service`, `Methodology_execution_service`, `Methodology_execution_record`: planning and orchestration |
 | `storage/` | `Checkpoint`, `Checkpoint_publisher`, `Result_store`: validation, publication and allocation |
@@ -82,7 +82,7 @@ not namespaces, and every `Hardcaml_asic_execution.*` module name is unchanged.
 | `backends/librelane/` | `Backend_protocol`, `Backend_state`, `Classic_contract`, `Segment_report`, `Segment_service`, `Stage_preparation`: narrow native-backend integration |
 
 The three C stubs sit at the library root beside the foreign-stub stanza. Stage
-domains live in `lib/flow/stages/`. Installed resource paths and runtime output
+domains live in `flow_domain/stages/`. Installed resource paths and runtime output
 layouts do not depend on this source layout.
 
 ### Tool environment ownership
@@ -146,7 +146,7 @@ lists the exact supported facts.
 
 ```text
 Project declaration
-  → fresh Elaboration_context for one elaboration
+  → fresh Elaboration.Context for one elaboration
   → construct/register resources and validate policy
   → finalize abstract Elaborated_project (circuit + metadata/intent/resources)
   → resolve concrete TT/LibreLane facts into Resolved_flow
@@ -213,7 +213,7 @@ Retain the behavioral/flop RAM contract and its independent conformance tests.
 Selection is explicit: exact mapping, flops, or an explicitly permitted fallback.
 Never silently change shape, latency or behavior to fit hardware.
 
-`Resource_request.contract` currently uses structural S-expression equality, so
+`Resource.Request.contract` currently uses structural S-expression equality, so
 field order affects matching. It merits a typed/canonical representation before
 broader backend authoring ([backlog](backlog/README.md)). No SRAM or public macro
 framework is a blanket prerequisite for other work.

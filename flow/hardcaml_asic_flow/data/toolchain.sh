@@ -535,7 +535,7 @@ fetch_support_tools() {
     fi
 
     # The one file the emitted bundle actually points at; its hash is pinned in
-    # lib/target.ml and re-checked by preflight, so a wrong revision is caught twice.
+    # lib/platform/target.ml and re-checked by preflight, so a wrong revision is caught twice.
     local floorplan="$tt_dir/tech/$pdk_name/def/tt_block_6x4_pgvdd.def"
     if [[ -f $floorplan ]]; then
         info "floorplan present: tech/$pdk_name/def/tt_block_6x4_pgvdd.def"

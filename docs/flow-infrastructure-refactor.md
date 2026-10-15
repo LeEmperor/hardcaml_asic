@@ -61,8 +61,8 @@ The current stage declarations and execution mapping live in:
 
 | File | Responsibility |
 | --- | --- |
-| [`lib/flow_stage.ml`](../lib/flow_stage.ml) | OCaml stage names and advertised capabilities |
-| [`lib/flow_recipe.ml`](../lib/flow_recipe.ml) | Pure, contiguous stage recipes and serialization |
+| [`lib/flow/stage.ml`](../lib/flow/stage.ml) | OCaml stage names and advertised capabilities |
+| [`lib/flow/recipe.ml`](../lib/flow/recipe.ml) | Pure, contiguous stage recipes and serialization |
 | [`flow/hardcaml_asic_flow/execution_plan.py`](../flow/hardcaml_asic_flow/execution_plan.py) | Python stage order, endpoints, restart targets, and plan validation |
 | [`flow/hardcaml_asic_flow/stages.py`](../flow/hardcaml_asic_flow/stages.py) | Segment execution requests and checkpoint publication |
 | [`flow/hardcaml_asic_flow/librelane_bridge.py`](../flow/hardcaml_asic_flow/librelane_bridge.py) | Native LibreLane configuration/state loading and segment invocation |
@@ -248,6 +248,15 @@ Hardware/project/resource reorganization, retired Python SOURCE relocation and
 flow definition/profile authoring remain later work. The sketch's top-level
 storage/results/backend directories and illustrative module names were not
 adopted as new public libraries or namespaces.
+
+**Update (2026-10-15):** the [namespace reorganization](development/lib-namespace-reorganization.md)
+moved the two libraries out of `lib/`. The flow domain library is now repo-root
+`flow_domain/{stages,analysis,backends/librelane}` and the execution library is
+repo-root `execution/` with the same subdirectories; neither library's name nor
+its module names changed. `lib/` now holds only `hardcaml_asic`, with qualified
+`resource/`, `flow/`, `platform/` and `elaboration/` groups, which delivers the
+hardware/project/resource reorganization above. Cleaning up the retired Python
+reference sources is still optional later work.
 
 ```text
 lib/

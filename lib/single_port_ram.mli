@@ -88,13 +88,13 @@ end
       not [Config.width] wide; ports are checked before registration, so the RAM never
       enters the inventory;
     - naming the component, if [name] is not a valid identifier (see
-      {!Resource_id.create_exn});
+      {!Resource.Id.create_exn});
     - with the instance and request, if [name] duplicates an instance already registered
       in this scope or the policy cannot be satisfied (see
-      {!Elaboration_context.register_exn});
+      {!Elaboration.Context.register_exn});
     - with the instance and macro, if a macro is selected in Implementation mode. *)
 val create
-  :  Elaboration_context.t
+  :  Elaboration.Context.t
   -> ?name:string
   -> Config.t
   -> clock:Signal.t

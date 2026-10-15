@@ -149,9 +149,9 @@ workflow; see [consumer dependency workflow](docs/development/consumer-dependenc
 
 | Path | Contents |
 | --- | --- |
-| `lib/` | Hardware library: `Project`, `Elaborated_project`, `Resolved_flow`, `Bundle`, `Single_port_ram`, `Tt_cmos5l`, targets, timing, resource policy |
-| `lib/flow/` | Flow domain: stage recipes (`stages/`), LibreLane mapping (`backends/librelane/`), catalog, methodology, profiles, parameters |
-| `lib/execution/` | Execution services: runner, runtime/process supervision, storage and checkpoints, observation, results, archive, LibreLane backend protocol |
+| `lib/` | Hardware library `hardcaml_asic`: qualified groups `resource/`, `flow/` (project flow selection, `Stage`, `Recipe`, plan JSON), `platform/` (targets, `Tt_cmos5l`, pinout, clock, timing) and `elaboration/` (`Elaborated_project`, `Resolved_flow`, `Bundle`); root modules `Project`, `Methodology_plan`, `Single_port_ram`; `hardcaml_asic.ml` is the public surface |
+| `flow_domain/` | Flow domain library: stage recipes (`stages/`), LibreLane mapping (`backends/librelane/`), catalog, methodology, profiles, parameters |
+| `execution/` | Execution library: runner, runtime/process supervision, storage and checkpoints, observation, results, archive, LibreLane backend protocol |
 | `bin/` | `hardcaml-asic-flow` and the `hardcaml-asic-experimental-*` service helpers it routes to |
 | `flow/hardcaml_asic_flow/` | Installed Python runtime (LibreLane bridge, probes, managed Python, provisioning data); retired service modules are kept as source-only references |
 | `examples/` | `memory_example` and `tt_bundle_example` |

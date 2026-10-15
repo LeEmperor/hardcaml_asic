@@ -48,7 +48,7 @@ def toolchain_lock(source_root, requested):
     built, so it is plain shell and cannot ask the library what to fetch; it reads
     toolchain.lock instead. That makes the lockfile a second place each revision is
     written down. This check is the only thing keeping it honest: "requested_tools" comes
-    straight from lib/target.ml and lib/bundle.ml, so a pin changed in one place and not
+    straight from lib/platform/target.ml and lib/elaboration/bundle.ml, so a pin changed in one place and not
     the other fails here, naming both values.
 
     The repository and branch entries have no counterpart in a manifest and are not
@@ -185,11 +185,11 @@ def main(executable, source_root):
         assert "Generated_synthesis_rtl" in mem_manifest["resources"][0]["source_roles"]
         assert obs_manifest["resources"] == []
 
-        with (source / "lib/elaborated_project.ml").open("a") as stream:
+        with (source / "lib/elaboration/elaborated_project.ml").open("a") as stream:
             stream.write("\n(* provenance change *)\n")
         _, changed = emit("memory", "memory-dirty")
         assert changed["identity"] != mem_manifest["identity"]
-        assert any(entry["path"] == "lib/elaborated_project.ml" and entry["git_status"].startswith(" M")
+        assert any(entry["path"] == "lib/elaboration/elaborated_project.ml" and entry["git_status"].startswith(" M")
                    for entry in changed["source_inputs"])
 
         (source / "lib/untracked_probe.ml").write_text("(* new source input *)\n")

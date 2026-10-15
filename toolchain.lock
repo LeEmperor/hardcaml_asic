@@ -4,10 +4,10 @@
 # what ends up in an emitted bundle and what the flow's preflight checks the installed
 # collateral against:
 #
-#   support_tools_revision : lib/target.ml, Inputs.reference_cmos5l_6x4;
-#   pdk_revision           : lib/target.ml, Inputs.reference_cmos5l_6x4;
-#   librelane_version      : lib/bundle.ml, the "requested_tools" object;
-#   python                 : lib/bundle.ml, the "requested_tools" object;
+#   support_tools_revision : lib/platform/target.ml, Inputs.reference_cmos5l_6x4;
+#   pdk_revision           : lib/platform/target.ml, Inputs.reference_cmos5l_6x4;
+#   librelane_version      : lib/elaboration/bundle.ml, the "requested_tools" object;
+#   python                 : lib/elaboration/bundle.ml, the "requested_tools" object;
 #
 # This file exists because the provisioner is plain shell that has to provision the
 # toolchain before anything can be built, so it cannot ask the library what to fetch.

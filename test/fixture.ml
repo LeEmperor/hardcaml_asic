@@ -12,12 +12,12 @@ open! Hardcaml_asic
 
 module Store = struct
   let request ~width =
-    Resource_request.create_exn ~kind:"fixture_store" ~contract:[%sexp { width : int }]
+    Resource.Request.create_exn ~kind:"fixture_store" ~contract:[%sexp { width : int }]
   ;;
 
   let create context ~name ~clock d =
-    let (_ : Resource_record.t) =
-      Elaboration_context.register_exn context ~name (request ~width:(Signal.width d))
+    let (_ : Resource.Record.t) =
+      Elaboration.Context.register_exn context ~name (request ~width:(Signal.width d))
     in
     Signal.reg (Signal.Reg_spec.create ~clock ()) d
   ;;
@@ -37,14 +37,14 @@ module Half = struct
   end
 
   let create context scope (i : _ I.t) =
-    let context = Elaboration_context.in_scope context scope in
+    let context = Elaboration.Context.in_scope context scope in
     { O.q = Store.create context ~name:"buf" ~clock:i.clock i.d }
   ;;
 
   let hierarchical context ~instance i =
     let module H = Hierarchy.In_scope (I) (O) in
     H.hierarchical
-      ~scope:(Elaboration_context.scope context)
+      ~scope:(Elaboration.Context.scope context)
       ~name:"half"
       ~instance
       (create context)
@@ -101,10 +101,10 @@ let design ?(order = `Forward) ?within ?(before = ignore) ?(after = ignore) ()
         | Some instance ->
           let module H = Hierarchy.In_scope (I) (O) in
           H.hierarchical
-            ~scope:(Elaboration_context.scope context)
+            ~scope:(Elaboration.Context.scope context)
             ~name:"wrapper"
             ~instance
-            (fun scope -> body (Elaboration_context.in_scope context scope))
+            (fun scope -> body (Elaboration.Context.in_scope context scope))
             i
       in
       after context;
@@ -117,7 +117,7 @@ let flops_everywhere = Resource_policy.create ~default:Flops [] |> ok_exn
 
 let project
   ?(design = design ())
-  ?(technology = Technology.ihp_sg13cmos5l)
+  ?(technology = Resource.Technology.ihp_sg13cmos5l)
   ?(policy = flops_everywhere)
   ?(flow = Flow.librelane Hardening)
   ()
@@ -138,11 +138,11 @@ let project
 ;;
 
 let print_inventory elaborated_project =
-  List.iter (Elaborated_project.resources elaborated_project) ~f:(fun (r : Resource_record.t) ->
+  List.iter (Elaborated_project.resources elaborated_project) ~f:(fun (r : Resource.Record.t) ->
     print_s
       [%message
         ""
-          ~_:(r.id : Resource_id.t)
+          ~_:(r.id : Resource.Id.t)
           ~_:(r.policy : Resource_policy.Applied.t)
-          ~_:(r.selection : Selection.t)])
+          ~_:(r.selection : Resource.Selection.t)])
 ;;

@@ -9,7 +9,7 @@ open! Hardcaml
 open! Hardcaml_asic
 open! Expect_test_helpers_core
 
-let elaborate ?(mode = Elaboration_mode.Implementation) project =
+let elaborate ?(mode = Elaboration.Mode.Implementation) project =
   Project.elaborate (ok_exn project) ~mode
 ;;
 
@@ -73,9 +73,9 @@ let%expect_test "simulation mode elaborates behavioural models and simulates" =
     print_s
       [%message
         ""
-          ~_:(r.id : Resource_id.t)
-          ~_:(r.elaborated_as : Resource_record.Elaborated_as.t)
-          ~_:(r.sources : Resource_record.Source.t list)]);
+          ~_:(r.id : Resource.Id.t)
+          ~_:(r.elaborated_as : Resource.Record.Elaborated_as.t)
+          ~_:(r.sources : Resource.Record.Source.t list)]);
   [%expect
     {|
     (left/buf Behavioral_model (Generated_behavioral_model))
@@ -98,17 +98,17 @@ let%expect_test "identities and inventory order do not depend on registration or
   let forward = inventory `Forward in
   require_equal
     (module struct
-      type t = Resource_record.t list [@@deriving equal, sexp_of]
+      type t = Resource.Record.t list [@@deriving equal, sexp_of]
     end)
     forward
     (inventory `Reverse);
   require_equal
     (module struct
-      type t = Resource_record.t list [@@deriving equal, sexp_of]
+      type t = Resource.Record.t list [@@deriving equal, sexp_of]
     end)
     forward
     (inventory `Forward);
-  print_s [%sexp (List.map forward ~f:(fun r -> r.id) : Resource_id.t list)];
+  print_s [%sexp (List.map forward ~f:(fun r -> r.id) : Resource.Id.t list)];
   [%expect {| (left/buf right/buf status) |}]
 ;;
 
@@ -150,7 +150,7 @@ let%expect_test "a retained context cannot register after finalization" =
       ~name:"late"
       ~clock:(Signal.input "clock" 1)
       (Signal.input "d" 8));
-  require_does_raise (fun () -> Elaboration_context.scope context);
+  require_does_raise (fun () -> Elaboration.Context.scope context);
   print_s [%sexp (List.length (Elaborated_project.resources elaborated_project) : int)];
   [%expect
     {|
@@ -187,7 +187,7 @@ let%expect_test "failed construction is closed and a retry starts clean" =
     |}];
   let failed_context = Option.value_exn !retained in
   require_does_raise (fun () ->
-    Elaboration_context.register_exn
+    Elaboration.Context.register_exn
       failed_context
       ~name:"late"
       (Fixture.Store.request ~width:8));
@@ -213,11 +213,11 @@ let%expect_test "a registration failure caught by the design still fails elabora
   let swallow_duplicate context =
     try
       ignore
-        (Elaboration_context.register_exn
+        (Elaboration.Context.register_exn
            context
            ~name:"status"
            (Fixture.Store.request ~width:8)
-         : Resource_record.t)
+         : Resource.Record.t)
     with
     | _ -> ()
   in
@@ -258,7 +258,7 @@ let%expect_test "a scope from another elaboration is rejected" =
     Fixture.design
       ~before:(fun context ->
         ignore
-          (Elaboration_context.in_scope context (Scope.create ()) : Elaboration_context.t))
+          (Elaboration.Context.in_scope context (Scope.create ()) : Elaboration.Context.t))
       ()
   in
   print_s [%sexp (elaborate (Fixture.project ~design ()) : Elaborated_project.t Or_error.t)];

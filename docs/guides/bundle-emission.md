@@ -136,7 +136,8 @@ dune runtest
 
 Each output directory must be new or empty. The optional third CLI argument is
 the source root; it defaults to the current directory. The command reads Git
-HEAD and every `.ml`/`.mli` under that root's `lib/`, plus the example and Dune
+HEAD and every `.ml`/`.mli` under that root's `lib/`, including its group
+subdirectories, plus the example and Dune
 declarations. Missing source inputs and a source root without a Git commit fail
 before files are written. The command names no sibling checkout.
 

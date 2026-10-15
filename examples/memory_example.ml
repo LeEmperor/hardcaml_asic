@@ -51,7 +51,7 @@ let make_project requirement =
       ; description = "Whole-word load and readback"
       }
     ~design:(module Design)
-    ~target:{ harness = Tiny_tapeout { tiles = T1x1 }; technology = Technology.ihp_sg13cmos5l }
+    ~target:{ harness = Tiny_tapeout { tiles = T1x1 }; technology = Resource.Technology.ihp_sg13cmos5l }
     ~flow:(Flow.librelane Hardening)
     ~clocks:[ { port = "clock"; period = Time_float.Span.of_ns 20. } ]
     ~policy
@@ -88,14 +88,14 @@ let simulate elaborated_project =
 
 let run () =
   let project = make_project Flops in
-  List.iter [ Elaboration_mode.Simulation; Implementation ] ~f:(fun mode ->
+  List.iter [ Elaboration.Mode.Simulation; Implementation ] ~f:(fun mode ->
     let elaborated_project = Project.elaborate project ~mode |> Or_error.ok_exn in
     let resource = List.hd_exn (Elaborated_project.resources elaborated_project) in
     printf
       "%s: %s, %s\n"
-      (Sexp.to_string (Elaboration_mode.sexp_of_t mode))
-      (Resource_id.to_string resource.id)
-      (Sexp.to_string (Selection.sexp_of_t resource.selection));
+      (Sexp.to_string (Elaboration.Mode.sexp_of_t mode))
+      (Resource.Id.to_string resource.id)
+      (Sexp.to_string (Resource.Selection.sexp_of_t resource.selection));
     simulate elaborated_project);
   (match Project.elaborate (make_project Exact) ~mode:Implementation with
    | Ok _ -> failwith "an unsupported macro-required request was accepted"
@@ -105,7 +105,7 @@ let run () =
     |> Or_error.ok_exn
   in
   let resource = List.hd_exn (Elaborated_project.resources fallback) in
-  printf "fallback: %s\n" (Sexp.to_string (Selection.sexp_of_t resource.selection))
+  printf "fallback: %s\n" (Sexp.to_string (Resource.Selection.sexp_of_t resource.selection))
 ;;
 
 let () =

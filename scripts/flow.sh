@@ -55,7 +55,7 @@
 #   TESTBENCH_TOP simulator top for that testbench    (tb_observable)
 #
 # Careful: "emit" refuses to write into a $BUNDLE directory that has any entry
-# (Bundle.write, lib/bundle.ml), so a second emission into the same $OUT fails
+# (Bundle.write, lib/elaboration/bundle.ml), so a second emission into the same $OUT fails
 # there. Use a new $OUT, or "rm -rf $BUNDLE" first. Run directories are fine:
 # each attempt gets its own id under $RUNS.
 

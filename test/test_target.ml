@@ -4,7 +4,7 @@ open! Expect_test_helpers_core
 
 let reference_target =
   { Target.harness = Tiny_tapeout { tiles = T6x4 }
-  ; technology = Technology.ihp_sg13cmos5l
+  ; technology = Resource.Technology.ihp_sg13cmos5l
   }
 ;;
 
@@ -91,7 +91,7 @@ let%expect_test "unsupported tile and technology are rejected" =
   in
   let unsupported_technology =
     { reference_target with
-      technology = Technology.create_exn ~name:"fixture-tech" ~resource_mappings:[]
+      technology = Resource.Technology.create_exn ~name:"fixture-tech" ~resource_mappings:[]
     }
   in
   List.iter [ unsupported_tile; unsupported_technology ] ~f:(fun target ->
@@ -109,7 +109,7 @@ let%expect_test "unsupported tile and technology are rejected" =
 
 let%expect_test "reference technology identity cannot be forged" =
   require_does_raise (fun () ->
-    Technology.create_exn
+    Resource.Technology.create_exn
       ~name:"ihp-sg13cmos5l"
       ~resource_mappings:[]
     |> ignore);
@@ -119,7 +119,7 @@ let%expect_test "reference technology identity cannot be forged" =
 
 let%expect_test "the pinned constraint environment resolves onto the target" =
   let resolved = Target.resolve reference_target |> ok_exn in
-  print_s [%sexp (resolved.constraints : Technology.Cmos5l.Constraints.t)];
+  print_s [%sexp (resolved.constraints : Resource.Technology.Cmos5l.Constraints.t)];
   [%expect
     {|
     ((driving_cell          sg13cmos5l_buf_4)
@@ -133,10 +133,10 @@ let%expect_test "the pinned constraint environment resolves onto the target" =
   (* The load converts into the Liberty's picofarad capacitive_load_unit for set_load *)
   require
     (Float.equal
-       (Technology.Cmos5l.Constraints.output_cap_load_pf resolved.constraints)
+       (Resource.Technology.Cmos5l.Constraints.output_cap_load_pf resolved.constraints)
        0.006);
   print_endline
-    (Technology.Cmos5l.Constraints.driving_cell_setting resolved.constraints);
+    (Resource.Technology.Cmos5l.Constraints.driving_cell_setting resolved.constraints);
   [%expect {| sg13cmos5l_buf_4/X |}]
 ;;
 
@@ -187,7 +187,7 @@ let%expect_test "missing or malformed target inputs fail before use" =
       technology_views =
         List.filter base.technology_views ~f:(fun view ->
           not
-            (Technology.Cmos5l.View.Role.equal
+            (Resource.Technology.Cmos5l.View.Role.equal
                view.role
                Standard_cell_liberty))
     }

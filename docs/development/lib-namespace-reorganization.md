@@ -1,14 +1,14 @@
 # Reorganize `lib/` into qualified module groups
 
-Status: planned, not started. Written 2026-10-14. Decisions revised and the tree
+Status: implemented 2026-10-15, uncommitted in the working tree at the time of
+writing; the owner commits. Written 2026-10-14. Decisions revised and the tree
 re-surveyed on 2026-10-15 at commit `936e82d`, after the named-flow feature
-(`ecbcd57`) landed in `lib/`. That feature was the in-flight work this change
-was waiting for, so the reorganization is no longer blocked on it.
+(`ecbcd57`) landed in `lib/`.
 
-This record is self-contained so a fresh session can pick it up. The
-[2026-10-15 survey](#survey-2026-10-15) records what the tree looked like at
-that point. Re-run the commands in [Re-survey before starting](#re-survey-before-starting)
-if `lib/` has changed since then.
+This is a record of the decisions and the change. "Today" in the mapping table
+and the [2026-10-15 survey](#survey-2026-10-15) describe the tree before the
+change. What was built and how it was verified is in
+[Implementation and verification](#implementation-and-verification-2026-10-15).
 
 ## Motivation
 
@@ -69,11 +69,9 @@ library and CLI that agree (see the comment in `flow/dune`).
 | `flow_domain`'s `stages/<stage>/` (2026-10-14) | **Keep as is**, including the small per-step files. |
 | Rename `Flow.Operation` (`Synthesis \| Hardening`) to `Goal` (2026-10-15) | **No.** The rename was only needed to avoid a clash with `flow_domain`'s `Operation` after a merge. Without the merge, the curated `Flow` does not re-export the domain `Operation`, so `Flow.Operation` keeps its name and the example's `asic_test/resolution_test.ml` needs no edit. |
 | `lib/flow.ml` becomes `lib/flow/config.ml` | **Yes.** It holds the project's flow selection: `t`, `librelane`, `validate`, `Operation`, `Librelane`, `Adapter`. |
-
-Still open; settle at step 3:
-
-- **Placement of the four modules added by the named-flow feature.** Proposed:
-  all four join the `Flow` group. See [module mapping](#module-mapping).
+| Placement of the four modules added by the named-flow feature (2026-10-15, revised the same day) | **`Plan_json`, `Spec` and `Methodology_inventory` join `Flow`; `Methodology_plan` stays a root module.** All four were first assigned to `Flow`, but `Methodology_plan` depends on `Project` and `Bundle`, which would make `Flow` depend on the groups above it (see constraint 3). |
+| Group layering (2026-10-15) | **Groups depend on each other in one direction only:** `Resource`, `Flow` → `Platform` → `Elaboration` → root modules. `Technology` joins `Resource`; `Resolved` and `Bundle` join `Elaboration`; `Project`, `Methodology_plan` and `Single_port_ram` stay at the `lib/` root. This replaces the 2026-10-14 grouping, which had group-level cycles. `Elaboration` could also hold `Project` and `Methodology_plan` without a cycle; they stay at the root by choice, as the layer that composes every group, so `Elaboration` does not become a catch-all. |
+| Implementation without git mutations (2026-10-15) | **Use plain `mv`, not `git mv`.** The implementation session makes no commits, adds or other index changes; the owner commits. Git detects the renames at commit time as long as moved files are not also heavily edited in the same commit. |
 
 ## Constraints verified with dune 3.17
 
@@ -92,9 +90,18 @@ Both were tested in a scratch project, not in this repository.
    `Flow`; `Bundle` uses `Target`), so such interface modules create dependency
    cycles. **Rule: no group directory contains a file with its own name.** That
    rules out `target/target.ml` and `flow/flow.ml`, which is why one group is
-   called `platform/` and `flow.ml` becomes `flow/config.ml`. Without such
-   files, dune generates pure alias modules and module-level dependencies
-   resolve normally.
+   called `platform/` and `flow.ml` becomes `flow/config.ml`.
+3. **Dependencies are tracked per group, not per module (found 2026-10-15
+   during implementation, reproduced with dune 3.24.2).** A reference such as
+   `B.Z.t` from a module in group `A` makes it depend on every module in group
+   `B`. So any two groups that reference each other produce a dune
+   "Dependency cycle between: transitive deps of …" error, even when no
+   module-level cycle exists. A three-file scratch project (`a/x.ml`,
+   `a/y.ml` using `B.Z.t`, `b/z.ml` using `A.X.t`) reproduces it. The 2026-10-14
+   version of this record assumed module-level resolution; that was wrong.
+   **Rule: the groups must form a DAG.** Root modules of `lib/` are individual
+   nodes and may depend on any group, but no group module may depend on a root
+   module.
 
 ## Target layout
 
@@ -105,10 +112,14 @@ flow_domain/                  library hardcaml_asic.flow_domain (moved from lib/
 lib/                          library hardcaml_asic, (include_subdirs qualified)
   dune
   hardcaml_asic.ml            curated public surface (see below)
-  resource/
-  platform/
-  elaboration/
-  flow/                       hardcaml_asic's Flow group, not the domain library
+  project.ml                  root modules: may use any group
+  methodology_plan.ml
+  single_port_ram.ml
+  resource/                   id request policy technology selection record
+  flow/                       config stage recipe plan_json spec methodology_inventory
+                              (hardcaml_asic's Flow group, not the domain library)
+  platform/                   harness target clock pinout timing tt_cmos5l
+  elaboration/                mode context metadata elaborated_project resolved bundle
 execution/                    library hardcaml_asic.execution (moved from lib/execution/)
 bin/                          executables, unchanged
 flow/                         Python CLI and runtime data, unchanged
@@ -118,7 +129,18 @@ The three libraries sit side by side in dependency order. Repo-root `flow/` is
 already the Python CLI package, which is why the domain library is called
 `flow_domain/` rather than reusing that name.
 
-The groups come from the actual `ocamldep` graph of the top-level modules.
+The groups come from the actual `ocamldep` graph of the top-level modules,
+arranged so that group dependencies run one way:
+
+```text
+Resource ──┐
+           ├─> Platform ─> Elaboration ─> root (Project, Methodology_plan, Single_port_ram)
+Flow ──────┘
+```
+
+`Platform` uses `Resource` (`Target` → `Technology`) and `Flow` (`Tt_cmos5l` →
+`Config`). `Elaboration` uses all three. `Resource` and `Flow` use neither
+each other nor anything above them.
 
 ### Module mapping
 
@@ -129,15 +151,15 @@ The groups come from the actual `ocamldep` graph of the top-level modules.
 | `Resource_policy` | `Resource.Policy` | `Resource_policy` (used by the example) |
 | `Resource_record` | `Resource.Record` | — |
 | `Selection` | `Resource.Selection` | — |
-| `Single_port_ram` | `Resource.Single_port_ram` | `Single_port_ram` |
+| `Technology` | `Resource.Technology` | `Technology` (used by the example; added in step 5) |
+| `Single_port_ram` | root module, unchanged | `Single_port_ram` |
 | `Target` | `Platform.Target` | `Target` |
-| `Technology` | `Platform.Technology` | — |
 | `Harness` | `Platform.Harness` | — |
 | `Tt_cmos5l` | `Platform.Tt_cmos5l` | `Tt_cmos5l` |
 | `Pinout` | `Platform.Pinout` | `Pinout` |
 | `Clock` | `Platform.Clock` | `Clock` |
 | `Timing` (`lib/timing.ml`) | `Platform.Timing` | `Timing` |
-| `Project` | `Elaboration.Project` | `Project` |
+| `Project` | root module, unchanged | `Project` |
 | `Elaboration_context` | `Elaboration.Context` | — |
 | `Elaboration_mode` | `Elaboration.Mode` | — |
 | `Elaborated_project` | `Elaboration.Elaborated_project` | `Elaborated_project` |
@@ -145,12 +167,12 @@ The groups come from the actual `ocamldep` graph of the top-level modules.
 | `Flow` (`lib/flow.ml`) | `Flow.Config` | merged into curated `Flow`, see below |
 | `Flow_stage` | `Flow.Stage` | via curated `Flow` |
 | `Flow_recipe` | `Flow.Recipe` | via curated `Flow` |
-| `Resolved_flow` | `Flow.Resolved` | `Resolved_flow` (used by the example) |
-| `Bundle` | `Flow.Bundle` | `Bundle` |
-| `Plan_json` *(proposed)* | `Flow.Plan_json` | — |
-| `Flow_spec` *(proposed)* | `Flow.Spec` | — |
-| `Methodology_inventory` *(proposed)* | `Flow.Methodology_inventory` | — |
-| `Methodology_plan` *(proposed)* | `Flow.Methodology_plan` | `Methodology_plan` (used by the example) |
+| `Resolved_flow` | `Elaboration.Resolved` | `Resolved_flow` (used by the example) |
+| `Bundle` | `Elaboration.Bundle` | `Bundle` |
+| `Plan_json` | `Flow.Plan_json` | — |
+| `Flow_spec` | `Flow.Spec` | `Flow_spec` (used by the example; added in step 5) |
+| `Methodology_inventory` | `Flow.Methodology_inventory` | — |
+| `Methodology_plan` | root module, unchanged | `Methodology_plan` (used by the example) |
 
 Since the groups become namespaces, the `Resource_*`, `Elaboration_*` and
 `Flow_*` prefixes would stutter, so they are dropped.
@@ -160,30 +182,27 @@ re-exporting `Catalog`, `Methodology`, `Profile`, `Selection` and `Parameter`
 from it, as `lib/flow.ml` does today. It does not re-export `Stage_id`,
 `Operation`, `Registry`, `Stages`, `Analysis` or `Backends`.
 
-**Placement of the four named-flow modules (proposed).** `Plan_json` has no
+**Placement of the four named-flow modules (decided 2026-10-15).** `Plan_json` has no
 intra-library dependencies and `Bundle` uses it. `Flow_spec` uses `Flow` and
-`Plan_json`. `Methodology_inventory` uses `Plan_json`. `Methodology_plan` uses
-`Project`, `Bundle`, `Elaborated_project`, `Resolved_flow`, `Flow`, `Flow_spec`,
-`Methodology_inventory` and `Plan_json`. All four describe or serialize flow
-plans, so they belong in `Flow`.
+`Plan_json`. `Methodology_inventory` uses `Plan_json`. Those three join `Flow`.
+`Methodology_plan` uses `Project`, `Bundle`, `Elaborated_project`,
+`Resolved_flow`, `Flow`, `Flow_spec`, `Methodology_inventory` and `Plan_json`;
+in `Flow` it would make `Flow` depend on `Elaboration` and on `Project`, so it
+stays a root module beside `Project`.
 
-**Known cross-group dependencies.** These are acceptable with pure alias
-namespaces. Note each in the dependent module's comment.
-
-- `Platform.Tt_cmos5l` depends on `Flow.Config`, because the TT template
-  supplies default LibreLane overrides. (`Tt_cmos5l` does not depend on
-  `Target`.)
-- `Elaboration.Project` depends on `Flow.Bundle`, `Flow.Config` and
-  `Flow.Resolved`, while `Flow.Methodology_plan` depends on
-  `Elaboration.Project`. So `Flow` and `Elaboration` depend on each other in
-  both directions at group level. No module-level cycle exists.
+**Keeping the layering.** A new module joins the lowest group that all of its
+dependencies allow. If a module in a lower group would need something from a
+higher group, the module belongs higher (or at the root), not the dependency
+lower. `Platform.Tt_cmos5l` depends on `Flow.Config` because the TT template
+supplies default LibreLane overrides; it does not depend on `Target`.
 
 ### `lib/hardcaml_asic.ml`
 
 Once this file exists, only what it re-exports is public. It must expose all
 four groups, the aliases from the table, and everything `execution/`, `bin/`,
 `test/` and `examples/` reference. Use `(** {1 ...} *)` sections, as
-`hardcaml/src/hardcaml.ml` does. Sketch:
+`hardcaml/src/hardcaml.ml` does. Its structure as implemented, without the doc
+comments (the file itself is authoritative):
 
 ```ocaml
 (** {1 Groups} *)
@@ -192,10 +211,10 @@ module Resource = Resource
 module Platform = Platform
 module Elaboration = Elaboration
 
-(** Flow selection, stages, recipes, resolution, bundle emission and named-flow
-    planning. Includes [Flow.Config] so [Flow.librelane], [Flow.validate],
-    [Flow.t] and [Flow.Operation] keep working, and re-exports the catalog
-    modules from [Hardcaml_asic_flow_domain]. *)
+(** Flow selection, stages, recipes and plan serialization. Includes
+    [Flow.Config] so [Flow.librelane], [Flow.validate], [Flow.t] and
+    [Flow.Operation] keep working, and re-exports the catalog modules from
+    [Hardcaml_asic_flow_domain]. *)
 module Flow = struct
   include Flow
   include Flow.Config
@@ -208,18 +227,20 @@ end
 
 (** {1 Consumer entry points} *)
 
-module Project = Elaboration.Project
+module Project = Project
+module Methodology_plan = Methodology_plan
+module Single_port_ram = Single_port_ram
 module Elaborated_project = Elaboration.Elaborated_project
 module Target = Platform.Target
 module Tt_cmos5l = Platform.Tt_cmos5l
 module Pinout = Platform.Pinout
 module Clock = Platform.Clock
 module Timing = Platform.Timing
-module Single_port_ram = Resource.Single_port_ram
 module Resource_policy = Resource.Policy
-module Resolved_flow = Flow.Resolved
-module Bundle = Flow.Bundle
-module Methodology_plan = Flow.Methodology_plan
+module Technology = Resource.Technology
+module Resolved_flow = Elaboration.Resolved
+module Bundle = Elaboration.Bundle
+module Flow_spec = Flow.Spec
 ```
 
 Things to check while writing it:
@@ -227,10 +248,9 @@ Things to check while writing it:
 - `include Flow` followed by `include Flow.Config` must not produce duplicate
   names. `Config` carries `t`, `librelane`, `validate`, `Operation`,
   `Librelane` and `Adapter`. The group's members are `Config`, `Stage`,
-  `Recipe`, `Resolved`, `Bundle`, `Plan_json`, `Spec`, `Methodology_inventory`
-  and `Methodology_plan`, so nothing clashes. The added catalog modules do not
-  clash either: `Methodology` and `Methodology_inventory`/`Methodology_plan`
-  are distinct names.
+  `Recipe`, `Plan_json`, `Spec` and `Methodology_inventory`, so nothing
+  clashes. The added catalog modules do not clash either: `Methodology` and
+  `Methodology_inventory` are distinct names.
 - Today `lib/flow.ml` both defines the configuration and re-exports `Stage`,
   `Recipe` and the catalog modules. After the move, `flow/config.ml` keeps only
   the configuration; the re-exports move into the curated `Flow` above.
@@ -239,7 +259,7 @@ Things to check while writing it:
   Internal callers of the old `Flow.t` and `Flow.Operation`
   (`elaborated_project`, `project`, `resolved_flow`, `tt_cmos5l`, `bundle`,
   `flow_spec`, `methodology_plan`) change to `Flow.Config.t` and
-  `Flow.Config.Operation`.
+  `Flow.Config.Operation`. Root modules refer to each other by plain name.
 
 ## Consumer impact
 
@@ -252,7 +272,8 @@ Usage measured at `936e82d`:
   `Resolved_flow` and `Pinout`. With the aliases above, **no edit is
   required**. Still rebuild it and follow the
   [consumer dependency workflow](consumer-dependency-workflow.md) to move its
-  pin.
+  pin. This survey's grep missed the example's uses of `Technology` and
+  `Flow_spec`; both became top-level aliases during step 5.
 - **References inside this repo to modules that lose their top-level name.**
   These either get a qualified path or, if a name is wanted publicly, an alias:
 
@@ -278,7 +299,8 @@ Usage measured at `936e82d`:
   | `test/test_single_port_ram.ml` | `Elaboration_mode`, `Resource_id`, `Resource_record`, `Resource_request`, `Selection`, `Technology` |
   | `test/test_target.ml` | `Technology` |
 
-  The `Methodology_plan` alias covers the execution and `bin/` uses. The rest
+  `Methodology_plan` remains a top-level name, so the execution and `bin/`
+  uses keep working. The rest
   are mostly tests of internal modules and should use qualified paths
   (`Hardcaml_asic.Resource.Record`), not new aliases.
   `test/catalog_domain/catalog_domain_consumer.ml` uses the domain library's
@@ -303,19 +325,20 @@ Usage measured at `936e82d`:
 Work on a branch from a clean `main`, one commit per step. Run
 `dune build -j 20` and `dune runtest -j 20 --force` after each step.
 
-1. **Move `lib/execution/` to `execution/`.** Do a pure `git mv`. The dune file
+1. **Move `lib/execution/` to `execution/`.** A pure move. The dune file
    and `public_name` stay unchanged.
-2. **Move `lib/flow/` to `flow_domain/`.** Do a pure `git mv`. The dune file,
+2. **Move `lib/flow/` to `flow_domain/`.** A pure move. The dune file,
    library name and `public_name` stay unchanged. After this step `lib/` holds
    only `hardcaml_asic`.
 3. **Create the groups.** Switch `lib/dune` to `(include_subdirs qualified)`.
    Create `resource/`, `platform/`, `elaboration/` and `flow/` with the renames
    from the mapping table: `flow.ml` to `flow/config.ml` (moving its
    `Stage`/`Recipe`/catalog re-exports out, see above), `flow_stage` to
-   `flow/stage`, `flow_recipe` to `flow/recipe`, `resolved_flow` to
-   `flow/resolved`, `bundle` to `flow/bundle`, `flow_spec` to `flow/spec`, and
-   `plan_json`, `methodology_inventory` and `methodology_plan` into `flow/`.
-   Update internal references.
+   `flow/stage`, `flow_recipe` to `flow/recipe`, `flow_spec` to `flow/spec`,
+   `plan_json` and `methodology_inventory` into `flow/`, `technology` into
+   `resource/`, and `resolved_flow` to `elaboration/resolved`, `bundle` to
+   `elaboration/bundle`. `project`, `methodology_plan` and `single_port_ram`
+   stay at the root. Update internal references.
 4. **Add `lib/hardcaml_asic.ml`** with the groups and aliases. Add a `.mli` if
    the surface should be documented separately.
 5. **Update `execution/`, `test/`, `bin/` and `examples/`** using the table in
@@ -329,8 +352,14 @@ consumers see only the generated group aliases until `hardcaml_asic.ml` exists.
 Either combine them in one commit, or add `hardcaml_asic.ml` in step 3 and
 treat step 4 as its documentation pass.
 
-Prefer `git mv` for every move so `git log --follow` keeps history. Do not
-reformat files while moving them; keep content diffs separate from renames.
+Do not reformat files while moving them, and keep content edits to what the
+move requires, so the owner can commit renames separately from content changes
+and `git log --follow` keeps history. Per the decisions above, moves use plain
+`mv`; the implementation session does not run `git mv`, `git add` or commits.
+
+Converting `execution/` from `(include_subdirs unqualified)` to qualified is a
+separate later change (decided 2026-10-15). It would rename the library's public
+modules (`Hardcaml_asic_execution.*`), so it stays out of this reorganization.
 
 Missing `.mli` files are a separate follow-up, not part of this change. These
 modules have none: `flow.ml`, `selection`, `resource_record`, `pinout`,
@@ -411,35 +440,46 @@ tt_cmos5l:             Flow
 `docs/guides/ocaml-stage-recipes.md` and dated development records. None of
 these change under the revised plan except the docs that name source paths.
 
-## Re-survey before starting
+## Implementation and verification (2026-10-15)
 
-If `lib/` has changed since the survey above, regenerate the inventory and
-dependency graph and reconcile them with the mapping table. Place any new
-top-level module in a group by its dependencies.
+Steps 1–5 were done together in the working tree on `main`, with plain `mv`
+and no git index changes, rather than as one commit per step on a branch.
 
-```sh
-# Modules and line counts
-find lib -name '*.ml' -o -name '*.mli' | sort | xargs wc -l
+**Built.** `lib/execution/` moved to repo-root `execution/` and `lib/flow/` to
+`flow_domain/`, both with unchanged dune files, library names and module names;
+`execution/` still uses `(include_subdirs unqualified)`. `lib/` is
+`(include_subdirs qualified)` with the `resource/`, `flow/`, `platform/` and
+`elaboration/` groups and root modules from the [target layout](#target-layout),
+and `lib/hardcaml_asic.ml` is the curated surface shown above. `Flow.Operation`
+kept its name. Code in `execution/`, `bin/`, `test/` and `examples/` uses
+qualified paths for internal modules (`Resource.Record`, `Elaboration.Mode`,
+`Flow.Plan_json`).
 
-# Intra-library dependencies of the top-level hardcaml_asic modules
-cd lib && for f in *.ml; do m=$(basename $f .ml); l=""
-  for d in $(ocamldep -modules $f | cut -d: -f2); do
-    lc=$(echo $d | sed 's/./\L&/'); [ -f "$lc.ml" ] && l="$l $d"; done
-  echo "$m:$l"; done; cd ..
+**Verified.** `dune build` of the whole repo and `dune runtest -j 20 --force`
+pass. The separate `hardcaml_asic_example` builds and passes its tests against
+this working tree with no source edits.
 
-# Library stanzas and include_subdirs modes
-find lib -name dune -exec sh -c 'echo "== $1"; cat "$1"' _ {} \;
+**Non-OCaml fixes the survey did not predict.** Bundle source identity and two
+Python checks assumed a flat `lib/`:
 
-# Everything referencing the flow_domain library
-grep -rlE 'Hardcaml_asic_flow_domain|hardcaml_asic\.flow_domain' --exclude-dir=_build .
+- `examples/tt_bundle_example.ml` `source_inputs` now walks `lib/` recursively,
+  so bundle source identity still covers the whole library;
+  `test/check_project_api.py` takes that function from the example's source
+  text, so it picks up the change without an edit;
+- `test/check_bundle.py` now targets `lib/elaboration/elaborated_project.ml`;
+- comment-only path updates in `toolchain.lock`, `scripts/flow.sh` and
+  `flow/hardcaml_asic_flow/data/toolchain.sh`.
 
-# Source path strings that a move would break
-grep -rnE 'lib/(flow|execution)\b' --exclude-dir=_build --exclude-dir=docs --exclude-dir=evidence .
+**Fixed 2026-10-15.** The manual `test/check_methodology_legacy.py` (not part
+of `runtest`) broke: it overwrote `lib/{project,resolved_flow}.ml(i)` with frozen
+`0d04bae` versions in a copy of the current `lib/`, which no longer contains
+`flow_domain/` and is no longer flat. It now takes `lib/` and `dune-project` via
+`git archive` from `--environment-ref` (default `0ed1b3d`, the last
+pre-reorganization commit), applies the same splice there, and builds the
+*current* `examples/tt_bundle_example.ml`, so both emitters share the recursive
+`source_inputs`. To compile against both layouts the example now names the
+top-level alias `Technology` instead of `Resource.Technology`. The manual `test/check_project_api.py` was not run.
 
-# Consumer usage in the example repo
-grep -rhoE '\b(Project|Elaborated_project|Tt_cmos5l|Pinout|Bundle|Clock|Timing|Resource_[a-z]+|Resolved_flow|Methodology_[a-z]+|Flow_spec|Plan_json|Flow)\.[A-Za-z_]+' \
-  --include=*.ml --include=*.mli ../hardcaml_asic_example | sort | uniq -c
-```
-
-Also confirm that the baseline `dune build` and `dune runtest` pass on `main`
-before the first move, so later failures are attributable to the refactor.
+Comments and doc strings in moved files may still name modules by their old
+names in prose (for example `Resolved_flow`, `Resource_id`,
+`Elaboration_context`); only references that the compiler checks were updated.

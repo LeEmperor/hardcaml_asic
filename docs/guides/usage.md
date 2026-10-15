@@ -47,7 +47,7 @@ for developing a consumer against a local provider checkout.
 ## 2. Declare the project
 
 A design implements `Project.Design`: Hardcaml `I`/`O` interfaces, a top module
-`name`, and `create : Elaboration_context.t -> Signal.t I.t -> Signal.t O.t`.
+`name`, and `create : Elaboration.Context.t -> Signal.t I.t -> Signal.t O.t`.
 Resource constructors receive that context. The excerpt below is not a complete
 program. [`examples/tt_bundle_example.ml`](../../examples/tt_bundle_example.ml)
 is the maintained runnable example, with complete `Design` modules, all 24 pin

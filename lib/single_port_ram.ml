@@ -4,10 +4,10 @@
 (* Source implementation of the single-port 1RW program memory. A single-port RAM is the
    design's answer to "store a word here, and give it back one cycle after I ask";
 
-   A design constructor calls [create] with the Elaboration_context that
+   A design constructor calls [create] with the Elaboration.Context that
    Project.elaborate handed it. [create] checks every port width, then registers
-   [request] through Elaboration_context.register_exn, which runs Resource_policy.lookup
-   and Selection.select and stores the Resource_record. The elaboration mode plus the
+   [request] through Elaboration.Context.register_exn, which runs Resource.Policy.lookup
+   and Selection.select and stores the Resource.Record. The elaboration mode plus the
    selected implementation then decide which hardware is built: [behavioral] in
    Simulation, [flops] in Implementation;
 
@@ -20,7 +20,7 @@
    consumer (contract section 10). It does NOT build a hard macro either; a Macro
    selection in Implementation mode raises, since no usable CMOS5L SRAM macro has been
    established (contract section 8, phase S in docs/phase_plan.md). Which sources the
-   resource carries is Elaboration_context.sources_of's job, not this module's.
+   resource carries is Elaboration.Context.sources_of's job, not this module's.
 *)
 
 open! Core
@@ -97,7 +97,7 @@ end
    test/test_single_port_ram.ml does, instead of writing the contract by hand.
 *)
 let request (config : Config.t) =
-  Resource_request.create_exn
+  Resource.Request.create_exn
     ~kind:"single_port_ram"
     ~contract:
       [%sexp
@@ -269,7 +269,7 @@ let flops
    1. build the instance identity from the context's scope and [name], only so errors
       can name it; an invalid [name] raises here;
    2. check every port width; the first mismatch raises with the instance and port;
-   3. register [request] through Elaboration_context.register_exn, which raises on a
+   3. register [request] through Elaboration.Context.register_exn, which raises on a
       duplicate name, a missing policy, or a requirement the technology cannot meet;
    4. build from the mode and the selected implementation, per the table below;
 
@@ -288,7 +288,7 @@ let flops
    behavioral model, even when a macro was selected, so the macro case is NOT an error
    there. The record still says what was selected.
 
-   The match has no top-level wildcard, so a new Elaboration_mode or Implementation
+   The match has no top-level wildcard, so a new Elaboration.Mode or Implementation
    constructor fails to compile here until someone decides what it builds -> see
    test/test_single_port_ram.ml;
 *)
@@ -304,14 +304,14 @@ let create
   : Signal.t
   =
   (* TODO (future fix): this rebuilds the identity the same way
-     Elaboration_context.register_exn does, so the two can drift apart. The identity is
+     Elaboration.Context.register_exn does, so the two can drift apart. The identity is
      needed before registration for the width errors; exposing the identity derivation
-     from Elaboration_context would remove the copy; *)
+     from Elaboration.Context would remove the copy; *)
   let path =
-    Scope.path (Elaboration_context.scope context) |> Scope.Path.to_list |> List.rev
+    Scope.path (Elaboration.Context.scope context) |> Scope.Path.to_list |> List.rev
   in
 
-  let instance = Resource_id.create_exn ~path ~name in
+  let instance = Resource.Id.create_exn ~path ~name in
 
   (* Raise if [signal] is not [expected] bits wide *)
   (* TODO (future fix): the message does not follow docs/development/comment_guidelines.md section 9,
@@ -325,7 +325,7 @@ let create
       raise_s
         [%message
           "single-port RAM port width mismatch"
-            (instance : Resource_id.t)
+            (instance : Resource.Id.t)
             (port : string)
             (expected : int)
             (actual : int)]
@@ -338,8 +338,8 @@ let create
   check "write_data" write_data config.width;
 
   (* Register and select; raises on a duplicate name or an unsatisfiable policy *)
-  let record = Elaboration_context.register_exn context ~name (request config) in
-  match Elaboration_context.mode context, record.selection.implementation with
+  let record = Elaboration.Context.register_exn context ~name (request config) in
+  match Elaboration.Context.mode context, record.selection.implementation with
 
   (* Simulation; always the behavioral model, whatever was selected *)
   | Simulation, _ ->
@@ -355,7 +355,7 @@ let create
     raise_s
       [%message
         "single-port RAM macro backend is unavailable; select flops for this instance"
-          (instance : Resource_id.t)
+          (instance : Resource.Id.t)
           (macro : string)]
 ;;
 

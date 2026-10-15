@@ -6,7 +6,7 @@
    {v
    Project.create             validate the declaration (names, metadata, clocks,
                               policy, adapter settings)
-   Project.elaborate ~mode    fresh Elaboration_context
+   Project.elaborate ~mode    fresh Elaboration.Context
                               -> run the design constructor; resources register and
                                  select implementations (selection failures raise here)
                               -> finalize: validate collected state, close the context
@@ -41,7 +41,7 @@ module type Design = sig
      context that is required for ASIC items. This may be for simulation though, or even
      emultaion, meaning an elaboration context varies by target we're shooting.
   *)
-  val create : Elaboration_context.t -> Signal.t I.t -> Signal.t O.t
+  val create : Elaboration.Context.t -> Signal.t I.t -> Signal.t O.t
 end
 
 (* A project has a type t -> treats as Project.t *)
@@ -50,7 +50,7 @@ type t
 [@@@ocamlformat "disable"]
 (* Project.create is a function that has members:
   name      : string
-  metadata  : Metadata.t
+  metadata  : Elaboration.Metadata.t
   design    : Design (a module that implements the properties of the Design signature)
   target    : asic? fpga? sim? emulate?
   flow      : tt? cadence? synopsys?
@@ -63,15 +63,15 @@ type t
 *)
 val create
   :  name:string
-  -> metadata:Metadata.t
+  -> metadata:Elaboration.Metadata.t
   -> design:(module Design)
-  -> target:Target.t
-  -> flow:Flow.t
-  -> ?clocks:Clock.t list
-  -> ?pinout:Pinout.t
-  -> ?timing:Timing.t
+  -> target:Platform.Target.t
+  -> flow:Flow.Config.t
+  -> ?clocks:Platform.Clock.t list
+  -> ?pinout:Platform.Pinout.t
+  -> ?timing:Platform.Timing.t
   -> ?source_inputs:string list
-  -> policy:Resource_policy.t
+  -> policy:Resource.Policy.t
   -> unit
   -> t Or_error.t
 
@@ -94,7 +94,7 @@ val describe : t -> Sexp.t
 
 (** Elaborate the design in the selected mode, retaining its intent and resources.
     Returns an elaborated Hardcaml circuit, not a synthesis result. *)
-val elaborate : t -> mode:Elaboration_mode.t -> Elaborated_project.t Or_error.t
+val elaborate : t -> mode:Elaboration.Mode.t -> Elaboration.Elaborated_project.t Or_error.t
 
 (** Elaborate the selected implementation and validate the TT/LibreLane target,
     wrapper, timing, metadata, and configuration before emission. *)
@@ -103,10 +103,10 @@ val elaborate : t -> mode:Elaboration_mode.t -> Elaborated_project.t Or_error.t
     overrides and the project's flow remain authoritative. No declaration is
     mutated. Without it the legacy settings and emitted bytes are unchanged. *)
 val elaborate_for_flow
-  :  ?inputs:Target.Inputs.t
-  -> ?methodology:Flow.Catalog.resolved
+  :  ?inputs:Platform.Target.Inputs.t
+  -> ?methodology:Hardcaml_asic_flow_domain.Catalog.resolved
   -> t
-  -> Resolved_flow.t Or_error.t
+  -> Elaboration.Resolved.t Or_error.t
 
 (** The exact emission rendering sequence, without writing: reject empty inventory,
     elaborate Implementation and resolve, optionally elaborate Simulation (default
@@ -116,19 +116,19 @@ val elaborate_for_flow
     or [Bundle.write]. Publish that same value after preview-hash comparison;
     calling an emission method would render again and re-observe sources/Git. *)
 val render_bundle
-  :  ?inputs:Target.Inputs.t
-  -> ?methodology:Flow.Catalog.resolved
+  :  ?inputs:Platform.Target.Inputs.t
+  -> ?methodology:Hardcaml_asic_flow_domain.Catalog.resolved
   -> ?include_simulation:bool
   -> t
   -> source_root:string
-   -> Bundle.t Or_error.t
+   -> Elaboration.Bundle.t Or_error.t
 
 (** Inseparable checked resolution/render pair. Only [render_result] constructs
     it, by rendering exactly that resolution once. No external pair-linker. *)
 module Rendered : sig
   type t
-  val resolution : t -> Resolved_flow.t
-  val bundle : t -> Bundle.t
+  val resolution : t -> Elaboration.Resolved.t
+  val bundle : t -> Elaboration.Bundle.t
 end
 
 (** Same sequence as [render_bundle]. Additional [catalog_inputs] are consumer
@@ -136,8 +136,8 @@ end
     by Bundle alongside [source_inputs]. This is the public source-inventory seam
     for later consumer discovery. No output directories or tools are touched. *)
 val render_result
-  :  ?inputs:Target.Inputs.t
-  -> ?methodology:Flow.Catalog.resolved
+  :  ?inputs:Platform.Target.Inputs.t
+  -> ?methodology:Hardcaml_asic_flow_domain.Catalog.resolved
   -> ?include_simulation:bool
   -> ?catalog_inputs:string list
   -> t
@@ -155,13 +155,13 @@ val render_result
     output directory requirement and non-atomic writes: a write failure can leave a
     partial directory. No external flow tools or PDK reads are performed. *)
 val emit_bundle
-  :  ?inputs:Target.Inputs.t
-  -> ?methodology:Flow.Catalog.resolved
+  :  ?inputs:Platform.Target.Inputs.t
+  -> ?methodology:Hardcaml_asic_flow_domain.Catalog.resolved
   -> ?include_simulation:bool
   -> t
   -> source_root:string
   -> output_dir:string
-  -> Bundle.t Or_error.t
+  -> Elaboration.Bundle.t Or_error.t
 
 (** The same rendering sequence and optional arguments as [emit_bundle], followed
     by [Bundle.publish]. Returns the rendered bundle and its absolute publication
@@ -170,11 +170,11 @@ val emit_bundle
     (typically [<results-root>/bundles]); no root is inferred by the library.
     Inherits Bundle.publish's exact reuse, backing layout and atomic visibility. *)
 val emit_bundle_to_store
-  :  ?inputs:Target.Inputs.t
-  -> ?methodology:Flow.Catalog.resolved
+  :  ?inputs:Platform.Target.Inputs.t
+  -> ?methodology:Hardcaml_asic_flow_domain.Catalog.resolved
   -> ?include_simulation:bool
   -> t
   -> source_root:string
   -> store_dir:string
-  -> (Bundle.t * Bundle.Publication.t) Or_error.t
+  -> (Elaboration.Bundle.t * Elaboration.Bundle.Publication.t) Or_error.t
 [@@@ocamlformat "enable"]

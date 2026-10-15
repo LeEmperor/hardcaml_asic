@@ -1,7 +1,7 @@
 open! Core
-module J = Plan_json
-module P = Flow.Parameter
-module E = Resolved_flow.Effective_parameter
+module J = Flow.Plan_json
+module P = Hardcaml_asic_flow_domain.Parameter
+module E = Elaboration.Resolved.Effective_parameter
 
 let str s = `String s
 let obj xs = `Assoc xs
@@ -19,7 +19,7 @@ let translation =
     ]
 ;;
 
-let owner (o : Resolved_flow.Setting.Owner.t) =
+let owner (o : Elaboration.Resolved.Setting.Owner.t) =
   match o with
   | Override reason -> obj [ "kind", str "project"; "reason", str reason ]
   | Methodology origin ->
@@ -36,7 +36,7 @@ let owner (o : Resolved_flow.Setting.Owner.t) =
 
 let contribution (c : E.contribution) =
   obj
-    [ "assignment", Flow_spec.assignment_to_yojson c.assignment; "owner", owner c.owner ]
+    [ "assignment", Flow.Spec.assignment_to_yojson c.assignment; "owner", owner c.owner ]
 ;;
 
 let effective ps =
@@ -50,18 +50,18 @@ let effective ps =
 let projects ps =
   arr
     (fun (a, reason) ->
-      obj [ "assignment", Flow_spec.assignment_to_yojson a; "reason", str reason ])
+      obj [ "assignment", Flow.Spec.assignment_to_yojson a; "reason", str reason ])
     ps
 ;;
 
 let project_read j =
   J.object_ j ~fields:[ "assignment"; "reason" ];
-  ( J.checked (Flow_spec.assignment_of_yojson (J.get j "assignment"))
+  ( J.checked (Flow.Spec.assignment_of_yojson (J.get j "assignment"))
   , J.string (J.get j "reason") )
 ;;
 
 type t =
-  { methodology : Flow.Catalog.resolved
+  { methodology : Hardcaml_asic_flow_domain.Catalog.resolved
   ; effective_parameters : E.t list
   ; project_assignments : (P.assignment * string) list
   ; project_name : string
@@ -83,7 +83,7 @@ let plan_identity t = t.plan_identity
 
 let methodology_payload methodology effective_parameters project_assignments recipe =
   obj
-    [ "snapshot", Flow_spec.resolved_to_yojson methodology
+    [ "snapshot", Flow.Spec.resolved_to_yojson methodology
     ; "project_assignments", projects project_assignments
     ; "effective_parameters", effective effective_parameters
     ; "translation", translation
@@ -151,7 +151,7 @@ let verify_associations
       ];
   if not (String.equal manifest (Yojson.Safe.to_string m))
   then J.fail "noncompact bundle manifest";
-  J.checked (Bundle.verify_manifest_identity m);
+  J.checked (Elaboration.Bundle.verify_manifest_identity m);
   if (not (String.equal (J.string (J.get m "identity")) bundle_identity))
      || (not (String.equal (J.string (J.get m "project")) project_name))
      || (not (J.equal (J.get m "schema_version") (`Int 1)))
@@ -161,7 +161,7 @@ let verify_associations
   J.validate config;
   if not (J.equal config (J.get m "flow_configuration"))
   then J.fail "bundle configuration mismatch";
-  J.checked (Methodology_inventory.verify ~manifest:m ~configuration);
+  J.checked (Flow.Methodology_inventory.verify ~manifest:m ~configuration);
   let settings = J.array (J.get m "resolved_settings") in
   let keys =
     List.map settings ~f:(fun s ->
@@ -201,13 +201,13 @@ let verify_associations
     then J.fail "generated setting/config mismatch");
   List.iter effective_parameters ~f:(fun (p : E.t) ->
     let c = p.winning in
-    let a = Flow_spec.assignment_to_yojson c.assignment in
+    let a = Flow.Spec.assignment_to_yojson c.assignment in
     let key = J.string (J.get a "key") in
     let s =
       List.find_exn settings ~f:(fun s -> String.equal (J.string (J.get s "key")) key)
     in
     let expected_owner =
-      Sexp.to_string_hum (Resolved_flow.Setting.Owner.sexp_of_t c.owner)
+      Sexp.to_string_hum (Elaboration.Resolved.Setting.Owner.sexp_of_t c.owner)
     in
     if (not (J.equal (J.get a "value") (J.get s "value")))
        || not (String.equal expected_owner (J.string (J.get s "owner")))
@@ -233,9 +233,9 @@ let make
   in
   let effective_parameters =
     J.checked
-      (Resolved_flow.resolve_effective_parameters ~methodology ~project_assignments)
+      (Elaboration.Resolved.resolve_effective_parameters ~methodology ~project_assignments)
   in
-  let recipe = J.checked (Flow.Recipe.create (Flow.Catalog.stages methodology)) in
+  let recipe = J.checked (Flow.Recipe.create (Hardcaml_asic_flow_domain.Catalog.stages methodology)) in
   let m =
     verify_associations
       ~project_name
@@ -245,8 +245,8 @@ let make
       effective_parameters
   in
   let configurable =
-    Flow.Methodology.configurable
-      (Flow.Catalog.Entry.methodology (Flow.Catalog.entry methodology))
+    Hardcaml_asic_flow_domain.Methodology.configurable
+      (Hardcaml_asic_flow_domain.Catalog.Entry.methodology (Hardcaml_asic_flow_domain.Catalog.entry methodology))
   in
   List.iter configurable ~f:(fun key ->
     let assigned =
@@ -310,7 +310,7 @@ let of_yojson j =
         ];
     let t =
       make
-        ~methodology:(J.checked (Flow_spec.resolved_of_yojson (J.get md "snapshot")))
+        ~methodology:(J.checked (Flow.Spec.resolved_of_yojson (J.get md "snapshot")))
         ~project_assignments:
           (List.map (J.array (J.get md "project_assignments")) ~f:project_read)
         ~project_name:(J.string (J.get j "project_name"))
@@ -335,30 +335,30 @@ let of_rendered rendered =
       | None -> J.fail "plan requires checked methodology"
     in
     let configurable =
-      Flow.Methodology.configurable
-        (Flow.Catalog.Entry.methodology (Flow.Catalog.entry methodology))
+      Hardcaml_asic_flow_domain.Methodology.configurable
+        (Hardcaml_asic_flow_domain.Catalog.Entry.methodology (Hardcaml_asic_flow_domain.Catalog.entry methodology))
     in
     let project_assignments =
-      match (Elaborated_project.flow r.elaborated_project).adapter with
-      | Flow.Adapter.Librelane settings ->
+      match (Elaboration.Elaborated_project.flow r.elaborated_project).adapter with
+      | Flow.Config.Adapter.Librelane settings ->
         List.filter_map settings.overrides ~f:(fun o ->
           match P.Key.of_string o.key with
           | Ok k when List.mem configurable k ~equal:P.Key.equal ->
             Some
               ( J.checked
-                  (Flow_spec.assignment_of_yojson
+                  (Flow.Spec.assignment_of_yojson
                      (obj [ "key", str o.key; "value", o.value ]))
               , o.reason )
           | _ -> None)
     in
-    let configuration = Option.value_exn (Bundle.file b "src/config.json") in
+    let configuration = Option.value_exn (Elaboration.Bundle.file b "src/config.json") in
     let t =
       make
         ~methodology
         ~project_assignments
-        ~project_name:(Elaborated_project.project_name r.elaborated_project)
-        ~bundle_identity:(Bundle.identity b)
-        ~manifest:(Yojson.Safe.to_string (Bundle.manifest b))
+        ~project_name:(Elaboration.Elaborated_project.project_name r.elaborated_project)
+        ~bundle_identity:(Elaboration.Bundle.identity b)
+        ~manifest:(Yojson.Safe.to_string (Elaboration.Bundle.manifest b))
         ~configuration
     in
     if not (J.equal (effective r.effective_parameters) (effective t.effective_parameters))
@@ -371,7 +371,7 @@ type t_plan = t
 module Prepared = struct
   type t =
     { plan : t_plan
-    ; bundle : Bundle.t
+    ; bundle : Elaboration.Bundle.t
     }
 
   let plan t = t.plan
@@ -391,7 +391,7 @@ let prepare
   ~source_root
   =
   let open Or_error.Let_syntax in
-  let%bind methodology = Flow.Catalog.resolve ?selection ?request catalog ~endpoint () in
+  let%bind methodology = Hardcaml_asic_flow_domain.Catalog.resolve ?selection ?request catalog ~endpoint () in
   let%bind rendered =
     Project.render_result
       ?inputs

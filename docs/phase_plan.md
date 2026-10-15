@@ -51,10 +51,12 @@ independent read-only review may run alongside it. Serialize Dune builds with
    Independent step checkpoints need separate evidence.
 3. **Configuration-changing checkpoint reuse**, with explicit dependency rules and
    lineage-aware finalization. This is separate from fresh profile runs.
-4. **Source organization.** Finish hardware/project/resource directory organization
-   independently of behavior (see the planned
+4. **Source organization.** Hardware/project/resource directory organization
+   was delivered 2026-10-15 (uncommitted at the time of writing; see the
    [`lib/` namespace reorganization](development/lib-namespace-reorganization.md)).
-   Cleaning up retained Python reference sources is optional. Cosmetic
+   The manual `test/check_methodology_legacy.py` broke with the new layout and
+   was fixed 2026-10-15: it now builds its baseline from the last pre-reorganization
+   tree (`--environment-ref`, `0ed1b3d`). Cleaning up retained Python reference sources is optional. Cosmetic
    reorganization is not a Workbench gate.
 
 In parallel, not blocked by the above:
@@ -95,6 +97,11 @@ holds APIs, commands, review findings and verification.
   catalogs, discover/describe/preview/run, pre-bundle effective settings and
   provenance, expected-identity enforcement, frozen historical methodology and a
   standalone headless client. See the [design record](development/project-flow-catalog.md).
+- Source layout (2026-10-15): `flow_domain/` and `execution/` moved to the repo
+  root, and `lib/` became the qualified `Resource`, `Flow`, `Platform` and
+  `Elaboration` groups behind a curated `lib/hardcaml_asic.ml`. Consumer-facing
+  names are unchanged. See the
+  [reorganization record](development/lib-namespace-reorganization.md).
 
 **Not delivered:** arbitrary operation sequences, configuration-changing
 checkpoint branches and a general DAG scheduler. Those are queue items 2–3 above.

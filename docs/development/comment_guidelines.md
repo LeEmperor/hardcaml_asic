@@ -13,23 +13,23 @@ Look at the file that matches what you are writing before starting.
 
 | Looking for an example of | Look at |
 | --- | --- |
-| Small file: one record, no functions | `lib/target.ml` |
-| Small file: nested module plus a one-constructor variant | `lib/harness.ml` |
-| Small file: one record plus one validator, no `.mli` | `lib/metadata.ml` |
-| Validator with several checks combined into one error | `lib/clock.ml` |
-| Types only: multi-line constructor and field tables | `lib/resource_record.ml` |
-| Accessors, a hand-written `sexp_of_t`, a `Private` constructor | `lib/elaborated_project.ml` |
-| Mid-size module: comparator, `Why:`, `A consequence:`, numbered parsing steps | `lib/resource_id.ml` |
-| Large module: selectors, precedence, the "main sauce" function | `lib/resource_policy.ml` |
-| Decision table, `TODO (...)` notes, commented match arms | `lib/selection.ml` |
-| Nested modules, `create_exn` on module-level values, field-order pitfall | `lib/technology.ml` |
-| *Mutable* state, `Private` module, re-raise handling, outcome tables | `lib/elaboration_context.ml` |
-| `.mli`: every value documented, record field docs, "Raises ..." paragraphs | `lib/resource_id.mli` |
-| `.mli`: constructor docs, a pitfall stated in the interface | `lib/technology.mli` |
-| `.mli`: accessor docs with lifecycle boundaries, `Private` sig | `lib/elaborated_project.mli` |
-| `.mli`: failure and lifecycle behavior | `lib/elaboration_context.mli` |
+| Small file: one record, no functions | `lib/platform/target.ml` |
+| Small file: nested module plus a one-constructor variant | `lib/platform/harness.ml` |
+| Small file: one record plus one validator, no `.mli` | `lib/elaboration/metadata.ml` |
+| Validator with several checks combined into one error | `lib/platform/clock.ml` |
+| Types only: multi-line constructor and field tables | `lib/resource/record.ml` |
+| Accessors, a hand-written `sexp_of_t`, a `Private` constructor | `lib/elaboration/elaborated_project.ml` |
+| Mid-size module: comparator, `Why:`, `A consequence:`, numbered parsing steps | `lib/resource/id.ml` |
+| Large module: selectors, precedence, the "main sauce" function | `lib/resource/policy.ml` |
+| Decision table, `TODO (...)` notes, commented match arms | `lib/resource/selection.ml` |
+| Nested modules, `create_exn` on module-level values, field-order pitfall | `lib/resource/technology.ml` |
+| *Mutable* state, `Private` module, re-raise handling, outcome tables | `lib/elaboration/context.ml` |
+| `.mli`: every value documented, record field docs, "Raises ..." paragraphs | `lib/resource/id.mli` |
+| `.mli`: constructor docs, a pitfall stated in the interface | `lib/resource/technology.mli` |
+| `.mli`: accessor docs with lifecycle boundaries, `Private` sig | `lib/elaboration/elaborated_project.mli` |
+| `.mli`: failure and lifecycle behavior | `lib/elaboration/context.mli` |
 
-`lib/elaboration_context.ml` is still a good reference for structure, but many of its
+`lib/elaboration/context.ml` is still a good reference for structure, but many of its
 lines run past 90 columns. Do not copy that (see section 7).
 
 A file whose `.ml` header does not follow section 1 has not been through the comment

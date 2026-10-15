@@ -15,21 +15,21 @@ module type Design = sig
 
   val name : string
   val create :
-    Elaboration_context.t ->
+    Elaboration.Context.t ->
     Signal.t I.t ->
     Signal.t O.t
 end
 
 type t =
   { name      : string
-  ; metadata  : Metadata.t
+  ; metadata  : Elaboration.Metadata.t
   ; design    : (module Design)
-  ; target    : Target.t
-  ; flow      : Flow.t
-  ; clocks    : Clock.t list
-  ; pinout    : Pinout.t
-  ; timing    : Timing.t
-  ; policy    : Resource_policy.t
+  ; target    : Platform.Target.t
+  ; flow      : Flow.Config.t
+  ; clocks    : Platform.Clock.t list
+  ; pinout    : Platform.Pinout.t
+  ; timing    : Platform.Timing.t
+  ; policy    : Resource.Policy.t
   ; source_inputs : string list
   }
 
@@ -41,7 +41,7 @@ let create
     ~flow
     ?(clocks = [])
     ?(pinout = [])
-    ?(timing = Timing.empty)
+    ?(timing = Platform.Timing.empty)
     ?(source_inputs = [])
     ~policy ()
   =
@@ -61,15 +61,15 @@ let create
     (* Or_err -> checks for error returns on all members; this doesn't short circuit like a more naive item might; *)
     Or_error.combine_errors_unit
 
-      [ (if Resource_id.is_valid_component name (* project name must be literal identifier *)
+      [ (if Resource.Id.is_valid_component name (* project name must be literal identifier *)
          then Ok ()
          else
            Or_error.error_s
              [%message "project name must be an identifier" (name : string)])
 
-      ; Metadata. validate      metadata  (* nonblank title *)
-      ; Clock.    validate_list clocks    (* ports nonempty, periods > 0, no dups *)
-      ; Flow.     validate      flow      (* librelane overrides formed correctly *)
+      ; Elaboration.Metadata. validate      metadata  (* nonblank title *)
+      ; Platform.Clock.       validate_list clocks    (* ports nonempty, periods > 0, no dups *)
+      ; Flow.Config.          validate      flow      (* librelane overrides formed correctly *)
       ]
 
     (* if there was an error, tag it with where the error belongs in the project scheme *)
@@ -100,14 +100,14 @@ let describe t =
   [%sexp
     { project_name = (t.name : string)
     ; top = (D.name : string)
-    ; metadata = (t.metadata : Metadata.t)
+    ; metadata = (t.metadata : Elaboration.Metadata.t)
     ; source_inputs = (t.source_inputs : string list)
-    ; target = (t.target : Target.t)
-    ; flow = (t.flow : Flow.t)
-    ; clocks = (t.clocks : Clock.t list)
-    ; pinout = (t.pinout : Pinout.t)
-    ; timing = (t.timing : Timing.t)
-    ; policy = (t.policy : Resource_policy.t)
+    ; target = (t.target : Platform.Target.t)
+    ; flow = (t.flow : Flow.Config.t)
+    ; clocks = (t.clocks : Platform.Clock.t list)
+    ; pinout = (t.pinout : Platform.Pinout.t)
+    ; timing = (t.timing : Platform.Timing.t)
+    ; policy = (t.policy : Resource.Policy.t)
     }]
 ;;
 
@@ -121,7 +121,7 @@ let elaborate t ~mode =
 
   (* Represent error handling with the expanded context under an error happening; *)
   let tag message =
-    Or_error.tag_s ~tag:[%message message ~project:t.name (mode : Elaboration_mode.t)]
+    Or_error.tag_s ~tag:[%message message ~project:t.name (mode : Elaboration.Mode.t)]
   in
 
   (* Overall Circuit.t scope *)
@@ -133,7 +133,7 @@ let elaborate t ~mode =
      Contexts hold their mode, technology theyre implementing on, a resource policy, and a scope.
   *)
   let context =
-    Elaboration_context.Private.create
+    Elaboration.Context.Private.create
       ~mode
       ~technology:t.target.technology
       ~policy:t.policy
@@ -148,19 +148,19 @@ let elaborate t ~mode =
 
   (* Context error plug *)
   | Error _ as error ->
-    Elaboration_context.Private.fail context;
+    Elaboration.Context.Private.fail context;
     tag "design construction failed" error
 
   (* Ok circuit generation; validates on the resouces first; *)
   | Ok circuit ->
     let%map.Or_error resources =
       (* Good! -> Finalize; This closes the context and returns the resource records. *)
-      Elaboration_context.Private.finalize context |> tag "elaboration validation failed"
+      Elaboration.Context.Private.finalize context |> tag "elaboration validation failed"
     in
 
     (* Only runs if the above resources validate runs based on the context;
        Elaborated_project.Private.create is called only after successful finalization. *)
-    Elaborated_project.Private.create
+    Elaboration.Elaborated_project.Private.create
       ~project_name:t.name
       ~metadata:t.metadata
       ~mode
@@ -172,21 +172,21 @@ let elaborate t ~mode =
       ~resources
       ~circuit
 
-  (* Elaborated_project.Private.create and Elaboration_context.Private are exposed
+  (* Elaborated_project.Private.create and Elaboration.Context.Private are exposed
      conventional internal APIs intended for Project.elaborate. This naming convention
-     is distinct from the compiler-enforced private records in Resolved_flow. *)
+     is distinct from the compiler-enforced private records in Elaboration.Resolved. *)
 ;;
 
 let elaborate_for_flow ?inputs ?methodology t =
-  let%bind.Or_error elaborated_project = elaborate t ~mode:Elaboration_mode.Implementation in
-  Resolved_flow.resolve ?inputs ?methodology elaborated_project
+  let%bind.Or_error elaborated_project = elaborate t ~mode:Elaboration.Mode.Implementation in
+  Elaboration.Resolved.resolve ?inputs ?methodology elaborated_project
   |> Or_error.tag_s ~tag:[%message "flow resolution failed" ~project:t.name]
 ;;
 
 (* Shared rendering sequence; reject empty inventory before construction,
    and leave source canonicalization and synthesis-source fallback to Bundle; *)
 module Rendered = struct
-  type t = { resolution : Resolved_flow.t; bundle : Bundle.t }
+  type t = { resolution : Elaboration.Resolved.t; bundle : Elaboration.Bundle.t }
   let resolution t = t.resolution
   let bundle t = t.bundle
 end
@@ -207,7 +207,7 @@ let render_result ?inputs ?methodology ?(include_simulation = true)
       Some project
     else Ok None
   in
-  let%map bundle = Bundle.render ?simulation_project ~source_root
+  let%map bundle = Elaboration.Bundle.render ?simulation_project ~source_root
     ~input_paths:(t.source_inputs @ catalog_inputs) resolved in
   { Rendered.resolution = resolved; bundle }
 ;;
@@ -221,7 +221,7 @@ let render_bundle ?inputs ?methodology ?include_simulation t ~source_root =
 let emit_bundle ?inputs ?methodology ?include_simulation t ~source_root ~output_dir =
   let open Or_error.Let_syntax in
   let%bind bundle = render_bundle ?inputs ?methodology ?include_simulation t ~source_root in
-  let%map () = Bundle.write bundle ~output_dir in
+  let%map () = Elaboration.Bundle.write bundle ~output_dir in
   bundle
 ;;
 
@@ -229,7 +229,7 @@ let emit_bundle ?inputs ?methodology ?include_simulation t ~source_root ~output_
 let emit_bundle_to_store ?inputs ?methodology ?include_simulation t ~source_root ~store_dir =
   let open Or_error.Let_syntax in
   let%bind bundle = render_bundle ?inputs ?methodology ?include_simulation t ~source_root in
-  let%map publication = Bundle.publish bundle ~store_dir in
+  let%map publication = Elaboration.Bundle.publish bundle ~store_dir in
   bundle, publication
 ;;
 [@@@ocamlformat "enable"]

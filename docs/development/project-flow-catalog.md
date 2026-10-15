@@ -152,7 +152,9 @@ timing-oriented or faster-turnaround methodologies, analogous to standard design
 run modes. That collection is not delivered by the two example profiles. Projects
 should be able to register a library preset unchanged or customize supported
 settings without copying the provider's orchestration. The provider's own
-`lib/flow/` remains implementation/API code; it is not the location for arbitrary
+`flow_domain/` (named `lib/flow/` until the 2026-10-15
+[source reorganization](lib-namespace-reorganization.md)) and the `Flow` group
+in `lib/flow/` remain implementation/API code; they are not the location for arbitrary
 consumer-specific flow definitions.
 
 ### Generated storage is separate

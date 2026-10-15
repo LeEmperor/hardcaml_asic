@@ -112,7 +112,7 @@ let pinout : Pinout.t =
     List.init 8 ~f:(fun bit -> { Pinout.bank; bit; description = "fixture pin" }))
 ;;
 
-let metadata : Metadata.t =
+let metadata : Elaboration.Metadata.t =
   { title = "TT fixture"; author = "test"; description = "Interface validation" }
 ;;
 
@@ -134,7 +134,7 @@ let project
     ~design
     ~target:
       { Target.harness = Tiny_tapeout { tiles = T6x4 }
-      ; technology = Technology.ihp_sg13cmos5l
+      ; technology = Resource.Technology.ihp_sg13cmos5l
       }
     ~flow
     ~policy:(Resource_policy.create ~default:Flops [] |> ok_exn)
@@ -218,7 +218,7 @@ let%test_unit "methodology merge checks inherited domains and preserves complete
   assert (Or_error.is_error (P.check_assignments ~configurable:[] [ P.synth_strategy Area_0 ]));
   assert (Or_error.is_error (Project.create ~name:"duplicate" ~metadata ~pinout
     ~design:(module Good) ~target:{ harness = Tiny_tapeout { tiles = T6x4 };
-      technology = Technology.ihp_sg13cmos5l } ~policy:(Resource_policy.create ~default:Flops [] |> ok_exn)
+      technology = Resource.Technology.ihp_sg13cmos5l } ~policy:(Resource_policy.create ~default:Flops [] |> ok_exn)
     ~flow:(Flow.librelane Hardening ~overrides:
       [ override "SYNTH_STRATEGY" (`String "AREA 0"); override "SYNTH_STRATEGY" (`String "DELAY 1") ]) ()))
 ;;

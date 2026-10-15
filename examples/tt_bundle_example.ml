@@ -114,16 +114,19 @@ let project kind =
 ;;
 
 let source_inputs root =
-  let lib = Filename.concat root "lib" in
-  let library_files =
-    Stdlib.Sys.readdir lib
+  let rec library_files dir =
+    Stdlib.Sys.readdir (Filename.concat root dir)
     |> Array.to_list
-    |> List.filter ~f:(fun name ->
-      String.is_suffix name ~suffix:".ml" || String.is_suffix name ~suffix:".mli")
-    |> List.map ~f:(fun name -> "lib/" ^ name)
+    |> List.concat_map ~f:(fun name ->
+      let path = dir ^ "/" ^ name in
+      if Stdlib.Sys.is_directory (Filename.concat root path)
+      then library_files path
+      else if String.is_suffix name ~suffix:".ml" || String.is_suffix name ~suffix:".mli"
+      then [ path ]
+      else [])
   in
   [ "dune-project"; "lib/dune"; "examples/dune"; "examples/tt_bundle_example.ml" ]
-  @ library_files
+  @ library_files "lib"
 ;;
 
 let () =

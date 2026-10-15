@@ -5,7 +5,7 @@ module P = Flow.Parameter
 module C = Flow.Catalog
 module MP = Methodology_plan
 module E = Resolved_flow.Effective_parameter
-module J = Plan_json
+module J = Flow.Plan_json
 
 let ok = Or_error.ok_exn
 let checks = ref 0
@@ -79,75 +79,75 @@ let resolve ?(profile = "area") ?(endpoint = Flow.Stage.Synthesis) ?(request = [
 
 let pure_checks () =
   let c = catalog () in
-  let wire = Flow_spec.declaration_to_yojson c in
-  let decoded = ok (Flow_spec.declaration_of_yojson (reverse_objects wire)) in
-  check "declaration roundtrip" (J.equal wire (Flow_spec.declaration_to_yojson decoded));
+  let wire = Flow.Spec.declaration_to_yojson c in
+  let decoded = ok (Flow.Spec.declaration_of_yojson (reverse_objects wire)) in
+  check "declaration roundtrip" (J.equal wire (Flow.Spec.declaration_to_yojson decoded));
   check
     "canonical declaration ordering"
-    (J.equal wire (Flow_spec.declaration_to_yojson (catalog ~reverse:true ())));
+    (J.equal wire (Flow.Spec.declaration_to_yojson (catalog ~reverse:true ())));
   check
     "list roundtrip"
     (J.equal
        wire
-       (Flow_spec.declaration_to_yojson
-          (ok (Flow_spec.list_of_yojson (Flow_spec.list_to_yojson c)))));
+       (Flow.Spec.declaration_to_yojson
+          (ok (Flow.Spec.list_of_yojson (Flow.Spec.list_to_yojson c)))));
   let e = List.hd_exn (C.entries c) in
-  let desc = Flow_spec.describe_to_yojson e in
+  let desc = Flow.Spec.describe_to_yojson e in
   check
     "describe roundtrip"
-    (J.equal desc (Flow_spec.describe_to_yojson (ok (Flow_spec.describe_of_yojson desc))));
+    (J.equal desc (Flow.Spec.describe_to_yojson (ok (Flow.Spec.describe_of_yojson desc))));
   reject
     "describe version"
-    (Flow_spec.describe_of_yojson (set desc "schema_version" (`Int 0)));
+    (Flow.Spec.describe_of_yojson (set desc "schema_version" (`Int 0)));
   reject
     "list descriptors"
-    (Flow_spec.list_of_yojson
-       (set (Flow_spec.list_to_yojson c) "parameter_descriptors" (`List [])));
+    (Flow.Spec.list_of_yojson
+       (set (Flow.Spec.list_to_yojson c) "parameter_descriptors" (`List [])));
   reject
     "unsupported backend recipe"
-    (Flow_spec.describe_of_yojson
+    (Flow.Spec.describe_of_yojson
        (alter desc [ "entry"; "methodology"; "backend_recipe" ] (fun _ ->
           `String "librelane.classic.v2")));
   reject
     "duplicate profile"
-    (Flow_spec.describe_of_yojson
+    (Flow.Spec.describe_of_yojson
        (alter desc [ "entry"; "profiles" ] (function
          | `List (x :: xs) -> `List (x :: x :: xs)
          | _ -> assert false)));
   reject
     "duplicate endpoint"
-    (Flow_spec.describe_of_yojson
+    (Flow.Spec.describe_of_yojson
        (alter desc [ "entry"; "methodology"; "endpoints" ] (function
          | `List (x :: xs) -> `List (x :: x :: xs)
          | _ -> assert false)));
   reject
     "wire unknown field"
-    (Flow_spec.declaration_of_yojson
+    (Flow.Spec.declaration_of_yojson
        (match wire with
         | `Assoc xs -> `Assoc (("unknown", `Null) :: xs)
         | _ -> assert false));
   reject
     "wire duplicate field"
-    (Flow_spec.declaration_of_yojson
+    (Flow.Spec.declaration_of_yojson
        (match wire with
         | `Assoc xs -> `Assoc (List.hd_exn xs :: xs)
         | _ -> assert false));
   reject
     "wire version"
-    (Flow_spec.declaration_of_yojson (set wire "schema_version" (`Int 2)));
+    (Flow.Spec.declaration_of_yojson (set wire "schema_version" (`Int 2)));
   reject
     "duplicate entries"
-    (Flow_spec.declaration_of_yojson
+    (Flow.Spec.declaration_of_yojson
        (set
           wire
           "entries"
           (`List
-            [ get (Flow_spec.describe_to_yojson e) "entry"
-            ; get (Flow_spec.describe_to_yojson e) "entry"
+            [ get (Flow.Spec.describe_to_yojson e) "entry"
+            ; get (Flow.Spec.describe_to_yojson e) "entry"
             ])));
   reject
     "duplicate assignments"
-    (Flow_spec.describe_of_yojson
+    (Flow.Spec.describe_of_yojson
        (alter desc [ "entry"; "methodology"; "defaults" ] (function
          | `List (x :: xs) -> `List (x :: x :: xs)
          | _ -> assert false)));
@@ -156,35 +156,35 @@ let pure_checks () =
     ~f:(fun value ->
       reject
         "strict bool"
-        (Flow_spec.assignment_of_yojson
+        (Flow.Spec.assignment_of_yojson
            (`Assoc [ "key", `String "SYNTH_ABC_BUFFERING"; "value", value ])));
   reject
     "unknown typed key"
-    (Flow_spec.assignment_of_yojson
+    (Flow.Spec.assignment_of_yojson
        (`Assoc [ "key", `String "PL_TARGET_DENSITY_PCT"; "value", `Bool true ]));
   reject
     "profile alone"
-    (Flow_spec.selection_of_yojson (`Assoc [ "flow", `Null; "profile", `String "area" ]));
+    (Flow.Spec.selection_of_yojson (`Assoc [ "flow", `Null; "profile", `String "area" ]));
   let r = resolve ~request:[ P.synth_strategy Delay_2 ] c in
-  let rw = Flow_spec.resolved_to_yojson r in
+  let rw = Flow.Spec.resolved_to_yojson r in
   check
     "snapshot roundtrip"
     (J.equal
        rw
-       (Flow_spec.resolved_to_yojson
-          (ok (Flow_spec.resolved_of_yojson (reverse_objects rw)))));
+       (Flow.Spec.resolved_to_yojson
+          (ok (Flow.Spec.resolved_of_yojson (reverse_objects rw)))));
   List.iter
     [ [ "profile"; "label" ]; [ "definition"; "methodology"; "label" ]; [ "endpoint" ] ]
     ~f:(fun path ->
       reject
         "snapshot tampering"
-        (Flow_spec.resolved_of_yojson (alter rw path (fun _ -> `String "wrong"))));
+        (Flow.Spec.resolved_of_yojson (alter rw path (fun _ -> `String "wrong"))));
   reject
     "snapshot history tampering"
-    (Flow_spec.resolved_of_yojson (set rw "parameters" (`List [])));
+    (Flow.Spec.resolved_of_yojson (set rw "parameters" (`List [])));
   reject
     "snapshot winner tampering"
-    (Flow_spec.resolved_of_yojson
+    (Flow.Spec.resolved_of_yojson
        (alter rw [ "parameters" ] (function
          | `List (x :: xs) ->
            `List (alter x [ "winning"; "assignment"; "value" ] (fun _ -> `Bool true) :: xs)
@@ -237,7 +237,7 @@ let project ?(reason = "project strategy") ?(name = "plan_fixture") () =
        ~design:(module Design)
        ~target:
          { harness = Tiny_tapeout { tiles = T6x4 }
-         ; technology = Technology.ihp_sg13cmos5l
+         ; technology = Resource.Technology.ihp_sg13cmos5l
          }
        ~flow:
          (Flow.librelane
@@ -703,7 +703,7 @@ let () =
        (`Assoc
          [ "checks", `Int !checks
          ; "plan", wire
-         ; "list", Flow_spec.list_to_yojson c
+         ; "list", Flow.Spec.list_to_yojson c
          ; ( "canonical_probe"
            , `String (ok (J.canonical (`Assoc [ "z", `Float 1.25; "a", `String "λ" ]))) )
          ]))

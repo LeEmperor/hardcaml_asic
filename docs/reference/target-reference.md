@@ -9,7 +9,7 @@ performs no setup.
 
 The default `Target.Inputs.reference_cmos5l_6x4` adopts the revisions and
 floorplan hash originally adopted from the consumer's toolchain lock. The current
-local sources are [`lib/target.ml`](../../lib/target.ml) and
+local sources are [`lib/platform/target.ml`](../../lib/platform/target.ml) and
 [`toolchain.lock`](../../toolchain.lock); the absent scaf checkout is not required:
 
 | Input | Adopted value |
