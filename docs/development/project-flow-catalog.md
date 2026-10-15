@@ -97,11 +97,107 @@ and profiles. Emit a versioned declarative specification for the installed
 provider to resolve and execute. Do not dynamically load arbitrary `flow.ml`
 files in the Python adapter.
 
-A possible consumer layout is:
+### Per-project source layout and library presets
+
+**Ownership decision:** an authored `flows/` directory belongs to each ASIC
+project, not to a provider-global store in `hardcaml_asic`. The preferred layout
+for a project with several definitions is `asic/flows/`, with an explicit catalog
+beside it:
+
+```text
+my_asic_project/
+  asic/
+    project.ml
+    flow_catalog.ml
+    flows/
+      standard.ml
+      experiments.ml
+```
+
+Each flow module may define a methodology and its associated profiles. Shared
+profiles can instead live in a separate module when useful. One source file per
+flow is a convention, not an identity rule or a requirement for separate execution
+machinery. `flow_catalog.ml` explicitly registers the entries exposed by that
+project and selects its default flow/profile.
+
+There is no directory scanning or magic `_flows/` location. These are ordinary
+Dune-compiled OCaml modules. Moving them into subdirectories requires appropriate
+Dune module organization and updates to the project's declared source inventory;
+the directory name alone does not register a flow. Use source-controlled authored
+files here, rather than placing them among generated execution outputs.
+
+The current example has **not** been moved into that proposed directory layout:
+
+```text
+hardcaml_asic_example/
+  asic/
+    flow_catalog.ml    # one flow: standard; attaches profiles and defaults
+    flow_profiles.ml   # two profiles: balanced and synth_delay
+```
+
+`standard` is the flow ID, not a profile. Its default profile is `balanced`
+(`SYNTH_STRATEGY = AREA 0`); the other profile is `synth_delay` (`DELAY 1`). Both
+explicitly set `SYNTH_ABC_BUFFERING = false`.
+
+**Provider/project separation:**
+
+| `hardcaml_asic` supplies | Each ASIC project supplies |
+| --- | --- |
+| Flow/profile types, parameter validation and backend recipes | Its catalog, default selection and exposed methodologies |
+| Resolution, identity, execution, observation and reporting | Project-specific parameter profiles and customizations |
+| Potential future reusable standard methodologies/presets | Explicit registration of selected library presets or project-owned definitions |
+
+A future library preset collection could provide verified area-oriented,
+timing-oriented or faster-turnaround methodologies, analogous to standard design
+run modes. That collection is not delivered by the two example profiles. Projects
+should be able to register a library preset unchanged or customize supported
+settings without copying the provider's orchestration. The provider's own
+`lib/flow/` remains implementation/API code; it is not the location for arbitrary
+consumer-specific flow definitions.
+
+### Generated storage is separate
+
+The default consumer result store contains concrete inputs and execution evidence:
+
+```text
+_flow_results/
+  bundles/<identity>/
+  launchspecs/<workspace-name>.json
+  <workspace>/
+    execution-<attempt>.json
+    checkpoints/
+  observations/<attempt>/
+    methodology-plan.json
+    ...
+```
+
+This is the ordinary journaled layout, not a directory-discovery contract. Clients
+use the explicit references returned by the provider. Named launches retain a
+checked immutable methodology snapshot; editing the authored flow later does not
+reinterpret that execution. Runs do not require a separate source directory per
+flow, and several executions can select the same flow/profile.
+
+Conceptually:
+
+```text
+R = execute(input state S, flow f, profile p, endpoint)
+```
+
+For the delivered named-flow interface, `S` is a fresh rendered design bundle.
+Existing manual checkpoint continuation is separate. **Checkpoint branching with
+configuration changes is explicitly deferred**, including dependency-aware reuse
+and inherited-history acceptance. It is not a prerequisite for Workbench's first
+active-flow integration. The initial goal is the common standalone catalog/
+preview/run boundary; more presets and backend modularity can be added afterward.
+
+### Catalog registration
+
+An alternative organization may share profile definitions:
 
 ```text
 asic/
   project.ml
+  flow_catalog.ml
   flows/
     standard.ml
     profiles.ml
