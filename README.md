@@ -35,6 +35,13 @@ is absent and not a prerequisite.
 
 ## Existing workflow
 
+Project-owned named methodologies and parameter profiles are now available through
+the [flow catalog and preview/run interface](docs/guides/named-flows.md). The example
+declares `standard/balanced` and `standard/synth_delay`; both have actual synthesis
+evidence. Discovery, preview, execution and historical reporting work independently
+of Workbench. Finer operation composition and parameter-changing checkpoint reuse
+remain separate capabilities.
+
 The public CLI and explicit/coarse execution, result collection/reporting,
 postcheck/finalization, archiving, checkpoints, journaling and watch now use OCaml.
 Installed Python is limited to LibreLane adapter, probe and bootstrap resources;
@@ -43,8 +50,8 @@ Stage/operation definitions
 are in `lib/flow/stages/`, backend mappings in `lib/flow/backends/librelane/`, and
 execution services in `lib/execution/`. See the
 [refactor progress](docs/development/flow-infrastructure-progress.md) for the
-verified milestones and remaining finer-step execution work; project-owned
-modularized flow files and profiles are later work.
+verified milestones and remaining finer-step execution work. Named fixed-recipe
+profiles build on this infrastructure; arbitrary operation composition is later work.
 
 The lifecycle is declaration → `Elaborated_project` (Hardcaml circuit, metadata,
 intent and resources; no synthesis) → `Resolved_flow` (validated concrete

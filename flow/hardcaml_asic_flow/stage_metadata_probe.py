@@ -39,19 +39,22 @@ if role == "container" and not coarse and result["metadata_error"] is None:
                    for name in gates.get(step.id, [])]}
         for step in Classic.Steps]
     from decimal import Decimal
-    from typing import get_args
+    from typing import get_args, get_origin, Literal
     def setting(var):
         kind = {bool: "boolean", int: "integer", Decimal: "decimal"}.get(var.type)
         if kind is None:
             kind = "optional_decimal" if set(get_args(var.type)) == {Decimal, type(None)} else str(var.type)
         default = (None if var.default is None else
                    str(var.default).lower() if isinstance(var.default, bool) else str(var.default))
-        return {"name": var.name, "kind": kind, "units": var.units,
-                "default": default, "pdk": var.pdk}
+        result = {"name": var.name, "kind": kind, "units": var.units,
+                  "default": default, "pdk": var.pdk}
+        if get_origin(var.type) is Literal:
+            result.update(kind="enum", allowed_values=list(get_args(var.type)))
+        return result
     result["classic_settings"] = {
         step.get_implementation_id(): [setting(var) for var in step.config_vars]
         for step in Classic.Steps
-        if step.get_implementation_id() in (
+        if step.id == "Yosys.Synthesis" or step.get_implementation_id() in (
             "OpenROAD.GlobalPlacement", "OpenROAD.GlobalPlacementSkipIO",
             "OpenROAD.RepairDesignPostGPL", "OpenROAD.DetailedPlacement")}
 if role == "host":

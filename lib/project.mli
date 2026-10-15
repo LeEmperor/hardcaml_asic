@@ -98,7 +98,51 @@ val elaborate : t -> mode:Elaboration_mode.t -> Elaborated_project.t Or_error.t
 
 (** Elaborate the selected implementation and validate the TT/LibreLane target,
     wrapper, timing, metadata, and configuration before emission. *)
-val elaborate_for_flow : ?inputs:Target.Inputs.t -> t -> Resolved_flow.t Or_error.t
+(** [methodology] applies only checked configurable assignments, after project
+    assignments, in methodology-default/profile/request order. Other project
+    overrides and the project's flow remain authoritative. No declaration is
+    mutated. Without it the legacy settings and emitted bytes are unchanged. *)
+val elaborate_for_flow
+  :  ?inputs:Target.Inputs.t
+  -> ?methodology:Flow.Catalog.resolved
+  -> t
+  -> Resolved_flow.t Or_error.t
+
+(** The exact emission rendering sequence, without writing: reject empty inventory,
+    elaborate Implementation and resolve, optionally elaborate Simulation (default
+    true), then [Bundle.render]. Reads source inventory and Git as documented by
+    [Bundle.render]; no EDA or PDK reads. The returned concrete bundle can be
+    previewed with [Bundle.identity] and then passed directly to [Bundle.publish]
+    or [Bundle.write]. Publish that same value after preview-hash comparison;
+    calling an emission method would render again and re-observe sources/Git. *)
+val render_bundle
+  :  ?inputs:Target.Inputs.t
+  -> ?methodology:Flow.Catalog.resolved
+  -> ?include_simulation:bool
+  -> t
+  -> source_root:string
+   -> Bundle.t Or_error.t
+
+(** Inseparable checked resolution/render pair. Only [render_result] constructs
+    it, by rendering exactly that resolution once. No external pair-linker. *)
+module Rendered : sig
+  type t
+  val resolution : t -> Resolved_flow.t
+  val bundle : t -> Bundle.t
+end
+
+(** Same sequence as [render_bundle]. Additional [catalog_inputs] are consumer
+    catalog declaration source files, relative to source_root, copied and hashed
+    by Bundle alongside [source_inputs]. This is the public source-inventory seam
+    for later consumer discovery. No output directories or tools are touched. *)
+val render_result
+  :  ?inputs:Target.Inputs.t
+  -> ?methodology:Flow.Catalog.resolved
+  -> ?include_simulation:bool
+  -> ?catalog_inputs:string list
+  -> t
+  -> source_root:string
+  -> Rendered.t Or_error.t
 
 (** Emit using [elaborate_for_flow ?inputs], optional Simulation elaboration,
     [Bundle.render], then [Bundle.write], returning the written bundle.
@@ -112,6 +156,7 @@ val elaborate_for_flow : ?inputs:Target.Inputs.t -> t -> Resolved_flow.t Or_erro
     partial directory. No external flow tools or PDK reads are performed. *)
 val emit_bundle
   :  ?inputs:Target.Inputs.t
+  -> ?methodology:Flow.Catalog.resolved
   -> ?include_simulation:bool
   -> t
   -> source_root:string
@@ -126,6 +171,7 @@ val emit_bundle
     Inherits Bundle.publish's exact reuse, backing layout and atomic visibility. *)
 val emit_bundle_to_store
   :  ?inputs:Target.Inputs.t
+  -> ?methodology:Flow.Catalog.resolved
   -> ?include_simulation:bool
   -> t
   -> source_root:string

@@ -14,7 +14,14 @@ let validate a =
   if c="postcheck" then require a ["testbench";"testbench-top"];
   if c="finalize" then require a ["operation-store"];
   if c="stages" then (require a ["support-tools";"pdk-root";"python";"workspace";"checkpoint-store"];
-    exclusive a ["endpoint";"plan"] true;exclusive a ["observation-store";"no-observation"] false;
+    exclusive a ["endpoint";"plan";"methodology-plan"] true;exclusive a ["observation-store";"no-observation"] false;
+    (match get a "methodology-plan",get a "expected-plan-identity" with
+     | Some _,Some hash ->
+       if String.length hash<>64 || not (String.for_all (function '0'..'9'|'a'..'f' -> true | _ -> false) hash) then error "expected plan identity must be a lowercase SHA-256";
+       if get a "checkpoint"<>None then error "methodology launch is fresh-only; --checkpoint is forbidden"
+     | Some _,None -> error "--expected-plan-identity is required for --methodology-plan"
+     | None,Some _ -> error "--expected-plan-identity requires --methodology-plan"
+     | None,None -> ());
     choice a "endpoint" endpoints);
   choice a "restart-to" endpoints;
   if c="archive" then exclusive a ["output";"list"] true;
@@ -41,12 +48,12 @@ let validate a =
     if k="interval" && (not (Float.is_finite f) || f<=0.) then error "interval must be positive and finite") (get a k)) ["interval";(if c="postcheck" then "timeout" else "interval")];
   let nonempty= ["bundle";"results-root";"runs"] @ (if c="preflight" then ["output"] else []) @
     (if c="provision" then ["python"] else []) @ (if List.mem c ["stages";"finalize";"finalization-inspect";"checkpoint-inspect";"observation"] then
-      ["attempt";"checkpoint";"execution";"operation-store";"support-tools";"pdk-root";"python";"workspace";"checkpoint-store";"plan";"observation-store";"compatibility";"precheck-python";"testbench";"replay-trace"] else []) in
+      ["attempt";"checkpoint";"execution";"operation-store";"support-tools";"pdk-root";"python";"workspace";"checkpoint-store";"plan";"methodology-plan";"observation-store";"compatibility";"precheck-python";"testbench";"replay-trace"] else []) in
   List.iter (fun k -> Option.iter (fun s -> if String.trim s="" then error "expected a nonempty path") (get a k)) nonempty
 let resolve a =
   let c=a.command in
   let paths=["target";"bundle";"run-dir";"runs";"results-root";"output";"archive";"testbench";"replay-trace";"dependency-lock";"toolchain";"support-tools";"pdk-root";
-    "workspace";"checkpoint-store";"checkpoint";"plan";"observation-store";"execution";"operation-store";"attempt";"compatibility"] in
+    "workspace";"checkpoint-store";"checkpoint";"plan";"methodology-plan";"observation-store";"execution";"operation-store";"attempt";"compatibility"] in
   List.iter (fun k -> Option.iter (fun v -> set a k (Flow_cli_paths.absolute (if v="" then "." else v))) (get a k)) paths;
   List.iter (fun k -> Option.iter (fun v -> set a k (Flow_cli_paths.lexical (if v="" then "." else v))) (get a k)) ["python";"precheck-python"];
   let root=match get a "toolchain" with Some p -> Some p | None ->
@@ -109,7 +116,7 @@ let route a request =
     | "checkpoint-inspect" -> c,(if flag a "json" then ["--json"] else []) @ [value a "checkpoint"] @ fields ["compatibility";"restart-to"]
     | "observation" -> "observation-read",[a.query] @ (if a.query="describe" then [] else [value a "attempt"]) @
       fields ["stream-id";"after";"interval"] @ (if a.query="watch" then (if flag a "json" then ["--json"] else [])
-      else ["--public-cli4"] @ (if flag a "json" then ["--json"] else []))
+       else ["--public-cli4"] @ switches ["json";"verbose"])
     | "finalization-inspect" -> "finalization",["--public-cli4";"--inspect";"--directory";value a "attempt"] @ presentation
     | "finalize" -> "finalization",["--public-cli4";"--execution";value a "execution";"--store";value a "operation-store"] @
       fields ["support-tools";"precheck-python";"testbench";"replay-trace";"testbench-top"] @ switches ["accept"] @ presentation
@@ -117,7 +124,7 @@ let route a request =
       let workspace=value a "workspace" in
       let evidence=Filename.dirname workspace ^ "/stage-preflight" in
       let evidence=if evidence=workspace then evidence^"-evidence" else evidence in
-      c,["--public-cli4"] @ resources @ fields ["bundle";"workspace";"checkpoint-store";"support-tools";"pdk-root";"python";"plan";"checkpoint";"observation-store"] @
+      c,["--public-cli4"] @ resources @ fields ["bundle";"workspace";"checkpoint-store";"support-tools";"pdk-root";"python";"plan";"methodology-plan";"expected-plan-identity";"checkpoint";"observation-store"] @
         ["--evidence-root";evidence;"--timeout";Option.value (get a "timeout") ~default:"600";"--request";request] @
         (match get a "endpoint" with None -> [] | Some s -> ["--through";s]) @ switches ["json";"no-observation"]
     | _ -> assert false in

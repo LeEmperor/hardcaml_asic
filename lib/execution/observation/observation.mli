@@ -60,7 +60,21 @@ val updates : prefix -> stream_id:string -> after:int -> (Identity_json.t, error
 val describe : unit -> Identity_json.t
 val writer_active : string -> bool option
 val load : string -> (prefix, error) result
+
+(** Adds [methodology] (historical-methodology v1) and [execution_request] delivery
+    metadata outside the hashed prefix. Named evidence validates the exact retained
+    preflight reference/snapshot and published checkpoint resolved values. Only
+    named streams receive these fields; legacy output retains its exact shape,
+    with absent methodology meaning [not_recorded] to clients. Named streams expose
+    [execution_file]: null until a persisted readable record exists, otherwise its
+    exact writer-owned path after strict attempt/recipe/reference validation.
+    No current catalog/runtime probes. *)
 val inspect : string -> (Identity_json.t, error) result
+module For_testing : sig
+  (** Synchronization point after the first named report read, before rechecking
+      writer/commit state. No production environment-variable hook. *)
+  val inspect : after_preflight_read:(unit -> unit) -> string -> (Identity_json.t, error) result
+end
 val read_updates : string -> stream_id:string -> after:int -> (Identity_json.t, error) result
 
 (** Local immutable-prefix metadata cache. Idle refreshes do not reparse records.

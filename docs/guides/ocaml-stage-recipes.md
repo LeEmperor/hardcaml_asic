@@ -17,6 +17,71 @@ Project API, and supply a **separate recipe file** to `hardcaml-asic-flow stages
 contracts. A recipe does not change project settings or make a synthesis-only
 bundle suitable for physical implementation.
 
+## Frozen named methodology launch (`namedflow1`)
+
+Publish the exact `Methodology_plan.Prepared.bundle` retained at preview, and save
+`Methodology_plan.to_string (Methodology_plan.Prepared.plan prepared)` as PLANFILE.
+Launch through the native CLI:
+
+```sh
+hardcaml-asic-flow stages BUNDLE \
+  --methodology-plan PLANFILE --expected-plan-identity HASH \
+  --support-tools /tools/tt --pdk-root /tools/pdk --python /tools/.venv/bin/python \
+  --workspace /results/fresh-attempt --checkpoint-store /results/fresh-attempt/checkpoints \
+  --json
+```
+
+`HASH` is the preview's `Methodology_plan.plan_identity`, required for every named
+launch. `--methodology-plan`, `--endpoint` and ordinary `--plan` are mutually
+exclusive. Named launches are fresh-only and reject `--checkpoint`. Runtime paths
+and timeout remain request facts outside the plan hash. CLI contract version stays
+4; `--json --version` advertises `cli_contract.capabilities.namedflow1: true`.
+
+The native parser uses main-library plan validation and derives the ordinary
+schema-3 prefix from the frozen closed backend contract. It checks the actual
+bundle manifest identity, settings/config bytes, all inventory digests and source
+input associations before probes or staging. It does not consult current consumer
+catalogs or reinterpret plan data as executable commands.
+
+For named launches, the allocation/request identifies the pending snapshot path.
+After validation, an atomic no-clobber snapshot is published at
+`<observation-attempt>/methodology-plan.json` (or the exact preflight operation
+directory with `--no-observation`). The preflight receipt/report, prepared metadata
+and execution JSON retain its explicit checksummed `methodology` reference. Ready
+preflight receipts include that reference. Failure/interruption can retain a checked
+plan reference while runtime readiness or physical completion remains false.
+
+Reports and full-flow finalization validate the required sidecar. Removing or
+changing the original PLANFILE has no effect; removing or changing the referenced
+snapshot is an error. `Stage_execution_record.methodology` and
+`Methodology_execution_record.plan` expose the checked historical snapshot to later
+consumers. Historical execution JSON without the optional field keeps its old
+encoding. See the [slice 4 handoff](../development/project-flow-catalog-progress.md#bounded-slice-4-native-enforcement-and-immutable-attempt-evidence-2026-10-15)
+for the precise record fields and evidence boundary.
+
+### Historical reports and observation inspection
+
+```sh
+hardcaml-asic-flow report /results/attempt/execution-ID.json
+hardcaml-asic-flow report /results/attempt/execution-ID.json --verbose
+hardcaml-asic-flow observation inspect /results/observations/ATTEMPT --json
+```
+
+Named reports show the frozen flow/profile IDs and labels, requested endpoint,
+preview plan identity and actual explicitly effective typed settings before the
+checkpoint tables. `--verbose` includes complete winning/overridden provenance,
+frozen definitions and snapshot reference. Observation inspection presents the
+same normalized methodology, even for failed preflight with no workspace, and
+returns the retained native request outside the hashed journal records.
+
+These host-only reads validate snapshot and recorded checkpoint contents, including
+backend-resolved assigned values. They never consult today's catalog, source plan
+or active profile; missing required evidence is exit 2. Unassigned backend defaults
+remain unobserved. Old stage/coarse report bytes keep their format; the report API
+explicitly identifies absent methodology as `not_recorded`. See the
+[native schema/API reference](../reference/native-historical-methodology.md) for
+the exact additive payload and old/new presentation boundaries.
+
 ## Typed declarations
 
 ```ocaml

@@ -26,6 +26,7 @@ module Setting : sig
       | Clock (** Resolved primary clock fact. *)
       | Default (** Adapter default, replaceable by an override. *)
       | Override of string (** Explicit override, carrying its declared reason. *)
+      | Methodology of Flow.Parameter.origin (** Checked catalog layer. *)
     [@@deriving sexp_of]
   end
 
@@ -35,6 +36,21 @@ module Setting : sig
     ; owner : Owner.t (** Source recorded in the manifest. *)
     }
   [@@deriving sexp_of]
+end
+
+(** Actual typed configuration after project/catalog merging. Project contributions
+    retain their original [Override reason] owner, including template attribution.
+    Histories run oldest to newest and exclude the winner. No backend documentation
+    default is injected. These private immutable records cannot forge resolution. *)
+module Effective_parameter : sig
+  type contribution = private
+    { assignment : Flow.Parameter.assignment
+    ; owner : Setting.Owner.t
+    }
+  type t = private
+    { winning : contribution
+    ; overridden : contribution list
+    }
 end
 
 (** A checked delay, converted to nanoseconds. *)
@@ -59,13 +75,40 @@ type t = private
   ; input_delays_ns : Delay_ns.t list (** Input delays sorted by port. *)
   ; output_delays_ns : Delay_ns.t list (** Output delays sorted by port. *)
   ; settings : Setting.t list (** Merged assignments sorted by unique key. *)
+  ; methodology : Flow.Catalog.resolved option (** Original checked snapshot. *)
+  ; effective_parameters : Effective_parameter.t list
+    (** Configurable, explicitly assigned keys in backend-key order. Empty without
+        methodology. Inherits checked project values when the catalog is silent.
+        Project values are validated even when replaced by catalog assignments. *)
   }
 
 (** Resolve an implementation elaboration; defaults to {!Target.Inputs.reference_cmos5l_6x4}.
-    Returns an error on unsupported targets, missing capabilities, invalid wrapper,
-    metadata, pinout or timing, or overrides of protected facts. No files are read.
-    A failure stops subsequent validation stages; no partial result is returned. *)
-val resolve : ?inputs:Target.Inputs.t -> Elaborated_project.t -> t Or_error.t
+     Returns an error on unsupported targets, missing capabilities, invalid wrapper,
+     metadata, pinout or timing, or overrides of protected facts. No files are read.
+     A failure stops subsequent validation stages; no partial result is returned.
+
+     With [methodology], precedence is provider-derived defaults, existing project
+     assignments, methodology defaults, profile, then request. All inherited values
+     for configurable keys must pass the strict typed domain even if replaced.
+     Unconfigurable project settings retain their raw values and ownership; catalog
+     assignments have already been gated by the checked snapshot. Protected facts
+     remain authoritative. [effective_parameters] records actual values and complete
+     replaced project/catalog history; unspecified runtime defaults remain absent.
+     The snapshot's endpoint/stages are retained for subsequent plan construction;
+     this seam does not replace the project's [Flow.t] or its execution recipe. *)
+val resolve
+  :  ?inputs:Target.Inputs.t
+  -> ?methodology:Flow.Catalog.resolved
+  -> Elaborated_project.t
+   -> t Or_error.t
+
+(** Pure checked replay of the exact typed project/catalog merge for plan readers.
+    Project values must be configurable, unique typed assignments with nonblank
+    original reasons. Uses the same merge as [resolve], never runtime defaults. *)
+val resolve_effective_parameters
+  :  methodology:Flow.Catalog.resolved
+  -> project_assignments:(Flow.Parameter.assignment * string) list
+  -> Effective_parameter.t list Or_error.t
 
 (** Required TT input names and widths, including phantom inputs. *)
 val expected_inputs : (string * int) list

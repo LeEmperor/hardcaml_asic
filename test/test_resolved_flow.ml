@@ -146,6 +146,83 @@ let resolve ?design ?metadata ?pinout ?timing ?clocks ?flow () =
   project ?design ?metadata ?pinout ?timing ?clocks ?flow () |> Project.elaborate_for_flow
 ;;
 
+let methodology ?(defaults = []) ?(assignments = []) ?(request = [])
+  ?(configurable = Flow.Parameter.Key.all) () =
+  let m = Flow.Methodology.create ~id:"classic" ~label:"Classic" ~description:""
+      ~backend_recipe:Librelane_classic_v1 ~endpoints:[ Synthesis ]
+      ~configurable ~defaults |> ok_exn in
+  let p = Flow.Profile.create ~id:"area" ~label:"Area" ~description:""
+      ~assignments |> ok_exn in
+  let entry = Flow.Catalog.Entry.create ~methodology:m ~profiles:[ p ]
+      ~default_profile:"area" |> ok_exn in
+  let catalog = Flow.Catalog.create ~entries:[ entry ] ~default_flow:"classic"
+      ~default_profile:"area" |> ok_exn in
+  Flow.Catalog.resolve ~request catalog ~endpoint:Synthesis () |> ok_exn
+;;
+
+let%test_unit "methodology merge checks inherited domains and preserves complete precedence" =
+  let module P = Flow.Parameter in
+  let override key value = { Flow.Librelane.Override.key; value; reason = "project template origin" } in
+  let p = project ~flow:(Flow.librelane Hardening ~overrides:
+      [ override "SYNTH_STRATEGY" (`String "AREA 2")
+      ; override "SYNTH_ABC_BUFFERING" (`Bool true)
+      ; override "PL_TARGET_DENSITY_PCT" (`Int 47) ]) () in
+  let before = Project.describe p in
+  let inherited = Project.elaborate_for_flow ~methodology:(methodology ()) p |> ok_exn in
+  assert (List.length inherited.effective_parameters = 2);
+  List.iter inherited.effective_parameters ~f:(fun e ->
+    assert (List.is_empty e.overridden);
+    match e.winning.owner with
+    | Override "project template origin" -> ()
+    | _ -> assert false);
+  let m = methodology ~defaults:[ P.synth_strategy Area_0 ]
+      ~assignments:[ P.synth_strategy Delay_0; P.synth_abc_buffering false ]
+      ~request:[ P.synth_strategy Delay_1 ] () in
+  let r = Project.elaborate_for_flow ~methodology:m p |> ok_exn in
+  let strategy = List.find_exn r.effective_parameters ~f:(fun e ->
+    P.Key.equal (P.assignment_key e.winning.assignment) Synth_strategy) in
+  assert (P.equal_value (P.assignment_value strategy.winning.assignment) (Strategy Delay_1));
+  assert (List.length strategy.overridden = 3);
+  (match List.map strategy.overridden ~f:(fun c -> c.owner), strategy.winning.owner with
+   | [ Override "project template origin"; Methodology Methodology; Methodology Profile ],
+     Methodology Request -> ()
+   | _ -> assert false);
+  let value key = (List.find_exn r.settings ~f:(fun s -> String.equal s.key key)).value in
+  assert (Yojson.Safe.equal (value "SYNTH_ABC_BUFFERING") (`Bool false));
+  assert (Yojson.Safe.equal (value "PL_TARGET_DENSITY_PCT") (`Int 47));
+  assert (Sexp.equal before (Project.describe p));
+  let again = Project.elaborate_for_flow ~methodology:(methodology ()) p |> ok_exn in
+  assert (List.equal (fun a b -> Sexp.equal (Resolved_flow.Setting.sexp_of_t a)
+              (Resolved_flow.Setting.sexp_of_t b)) inherited.settings again.settings);
+  List.iter [ `String "area 0"; `String "AREA0"; `Bool false; `Int 1 ] ~f:(fun invalid ->
+    let p = project ~flow:(Flow.librelane Hardening ~overrides:
+      [ override "SYNTH_STRATEGY" invalid ]) () in
+    assert (Or_error.is_error (Project.elaborate_for_flow ~methodology:m p)));
+  List.iter [ `Int 0; `Int 1; `String "false"; `Null ] ~f:(fun invalid ->
+    let p = project ~flow:(Flow.librelane Hardening ~overrides:
+      [ override "SYNTH_ABC_BUFFERING" invalid ]) () in
+    assert (Or_error.is_error (Project.elaborate_for_flow ~methodology:m p)));
+  let default = Project.elaborate_for_flow
+      ~methodology:(methodology ~defaults:[ P.synth_strategy Area_0 ] ()) p |> ok_exn in
+  let s = List.find_exn default.settings ~f:(fun s -> String.equal s.key "SYNTH_STRATEGY") in
+  assert (Yojson.Safe.equal s.value (`String "AREA 0"));
+  let unspecified = Project.elaborate_for_flow ~methodology:(methodology ()) (project ()) |> ok_exn in
+  assert (List.is_empty unspecified.effective_parameters);
+  let unconfigurable = Project.elaborate_for_flow
+      ~methodology:(methodology ~configurable:[] ()) p |> ok_exn in
+  assert (List.is_empty unconfigurable.effective_parameters);
+  List.iter [ "CLOCK_PERIOD"; "DESIGN_NAME"; "PNR_SDC_FILE"; "DIE_AREA" ] ~f:(fun key ->
+    let p = project ~flow:(Flow.librelane Hardening ~overrides:[ override key (`Int 1) ]) () in
+    assert (Or_error.is_error (Project.elaborate_for_flow ~methodology:m p)));
+  assert (Or_error.is_error (P.of_string_value ~key:"CLOCK_PERIOD" "20"));
+  assert (Or_error.is_error (P.check_assignments ~configurable:[] [ P.synth_strategy Area_0 ]));
+  assert (Or_error.is_error (Project.create ~name:"duplicate" ~metadata ~pinout
+    ~design:(module Good) ~target:{ harness = Tiny_tapeout { tiles = T6x4 };
+      technology = Technology.ihp_sg13cmos5l } ~policy:(Resource_policy.create ~default:Flops [] |> ok_exn)
+    ~flow:(Flow.librelane Hardening ~overrides:
+      [ override "SYNTH_STRATEGY" (`String "AREA 0"); override "SYNTH_STRATEGY" (`String "DELAY 1") ]) ()))
+;;
+
 let error_contains result fragment =
   match result with
   | Ok _ -> failwith ("expected error containing: " ^ fragment)

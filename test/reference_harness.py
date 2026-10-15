@@ -4,6 +4,7 @@ The small prefix-shaped oracle contains copied retirement candidates and links
 to the actual runtime package and native executables. No build tree is copied.
 Callers must supply both roots; installed tests never discover a checkout oracle.
 """
+import copy
 import os
 from pathlib import Path
 import shutil
@@ -18,6 +19,23 @@ RUNTIME = (
     "__init__", "backend_protocol", "librelane_bridge", "stage_metadata_probe",
     "probe", "runtime_observation", "runtime_contract", "managed_python", "paths",
 )
+
+
+def observation_description(base):
+    """Exact native named-only extension of the unchanged legacy description."""
+    expected = copy.deepcopy(base)
+    assert 'named_execution_delivery' not in expected
+    expected['named_execution_delivery'] = {
+        'execution_file': 'named_inspect_and_terminal_only; absolute_validated_readable_record_or_null; empty_reservation_is_null',
+        'validation': 'strict_stage_execution_record; exact_attempt_recipe_snapshot_plan_bundle; no_runtime_or_catalog',
+        'stored_record': 'unchanged; delivery_field_is_not_persisted'}
+    additions = {
+        'methodology': 'named_only; hardcaml-asic.historical-methodology_v1_recorded|pending; absent_means_not_recorded',
+        'execution_request': 'named_only; retained_native_request_or_original_allocation_request',
+        'execution_file': 'named_only; absolute_validated_readable_record_or_null'}
+    assert not additions.keys() & expected['schemas']['inspect'].keys()
+    expected['schemas']['inspect'].update(additions)
+    return expected
 
 
 def hardlink_prefix(staging, prefix):

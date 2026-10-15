@@ -19,7 +19,9 @@ val verify_reply : Backend_protocol.request -> Backend_protocol.reply
 val create : binding:Execution_transport.binding -> workspace:string -> project:string -> pdk_root:string
   -> checkpoint_store:string -> compatibility:Identity_json.t
   -> environment:string list -> timeout:float
-    -> ?initial_checkpoint:string -> ?verify_runtime:(unit -> (unit, string) result)
+     -> ?initial_checkpoint:string -> ?verify_runtime:(unit -> (unit, string) result)
+     -> ?verify_inputs:(unit -> (unit, string) result)
+     -> ?verify_resolved:(string -> (unit, string) result)
     -> ?failure_exit_code:(Backend_protocol.operation -> Execution_transport.result -> int option)
    -> unit -> (t, Runner.error) result
 
@@ -39,8 +41,14 @@ val process_json : Process_supervisor.result -> Identity_json.t
     Workspace, project, PDK, store and candidates directory already exist; project
     and store are disjoint descendants of the mounted workspace. No adoption,
      copying, directory creation or runtime readiness inference. Optional runtime
-     verifier runs before and after each successful backend call; preparation
-     supplies bound engine/image re-probes. Prepared callers own this obligation. *)
+      verifier runs before and after each successful backend call; preparation
+      supplies bound engine/image re-probes. [verify_inputs] retains an independent
+      checked input baseline; it runs at validation, before/after successful calls,
+      at publication entry and immediately before promotion. [verify_resolved]
+      checks each candidate/staging resolved.json against the selected contract.
+      Named Stage_preparation supplies both; defaults preserve ordinary callers.
+      Stable trusted parents and exclusive workspace use are still required; these
+      checks do not make arbitrary adversarial filesystem races impossible. *)
 
 val initial : t -> checkpoint Runner.source option
 
@@ -82,6 +90,8 @@ module Testing : sig
     -> workspace:string -> project:string -> pdk_root:string -> checkpoint_store:string
     -> compatibility:Identity_json.t -> environment:string list -> timeout:float
       -> ?initial_checkpoint:string -> ?verify_runtime:(unit -> (unit, string) result)
+      -> ?verify_inputs:(unit -> (unit, string) result)
+      -> ?verify_resolved:(string -> (unit, string) result)
       -> ?failure_exit_code:(Backend_protocol.operation -> Execution_transport.result -> int option)
      -> unit -> (t, Runner.error) result
 end

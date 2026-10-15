@@ -52,10 +52,33 @@ def verify(consumer, inspector, payload, selected=False):
     assert subprocess.run([consumer, "validate"], input=json.dumps(inventory), text=True,
                           capture_output=True).returncode == 0
     settings = {o["backend"]["implementation"]: o["settings"] for o in flat if o["settings"]}
+    synth = settings['Yosys.Synthesis']
+    assert synth[0]['allowed_values'] == [f'AREA {i}' for i in range(4)] + [f'DELAY {i}' for i in range(5)]
+    assert synth[0]['kind'] == 'enum' and synth[0]['default'] == 'AREA 0'
+    assert synth[1]['kind'] == 'boolean' and synth[1]['default'] == 'false'
     assert subprocess.run([consumer, "settings"], input=json.dumps(settings), text=True, capture_output=True).returncode == 0
     for field in ('kind', 'units', 'default', 'pdk'):
         changed = copy.deepcopy(settings)
         changed['OpenROAD.DetailedPlacement'][0][field] = 'unsupported'
+    assert subprocess.run([consumer, 'settings'], input=json.dumps(changed), text=True,
+                           capture_output=True).returncode == 2
+    synth_negatives = []
+    for i in range(2):
+        changed = copy.deepcopy(settings)
+        del changed['Yosys.Synthesis'][i]
+        synth_negatives.append(changed)
+        for field in ('kind', 'default'):
+            changed = copy.deepcopy(settings)
+            changed['Yosys.Synthesis'][i][field] = 'drift'
+            synth_negatives.append(changed)
+    for domain in (None, [], ['AREA 0'], synth[0]['allowed_values'] + ['DELAY 5'], list(reversed(synth[0]['allowed_values']))):
+        changed = copy.deepcopy(settings)
+        if domain is None:
+            del changed['Yosys.Synthesis'][0]['allowed_values']
+        else:
+            changed['Yosys.Synthesis'][0]['allowed_values'] = domain
+        synth_negatives.append(changed)
+    for changed in synth_negatives:
         assert subprocess.run([consumer, 'settings'], input=json.dumps(changed), text=True,
                               capture_output=True).returncode == 2
     changed = copy.deepcopy(settings)
@@ -77,10 +100,13 @@ def verify(consumer, inspector, payload, selected=False):
             assert actual == inventory
             assert subprocess.run([consumer, 'settings'], input=json.dumps(observed['metadata']['classic_settings']),
                 text=True, capture_output=True).returncode == 0
+            actual_synth = {v['name']: v for v in observed['metadata']['classic_settings']['Yosys.Synthesis']}
+            assert [actual_synth[v['name']] for v in synth] == synth
         print(f"selected image {image}: 80 identifiers/implementations/artifact contracts and gates/defaults verified; "
+              f"Yosys.Synthesis enum/type/default/domain and boolean/default verified; "
               f"container LibreLane {selected['metadata']['librelane_version']}, "
               f"Python {selected['metadata']['python_version']}; payload sha256 {hashlib.sha256(payload.read_bytes()).hexdigest()}")
-    print(f"six exact groups, 80 unique occurrences, shared STA, {len(negatives)} inventory and 5 setting drift negatives passed")
+    print(f"six exact groups, 80 unique occurrences, shared STA, {len(negatives)} inventory, 5 placement and {len(synth_negatives)} synthesis drift negatives passed")
 
 
 def main():

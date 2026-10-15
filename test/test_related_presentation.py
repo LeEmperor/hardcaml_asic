@@ -12,6 +12,7 @@ sys.path.insert(0, os.environ.get("STAGE_TEST_PACKAGE_ROOT", str(Path(__file__).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from hardcaml_asic_flow import cli, flow_observation, execution_plan, finalization, stages
 import test_stages
+from reference_harness import observation_description
 
 
 class RelatedPresentationTest(unittest.TestCase):
@@ -44,7 +45,7 @@ class RelatedPresentationTest(unittest.TestCase):
         for args in self.positions(["observation", "describe"]):
             code, stdout, stderr = self.invoke(args)
             self.assertEqual((code, stderr), (0, ""))
-            self.assertEqual(json.loads(stdout), flow_observation.describe())
+            self.assertEqual(json.loads(stdout), observation_description(flow_observation.describe()))
         stdout = self.invoke(["observation", "describe"])[1]
         self.assertIn("CAPABILITIES", stdout)
         self.assertIn("reader_mutations", stdout)

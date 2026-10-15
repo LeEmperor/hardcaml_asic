@@ -84,9 +84,11 @@ val execute : ?initial:'checkpoint source -> ?clock:(unit -> float)
   -> ('run, 'checkpoint) t
 
 (** Python Execution.as_dict finite terminal shape. Early status is [running],
-    rather than Python's premature [completed]. No steps/diagnostic schema drift.
-    Caller supplies actual run serialization; serializer errors propagate. *)
-val to_json : run_json:('run -> Identity_json.t) -> ('run, 'checkpoint) t -> Identity_json.t
+     rather than Python's premature [completed]. No steps/diagnostic schema drift.
+     Caller supplies actual run serialization; serializer errors propagate.
+     Optional named-flow evidence is verified against this attempt and stage plan
+     before serialization; without it, historical serialization is unchanged. *)
+val to_json : ?methodology:Methodology_execution_record.t -> run_json:('run -> Identity_json.t) -> ('run, 'checkpoint) t -> Identity_json.t
 
 (** Separate explicit version-1 envelope: primary and secondary errors, lifecycle
     points, codes, signals and secondary cleanup diagnostics. Persist separately

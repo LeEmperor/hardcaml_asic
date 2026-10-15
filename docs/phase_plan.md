@@ -1,6 +1,13 @@
 # hardcaml_asic phase plan
 
-Current checkpoint: 2026-10-14 native public CLI and provider-service migration
+Current checkpoint: 2026-10-15 standalone named methodologies/profile execution
+is delivered through the catalog, preview/identity, native enforcement, historical
+reporting and headless-client milestone. Two actual synthesis profiles passed;
+see [named flows](guides/named-flows.md) and
+[their implementation record](development/project-flow-catalog-progress.md).
+Workbench application integration and broader operation composition remain open.
+
+Prior checkpoint: 2026-10-14 native public CLI and provider-service migration
 are delivered, including coarse execution, collection/reporting, postcheck,
 finalization and archives. Installed Python is limited to backend/probe/bootstrap
 resources. See the [active infrastructure refactor](#ocaml-first-flow-infrastructure).
@@ -91,24 +98,36 @@ the immediate modularized-flow concern, establishing the public active-flow
 boundary before Hardcaml Workbench integration. Finer operation rearrangement is
 not a prerequisite. See the [design record](development/project-flow-catalog.md).
 
-1. Specify and implement project-owned flow/profile catalogs, defaults, discovery,
-   description, resolved preview and fresh named-methodology execution. Preserve
-   effective settings, input identity and preview-to-launch consistency.
-2. Verify an installed headless client through discover/select/preview/run/observe/
-   report using the example project and two meaningful parameter profiles. This
-   establishes the contract Workbench can consume for its active-flow selection.
-3. Add bounded per-operation backend invocation when needed, starting with the
+**Delivered 2026-10-15:** project-owned catalogs/defaults and typed profiles;
+discover/describe/preview/fresh run; pre-bundle effective settings and provenance;
+expected-identity enforcement, immutable historical references and native reporting.
+The independent example/headless client completes discover/select/preview/run/
+observe/report/reconnect with explicit returned references, without Workbench.
+Actual selected-runtime synthesis passed `balanced` (AREA 0, 673 cells) and
+`synth_delay` (DELAY 1, 685 cells), with identical RTL/SDC and distinct inputs/plans.
+Neither result claims timing improvement or named-profile full-flow acceptance.
+The physical snapshot, final lifecycle regression fixes and timeout-interface
+extension are recorded separately in the implementation record. Final forced
+provider tests and 57 installed-prefix tests passed; normal consumer activation
+and its recorded pin remain unchanged.
+
+1. Integrate Workbench's project-scoped active-flow selection as a client of the
+   delivered public catalog/preview/execution interfaces. This is independent of
+   further provider backend modularization and does not make the provider depend
+   on Workbench. Expand typed parameters only with explicit backend contracts.
+2. Add bounded per-operation backend invocation when needed, starting with the
    validated placement sequence. Prove physical equivalence and required checks/
    gates; independent step checkpoints need separate evidence.
-4. Add configuration-changing checkpoint reuse with explicit dependency rules and
+3. Add configuration-changing checkpoint reuse with explicit dependency rules and
    lineage-aware finalization. It is separate from initial fresh profile runs.
-5. Finish useful hardware/project/resource directory organization independently of
+4. Finish useful hardware/project/resource directory organization independently of
    behavioral changes. Retained Python reference cleanup is optional maintenance.
    Repeat integration only for changed boundaries and close out the remaining
    infrastructure work without making cosmetic reorganization a Workbench gate.
 
-The whole refactor is **in progress**. No arbitrary flow files, configurable
-checkpoint branches, or general DAG scheduler are delivered by this milestone.
+The broader refactor remains **in progress**. Named fixed-recipe flows are delivered;
+arbitrary operation sequences, configuration-changing checkpoint branches and a
+general DAG scheduler are not.
 
 ## Start here
 

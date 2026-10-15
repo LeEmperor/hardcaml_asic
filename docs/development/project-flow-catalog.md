@@ -1,14 +1,19 @@
 # Project flow catalog and named methodology execution
 
-**Status:** agreed design direction, not implemented. Recorded 2026-10-14.
+**Status:** the bounded named-methodology milestone is implemented and verified
+through actual two-profile synthesis as of 2026-10-15. Recorded 2026-10-14.
+See the [current guide](../guides/named-flows.md) and
+[implementation/evidence record](project-flow-catalog-progress.md). Broader step
+composition, configuration-changing reuse and Workbench integration remain later work.
 
-**Next feature priority:** project-owned named methodologies and parameter profiles,
+**Feature priority:** project-owned named methodologies and parameter profiles,
 with a public interface suitable for Hardcaml Workbench's active-flow selection.
 Arbitrary LibreLane operation rearrangement is not a prerequisite.
 
 The [phase plan](../phase_plan.md#ocaml-first-flow-infrastructure) remains the
 implementation queue. This document records the feature boundary, ownership,
-proposed interfaces and acceptance criteria. The
+design interfaces and acceptance criteria. Discovery, preview and execution are
+standalone interfaces, not Workbench-specific features. The
 [infrastructure refactor](../flow-infrastructure-refactor.md) and its
 [implementation record](flow-infrastructure-progress.md) describe the foundation.
 
@@ -102,13 +107,14 @@ asic/
     profiles.ml
 ```
 
-Illustrative API only; these names are not delivered interfaces:
+The delivered catalog API uses checked entries and explicit default IDs:
 
 ```ocaml
 let flows =
   Flow.Catalog.create
-    ~default:{ flow = "standard"; profile = "balanced" }
-    [ standard_flow; quick_synthesis_flow ]
+    ~entries:[ standard_entry ]
+    ~default_flow:"standard"
+    ~default_profile:"balanced"
 ```
 
 The intended path is:
@@ -168,13 +174,15 @@ Reuse existing inspection, watch and reporting mechanisms, extending their recor
 with flow/profile identity where needed. A frozen resolved plan or a checked
 expected identity must prevent previewed settings from silently changing at launch.
 
-Illustrative command shapes, **not currently runnable commands**:
+The example now supplies these command shapes through its compiled project
+executable (see the guide for Dune invocations and launch options):
 
 ```sh
 project flow list --json
-project flow describe standard --profile balanced --json
-project flow plan standard --profile balanced --endpoint signoff --json
-project flow run standard --profile balanced --endpoint signoff --json
+project flow describe --flow standard --json
+project flow plan --flow standard --profile balanced --endpoint synthesis --json
+project flow run --flow standard --profile balanced --endpoint synthesis \
+  --expected-plan-identity HASH_FROM_PREVIEW --json
 ```
 
 The consumer owns the catalog entry point; the provider owns reusable semantics.
@@ -267,16 +275,16 @@ They can extend the flow-definition model later. Their implementation is not a g
 on named methodologies or Workbench's first active-flow integration. General DAG
 scheduling, automatic caching and parameter sweeps are likewise separate scope.
 
-## 9. Decisions still to specify
+## 9. Specification and remaining integration work
 
-- Concrete OCaml catalog/profile APIs and versioned wire schemas.
-- The project-facing discovery/preview/run command contract.
-- The initial supported, typed parameter subset and default/profile precedence.
-- How project resolution receives methodology settings before bundle emission.
-- Canonical plan identity and preview-to-launch consistency handling.
-- Workbench selection persistence, missing-selection UX and comparison presentation.
+The APIs, versioned wires, example command contract, initial typed parameter subset,
+pre-bundle composition, provenance and canonical plan/preview identity are now
+specified in the implementation record and public interfaces. Workbench selection
+persistence, missing-selection UX and comparison presentation remain application
+integration work. Additional parameters require their own typed semantics and
+backend evidence; operation substitutions and inherited checkpoint acceptance
+remain separate provider capabilities.
 
-These are implementation-design questions within the agreed direction. The
-priority remains **named, inspectable methodologies and fresh parameter experiments
-as the bridge to Workbench**, followed by finer backend composition and validated
-checkpoint reuse when needed.
+The direction remains **named, inspectable methodologies and fresh parameter
+experiments as the bridge to Workbench**, followed by finer backend composition
+and validated checkpoint reuse when needed.

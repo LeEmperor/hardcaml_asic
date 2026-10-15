@@ -10,10 +10,11 @@ let step_json (step : M.step) = obj
    "inputs",strings step.inputs; "outputs",strings step.outputs;
    "gates",J.array (List.map (fun (name,default) -> obj ["name",s name; "default",J.bool default]) step.gates)]
 let inventory () = J.array (List.map (fun (o : M.occurrence) -> step_json o.step) M.all)
-let setting_json (x : M.setting) = obj
-  ["name",s x.name; "kind",s x.kind;
-   "units",(match x.units with None -> J.null | Some x -> s x);
-   "default",(match x.default with None -> J.null | Some x -> s x); "pdk",J.bool x.pdk]
+let setting_json (x : M.setting) =
+  obj (["name",s x.name; "kind",s x.kind;
+        "units",(match x.units with None -> J.null | Some x -> s x);
+        "default",(match x.default with None -> J.null | Some x -> s x); "pdk",J.bool x.pdk]
+       @ match x.allowed_values with None -> [] | Some values -> ["allowed_values",strings values])
 let settings implementation = J.array (List.map setting_json (M.settings implementation))
 let validate_settings value =
   let equal a b = J.canonical a = J.canonical b in
@@ -28,8 +29,8 @@ let validate_settings value =
               List.assoc_opt "name" fields = Some (s setting.name) | _ -> false) actual in
             match matches with [one] -> equal (setting_json setting) one | _ -> false) expected
         | _ -> false) M.all then Ok ()
-    else Error "Unsupported LibreLane placement configuration type/unit/default drift"
-  | _ -> Error "Missing LibreLane placement configuration contracts"
+    else Error "Unsupported LibreLane synthesis/placement configuration type/unit/default/domain drift"
+  | _ -> Error "Missing LibreLane synthesis/placement configuration contracts"
 let validate_inventory value =
   (* Exact JSON equality also rejects missing/extra fields, types, gate/default
      drift and array reordering. Object key order is presentation-only. *)

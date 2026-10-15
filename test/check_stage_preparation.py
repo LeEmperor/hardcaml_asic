@@ -162,6 +162,9 @@ def verify(cli, consumer, package, root, fixtures, installed=False):
     count += 1
     for mode in ("classic_settings_drift", "classic_drift", "classic_missing", "tcl_failure", "host_mismatch", "protocol_version", "wrong_image", "dirty", "engine_changed", "probe_failure", "probe_timeout"):
         rejected(mode, expected_code={"probe_failure": 17, "probe_timeout": 124}.get(mode))
+    for mode in ('synth_missing', 'synth_type', 'synth_default', 'synth_domain',
+                 'synth_domain_missing', 'synth_bool_type', 'synth_bool_default'):
+        rejected(mode)
     for mode in ("fallback",):
         case, cfg, env, _ = fixture(mode)
         result = call(case, cfg, env, api=True)

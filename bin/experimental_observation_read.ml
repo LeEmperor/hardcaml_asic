@@ -31,8 +31,9 @@ let () =
     exit code
   | [_;"--help"] -> print_endline usage
   | arguments ->
-    let public=List.mem "--public-cli4" arguments and json=List.mem "--json" arguments in
-    let arguments=List.filter (fun s -> s<>"--public-cli4" && s<>"--json") arguments in
+     let public=List.mem "--public-cli4" arguments and json=List.mem "--json" arguments
+     and verbose=List.mem "--verbose" arguments in
+     let arguments=List.filter (fun s -> s<>"--public-cli4" && s<>"--json" && s<>"--verbose") arguments in
     let query_name=match arguments with _::q::_ -> q | _ -> "query" in
     let path=match arguments with _::_::p::_ -> p | _ -> "describe" in
     match query arguments with
@@ -40,7 +41,7 @@ let () =
       match query_name with
       | "describe" -> Observation_presentation.description j
       | "read-updates" -> Observation_watch.updates ~elide:true path j
-      | _ -> Observation_presentation.inspection path j)
+       | _ -> Observation_presentation.inspection ~verbose path j)
     | Error e ->
       let j=O.error_json e in
       if not public || json then emit j else Observation_presentation.error path j;

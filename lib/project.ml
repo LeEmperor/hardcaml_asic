@@ -177,22 +177,29 @@ let elaborate t ~mode =
      is distinct from the compiler-enforced private records in Resolved_flow. *)
 ;;
 
-let elaborate_for_flow ?inputs t =
+let elaborate_for_flow ?inputs ?methodology t =
   let%bind.Or_error elaborated_project = elaborate t ~mode:Elaboration_mode.Implementation in
-  Resolved_flow.resolve ?inputs elaborated_project
+  Resolved_flow.resolve ?inputs ?methodology elaborated_project
   |> Or_error.tag_s ~tag:[%message "flow resolution failed" ~project:t.name]
 ;;
 
-(* Shared private rendering sequence; reject empty inventory before construction,
+(* Shared rendering sequence; reject empty inventory before construction,
    and leave source canonicalization and synthesis-source fallback to Bundle; *)
-let render_bundle ?inputs ?(include_simulation = true) t ~source_root =
+module Rendered = struct
+  type t = { resolution : Resolved_flow.t; bundle : Bundle.t }
+  let resolution t = t.resolution
+  let bundle t = t.bundle
+end
+
+let render_result ?inputs ?methodology ?(include_simulation = true)
+    ?(catalog_inputs = []) t ~source_root =
   let open Or_error.Let_syntax in
   let%bind () =
     if List.is_empty t.source_inputs
     then Or_error.error_string "bundle emission requires nonempty source_inputs"
     else Ok ()
   in
-  let%bind resolved = elaborate_for_flow ?inputs t in
+  let%bind resolved = elaborate_for_flow ?inputs ?methodology t in
   let%bind simulation_project =
     if include_simulation
     then
@@ -200,21 +207,28 @@ let render_bundle ?inputs ?(include_simulation = true) t ~source_root =
       Some project
     else Ok None
   in
-  Bundle.render ?simulation_project ~source_root ~input_paths:t.source_inputs resolved
+  let%map bundle = Bundle.render ?simulation_project ~source_root
+    ~input_paths:(t.source_inputs @ catalog_inputs) resolved in
+  { Rendered.resolution = resolved; bundle }
+;;
+
+let render_bundle ?inputs ?methodology ?include_simulation t ~source_root =
+  render_result ?inputs ?methodology ?include_simulation t ~source_root
+  |> Or_error.map ~f:Rendered.bundle
 ;;
 
 (* Explicit empty-directory emission keeps Bundle.write's original semantics; *)
-let emit_bundle ?inputs ?include_simulation t ~source_root ~output_dir =
+let emit_bundle ?inputs ?methodology ?include_simulation t ~source_root ~output_dir =
   let open Or_error.Let_syntax in
-  let%bind bundle = render_bundle ?inputs ?include_simulation t ~source_root in
+  let%bind bundle = render_bundle ?inputs ?methodology ?include_simulation t ~source_root in
   let%map () = Bundle.write bundle ~output_dir in
   bundle
 ;;
 
 (* Project owns elaboration once; publication uses that exact rendered bundle; *)
-let emit_bundle_to_store ?inputs ?include_simulation t ~source_root ~store_dir =
+let emit_bundle_to_store ?inputs ?methodology ?include_simulation t ~source_root ~store_dir =
   let open Or_error.Let_syntax in
-  let%bind bundle = render_bundle ?inputs ?include_simulation t ~source_root in
+  let%bind bundle = render_bundle ?inputs ?methodology ?include_simulation t ~source_root in
   let%map publication = Bundle.publish bundle ~store_dir in
   bundle, publication
 ;;

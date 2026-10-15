@@ -48,6 +48,7 @@ module Setting = struct
       | Clock
       | Default
       | Override of string
+      | Methodology of Flow.Parameter.origin
     [@@deriving sexp_of]
   end
 
@@ -66,6 +67,17 @@ module Setting = struct
       ; owner : Owner.t
       }]
   ;;
+end
+
+module Effective_parameter = struct
+  type contribution =
+    { assignment : Flow.Parameter.assignment
+    ; owner : Setting.Owner.t
+    }
+  type t =
+    { winning : contribution
+    ; overridden : contribution list
+    }
 end
 
 (* One validated I/O delay in nanoseconds, the form Bundle.sdc renders;
@@ -108,7 +120,9 @@ type t =
   ; clock_hz           : float
   ; input_delays_ns    : Delay_ns.t list
   ; output_delays_ns   : Delay_ns.t list
-  ; settings           : Setting.t list
+   ; settings           : Setting.t list
+   ; methodology        : Flow.Catalog.resolved option
+   ; effective_parameters : Effective_parameter.t list
   }
 
 (* The name a port is known by at the top level; its first Hardcaml name;
@@ -690,7 +704,97 @@ let resolve_settings elaborated_project target clock_period_ns =
    [inputs] passes straight through to Target.resolve, which defaults it to
    Target.Inputs.reference_cmos5l_6x4 -> see expect tests (test/test_resolved_flow.ml);
 *)
-let resolve ?inputs elaborated_project =
+(* The catalog is already checked. Merge its complete contribution history over
+   checked project values, without inventing observed backend defaults. *)
+let merge_methodology methodology settings =
+  let open Or_error.Let_syntax in
+  let module P = Flow.Parameter in
+  let configurable =
+    Flow.Catalog.entry methodology |> Flow.Catalog.Entry.methodology
+    |> Flow.Methodology.configurable
+  in
+  let%bind inherited =
+    List.filter_map settings ~f:(fun (s : Setting.t) ->
+      match P.Key.of_string s.key with
+      | Error _ -> None
+      | Ok key when not (List.mem configurable key ~equal:P.Key.equal) -> None
+      | Ok _ ->
+        Some
+          (let%map assignment =
+             match s.value with
+             | `String v -> P.of_string_value ~key:s.key v
+             | `Bool v -> P.of_bool_value ~key:s.key v
+             | _ -> Or_error.errorf "invalid project methodology value for %s" s.key
+           in
+           { Effective_parameter.assignment; owner = s.owner }))
+    |> Or_error.combine_errors
+  in
+  let key c = P.assignment_key c.Effective_parameter.assignment in
+  let from_catalog c =
+    { Effective_parameter.assignment = P.assignment c
+    ; owner = Setting.Owner.Methodology (P.origin c)
+    }
+  in
+  let parameters = Flow.Catalog.parameters methodology in
+  let effective =
+    List.map parameters ~f:(fun p ->
+      let winning = from_catalog (P.winning p) in
+      let project = List.filter inherited ~f:(fun c -> P.Key.equal (key c) (key winning)) in
+      { Effective_parameter.winning
+      ; overridden = project @ List.map (P.overridden p) ~f:from_catalog
+      })
+    @ List.filter_map inherited ~f:(fun winning ->
+      if List.exists parameters ~f:(fun p ->
+        P.Key.equal (P.assignment_key (P.assignment (P.winning p))) (key winning))
+      then None
+      else Some { Effective_parameter.winning; overridden = [] })
+    |> List.sort ~compare:(fun a b ->
+      String.compare (P.Key.to_string (key a.winning)) (P.Key.to_string (key b.winning)))
+  in
+  let%map () =
+    Or_error.combine_errors_unit
+      (List.map effective ~f:(fun p ->
+         let k = P.Key.to_string (key p.winning) in
+         if protected_key k then Or_error.errorf "methodology conflicts with protected key %s" k
+         else Ok ()))
+  in
+  let typed_settings =
+    List.map effective ~f:(fun p ->
+      let c = p.winning in
+      let value =
+        match P.assignment_value c.assignment with
+        | Strategy s -> `String (P.Strategy.to_string s)
+        | Bool b -> `Bool b
+      in
+      { Setting.key = P.Key.to_string (key c); value; owner = c.owner })
+  in
+  let settings =
+    List.filter settings ~f:(fun s ->
+      not (List.exists typed_settings ~f:(fun t -> String.equal s.Setting.key t.key)))
+    @ typed_settings
+    |> List.sort ~compare:(fun a b -> String.compare a.Setting.key b.key)
+  in
+  settings, effective
+;;
+
+let resolve_effective_parameters ~methodology ~project_assignments =
+  let open Or_error.Let_syntax in
+  let module P = Flow.Parameter in
+  let configurable = Flow.Methodology.configurable
+    (Flow.Catalog.Entry.methodology (Flow.Catalog.entry methodology)) in
+  let%bind _ = P.check_assignments ~configurable (List.map project_assignments ~f:fst) in
+  let overrides = List.map project_assignments ~f:(fun (a, reason) ->
+    let value = match P.assignment_value a with
+      | Strategy s -> `String (P.Strategy.to_string s) | Bool b -> `Bool b in
+    { Flow.Librelane.Override.key = P.Key.to_string (P.assignment_key a); value; reason }) in
+  let%bind () = Flow.Librelane.validate { overrides } in
+  let settings = List.map overrides ~f:(fun o ->
+    { Setting.key = o.key; value = o.value; owner = Override o.reason }) in
+  let%map _, effective = merge_methodology methodology settings in
+  effective
+;;
+
+let resolve ?inputs ?methodology elaborated_project =
 
   let%bind.Or_error target =
     Target.resolve ?inputs (Elaborated_project.target elaborated_project)
@@ -721,7 +825,12 @@ let resolve ?inputs elaborated_project =
   in
 
   (* Steps 4 and 5 *)
-  let%map.Or_error settings = resolve_settings elaborated_project target clock_period_ns in
+  let%bind.Or_error settings = resolve_settings elaborated_project target clock_period_ns in
+  let%map.Or_error settings, effective_parameters =
+    match methodology with
+    | None -> Ok (settings, [])
+    | Some methodology -> merge_methodology methodology settings
+  in
   { elaborated_project
   ; target
   ; clock
@@ -729,7 +838,9 @@ let resolve ?inputs elaborated_project =
   ; clock_hz = 1e9 /. clock_period_ns
   ; input_delays_ns
   ; output_delays_ns
-  ; settings
+   ; settings
+   ; methodology
+   ; effective_parameters
   }
 ;;
 

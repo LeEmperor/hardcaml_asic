@@ -20,6 +20,7 @@ let describe () =
       "results_defaults",`Assoc ["root",`String "<caller-cwd>/_flow_results";"operations",`String "<results-root>/operations";
         "runs",`String "<results-root>/runs";"stage_observations",`String "<resolved-workspace-parent>/observations"];
       "capabilities",`Assoc [
+        "namedflow1",`Bool true;
         "json_commands",strings ["preflight";"run";"postcheck";"collect";"report";"execute";"archive";"stages";"checkpoint-inspect";
           "observation describe";"observation inspect";"observation read-updates";"observation watch";"finalize";"finalization-inspect"];
         "json_lines_commands",strings ["stages";"finalize";"observation watch"];

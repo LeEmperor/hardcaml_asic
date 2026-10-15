@@ -63,7 +63,7 @@ let rec readonly p = match (Unix.lstat p).Unix.st_kind with
   | Unix.S_DIR -> Array.iter (fun n -> readonly (Filename.concat p n)) (Sys.readdir p); Unix.chmod p 0o555
   | Unix.S_REG -> Unix.chmod p 0o444
   | _ -> fail "nonregular staging artifact"
-let publish ?(name=random_name) ?validate_runtime ~candidate ~store ~compatibility ~boundary () =
+let publish ?(name=random_name) ?validate_runtime ?before_promote ~candidate ~store ~compatibility ~boundary () =
   let owned = ref None in
   let run () =
     let candidate = checked (Checkpoint.absolute_path candidate) and store = checked (Checkpoint.absolute_path store) in
@@ -137,6 +137,8 @@ let publish ?(name=random_name) ?validate_runtime ~candidate ~store ~compatibili
     ignore (validate ());
     readonly staging;
     let checkpoint = validate () in
+    Option.iter (fun callback -> try callback staging with exn ->
+      raise (Callback_raised (exn, Printexc.get_raw_backtrace ()))) before_promote;
     promote staging location;
     owned := None;
     { path = location; checkpoint; runtime_validation } in

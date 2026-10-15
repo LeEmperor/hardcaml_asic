@@ -19,6 +19,8 @@ def run(bridge, request_path):
         def dumps(self):
             if mode == "validation_mismatch":
                 return '{"CLOCK_PERIOD":11}'
+            if os.environ.get("BRIDGE_FIXTURE_BUNDLE_CONFIG"):
+                return json.dumps(self)
             return '{"CLOCK_PERIOD":10}'
     class State:
         def __init__(self, raw):
@@ -43,6 +45,14 @@ def run(bridge, request_path):
             Path(config).with_name("constructed").touch()
             self.project = Path(config).parents[1]
             self.config = Config(CLOCK_PERIOD=10)
+            if os.environ.get("BRIDGE_FIXTURE_BUNDLE_CONFIG"):
+                self.config = Config(json.loads(Path(config).read_text()))
+            wrong = os.environ.get("BRIDGE_FIXTURE_WRONG_PARAMETER")
+            if wrong:
+                self.config[wrong] = json.loads(os.environ["BRIDGE_FIXTURE_WRONG_VALUE"])
+            missing = os.environ.get("BRIDGE_FIXTURE_MISSING_PARAMETER")
+            if missing:
+                self.config.pop(missing, None)
             if os.environ.get("BRIDGE_FIXTURE_RUNTIME_FILE"):
                 self.config["RUNTIME_FILE"] = common.Path(os.environ["BRIDGE_FIXTURE_RUNTIME_FILE"])
             self.step_objects = []
@@ -63,6 +73,8 @@ def run(bridge, request_path):
             view.write_text("module fixture; endmodule")
             raw = {"nl": str(view), "json_h": str(view), "odb": str(view), "def": str(view),
                    "metrics": {"backend_nonfinite": float("inf"), "finite": 3.5}}
+            if os.environ.get("BRIDGE_FIXTURE_FINAL_VIEWS"):
+                raw.update(gds=str(view), lef=str(view))
             return State(raw)
     librelane = types.ModuleType("librelane")
     common = types.ModuleType("librelane.common")

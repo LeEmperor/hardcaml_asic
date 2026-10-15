@@ -1,7 +1,7 @@
 module J = Identity_json
 module S = Execution_plan.Stage
 type t = { raw:J.t; plan:Execution_plan.Stage_plan.t; occurrences:J.t list;
-           references:J.t list; status:string }
+            references:J.t list; status:string; methodology:Methodology_execution_record.t option }
 let get j k = match j with J.Object xs -> Option.value (List.assoc_opt k xs) ~default:J.null | _ -> J.null
 let text = function J.String s -> s | _ -> invalid_arg "execution: expected string"
 let array = function J.Array xs -> xs | _ -> invalid_arg "execution: expected array"
@@ -10,13 +10,25 @@ let codec = function Ok x -> x | Error e -> invalid_arg (J.error_message e)
 let code = function J.Integer n -> (try int_of_string n with _ -> invalid_arg "invalid execution exit code")
   | _ -> invalid_arg "invalid execution exit code"
 let number = function J.Integer n -> float_of_string n | J.Float f -> f | _ -> invalid_arg "invalid execution duration"
+let validate_methodology_checkpoints r references =
+  let bundle = Hardcaml_asic.Methodology_plan.bundle_identity (Methodology_execution_record.plan r) in
+  List.iter (fun reference ->
+    let checkpoint = checked (Checkpoint.read (text (get reference "path"))) in
+    if get checkpoint.compatibility "bundle_identity" <> codec (J.string bundle)
+       || checkpoint.identity <> text (get reference "identity")
+       || S.to_string checkpoint.boundary <> text (get reference "boundary")
+    then invalid_arg "methodology/checkpoint bundle or publication mismatch";
+    ignore (checked (Checkpoint.validate ~compatibility:checkpoint.compatibility (text (get reference "path"))));
+    checked (Methodology_execution_service.check_resolved (Methodology_execution_record.plan r)
+      (text (get reference "path") ^ "/resolved.json"))) references
 let decode raw =
   let fields = match raw with J.Object xs -> xs | _ -> invalid_arg "expected execution object" in
-  if List.exists (fun (k,_) -> not (List.mem k ["attempt_id";"plan";"occurrences";"status";"exit_code";"artifacts"])) fields
+  if List.exists (fun (k,_) -> not (List.mem k ["attempt_id";"plan";"occurrences";"status";"exit_code";"artifacts";"methodology"])) fields
   then invalid_arg "not a segmented Runner record";
   let attempt = text (get raw "attempt_id") in
   if attempt="" || String.contains attempt '/' || String.contains attempt '\000' then invalid_arg "invalid execution attempt ID";
   let plan = checked (Execution_plan.Stage_plan.of_json (get raw "plan")) in
+  let methodology = Option.map (fun r -> checked (Methodology_execution_record.of_json ~attempt_id:attempt ~plan r)) (List.assoc_opt "methodology" fields) in
   let status = text (get raw "status") and exit = code (get raw "exit_code") in
   if not (match status with "completed"|"running" -> exit=0 | "failed" -> exit>0
     | "interrupted" -> exit>128 && exit<=255 | _ -> false) then invalid_arg "inconsistent execution status/exit";
@@ -66,8 +78,27 @@ let decode raw =
     if get o "status"=codec (J.string "completed") && not (List.exists (fun r ->
       match a.stage with Physical b -> get r "boundary"=codec (J.string (S.to_string b)) | _ -> false) references)
     then invalid_arg "completed stage missing checkpoint publication") actions occurrences;
-  {raw;plan;occurrences;references;status}
+  Option.iter (fun r -> validate_methodology_checkpoints r references) methodology;
+  {raw;plan;occurrences;references;status;methodology}
 let protect f = try Ok (f ()) with Invalid_argument s | Failure s -> Error s
+let check_methodology_checkpoints r references = protect (fun () -> validate_methodology_checkpoints r references)
 let of_json raw = protect (fun () -> decode raw)
 let read path = match Result_store.read_json path with
   | Error e -> Error (J.error_message e) | Ok j -> of_json j
+let path ~workspace ~attempt_id =
+  if attempt_id="" || String.contains attempt_id '/' || String.contains attempt_id '\000'
+  then invalid_arg "invalid execution attempt ID";
+  Filename.concat workspace ("execution-" ^ attempt_id ^ ".json")
+let available ~workspace ~attempt_id ~methodology = protect (fun () ->
+  let path = path ~workspace ~attempt_id in
+  match Unix.lstat path with
+  | exception Unix.Unix_error (Unix.ENOENT,_,_) -> None
+  | stat ->
+    if stat.Unix.st_kind <> Unix.S_REG then invalid_arg "execution reference is not a regular file";
+    (* Preparation reserves an empty file; reservation is not readable evidence. *)
+    if stat.Unix.st_size=0 then None else (
+      let record = checked (read path) in
+      if get record.raw "attempt_id" <> codec (J.string attempt_id)
+         || get record.raw "methodology" <> Methodology_execution_record.to_json methodology
+      then invalid_arg "execution reference/allocated methodology mismatch";
+      Some (Unix.realpath path)))

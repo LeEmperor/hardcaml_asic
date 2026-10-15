@@ -63,6 +63,18 @@ let sha256 contents =
 (* Pretty printed JSON plus a trailing newline; how every .json file is written; *)
 let json value = Yojson.Safe.pretty_to_string value ^ "\n"
 
+let verify_manifest_identity manifest =
+  Or_error.try_with (fun () ->
+    Plan_json.validate manifest;
+    match manifest with
+    | `Assoc fields ->
+      let identity = Plan_json.string (Plan_json.get manifest "identity") in
+      let payload = `Assoc (List.filter fields ~f:(fun (k, _) -> not (String.equal k "identity"))) in
+      if not (String.equal identity (sha256 (Yojson.Safe.to_string payload)))
+      then invalid_arg "bundle manifest identity mismatch"
+    | _ -> invalid_arg "expected bundle manifest object")
+;;
+
 (* Shorthand for a JSON string, so manifest builders read as key/value tables; *)
 let string value = `String value
 

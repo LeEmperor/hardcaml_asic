@@ -54,7 +54,7 @@ let canonical_path p = match Checkpoint.absolute_path p with Ok x -> x | Error e
 let rec resolve p =
   try Unix.realpath p with Unix.Unix_error (Unix.ENOENT,_,_) ->
     Filename.concat (resolve (Filename.dirname p)) (Filename.basename p)
-let create ?(wall_clock=Unix.gettimeofday) ?(clock=monotonic) ~root ~workspace ~checkpoint_store ~request () =
+let create ?(wall_clock=Unix.gettimeofday) ?(clock=monotonic) ?request_for_allocation ~root ~workspace ~checkpoint_store ~request () =
   let workspace = resolve (canonical_path workspace) and checkpoint_store = resolve (canonical_path checkpoint_store) in
   let parent = Unix.realpath (Filename.dirname workspace) in
   let workspace = parent ^ "/" ^ Filename.basename workspace in
@@ -73,6 +73,7 @@ let create ?(wall_clock=Unix.gettimeofday) ?(clock=monotonic) ~root ~workspace ~
       lock activity_lock;
       let t = {allocation;workspace_lock;activity_lock;clock;wall_clock;created;elapsed=0.;sequence=0;
         previous=None;current=None;closed=false;poisoned=false} in
+      let request = match request_for_allocation with None -> request | Some f -> f ~directory:allocation.directory ~attempt_id:allocation.identity in
       append t ~name:"allocated" (obj ["request",request;"workspace",s workspace;
         "checkpoint_store",s checkpoint_store;"lock_path",s (allocation.directory ^ "/writer.lock");
         "preflight_record",s (preflight_path t)]); t

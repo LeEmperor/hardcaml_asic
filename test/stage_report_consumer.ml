@@ -43,5 +43,8 @@ let () =
     end;
     let target = match Stage_report_service.select Sys.argv.(1) with Ok t -> t | Error e -> invalid_arg e in
     let report = match Stage_report_service.run target with Ok r -> r | Error e -> invalid_arg e in
+    (match report.envelope with Identity_json.Object xs when not (List.mem_assoc "methodology" xs) ->
+      assert (Stage_report_service.methodology report = Historical_methodology.not_recorded)
+    | _ -> ());
     print_endline (Identity_json.canonical report.envelope)
   with Invalid_argument s -> prerr_endline s; exit 2

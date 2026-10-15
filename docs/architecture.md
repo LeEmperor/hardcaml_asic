@@ -10,7 +10,10 @@ Start with the [stage quickstart](guides/stage-quickstart.md) or the detailed
 The [OCaml-first refactor record](development/flow-infrastructure-progress.md)
 describes the delivered native stage execution path and stage-domain layout;
 the [remaining queue](phase_plan.md#ocaml-first-flow-infrastructure) tracks the
-broader migration. Modularized flow-file/profile support remains later work.
+broader migration. Named fixed-recipe catalogs/profiles and preview/run identity
+enforcement are now delivered; see [named flows](guides/named-flows.md). These are
+standalone project/provider interfaces. Workbench integration, arbitrary operation
+composition and configuration-changing checkpoint reuse remain later work.
 The [historical architecture](archive/architecture-2026-09.md) preserves the
 original rationale; the [memory contract](reference/program-memory-contract.md)
 remains normative for `Single_port_ram`.

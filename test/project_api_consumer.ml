@@ -172,5 +172,54 @@ let () =
   assert (Or_error.is_error
             (Project.emit_bundle p ~source_root ~output_dir:(output "fallback")));
   assert (String.equal before (In_channel.read_all (output "fallback/manifest.json")));
+  (* Checked catalog profiles render concrete bundles before any publication. *)
+  let module P = Flow.Parameter in
+  let m = Flow.Methodology.create ~id:"classic" ~label:"Classic" ~description:""
+      ~backend_recipe:Librelane_classic_v1 ~endpoints:[ Synthesis ]
+      ~configurable:P.Key.all ~defaults:[] |> Or_error.ok_exn in
+  let profile id strategy = Flow.Profile.create ~id ~label:id ~description:""
+      ~assignments:[ P.synth_strategy strategy; P.synth_abc_buffering false ]
+      |> Or_error.ok_exn in
+  let entry = Flow.Catalog.Entry.create ~methodology:m
+      ~profiles:[ profile "area" Area_0; profile "delay" Delay_1 ]
+      ~default_profile:"area" |> Or_error.ok_exn in
+  let catalog = Flow.Catalog.create ~entries:[ entry ] ~default_flow:"classic"
+      ~default_profile:"area" |> Or_error.ok_exn in
+  let snapshot profile =
+    let selection = Flow.Selection.create ~flow:"classic" ~profile () |> Or_error.ok_exn in
+    Flow.Catalog.resolve ~selection catalog ~endpoint:Synthesis () |> Or_error.ok_exn in
+  let area = snapshot "area" and delay = snapshot "delay" in
+  let declaration_before = Project.describe p in
+  calls := [];
+  let area_bundle = Project.render_bundle ~methodology:area p ~source_root |> Or_error.ok_exn in
+  assert (List.equal Elaboration_mode.equal !calls [ Simulation; Implementation ]);
+  let delay_bundle = Project.render_bundle ~methodology:delay p ~source_root |> Or_error.ok_exn in
+  assert (not (String.equal (Bundle.identity area_bundle) (Bundle.identity delay_bundle)));
+  List.iter (Bundle.paths area_bundle) ~f:(fun path ->
+    if not (List.mem [ "src/config.json"; "manifest.json" ] path ~equal:String.equal)
+    then assert (Option.equal String.equal (Bundle.file area_bundle path) (Bundle.file delay_bundle path)));
+  let config bundle = Bundle.file bundle "src/config.json" |> Option.value_exn
+      |> Yojson.Safe.from_string in
+  assert (Yojson.Safe.equal (member "SYNTH_STRATEGY" (config area_bundle)) (`String "AREA 0"));
+  assert (Yojson.Safe.equal (member "SYNTH_STRATEGY" (config delay_bundle)) (`String "DELAY 1"));
+  assert (Yojson.Safe.equal (member "SYNTH_ABC_BUFFERING" (config delay_bundle)) (`Bool false));
+  assert (String.is_substring (Yojson.Safe.to_string (Bundle.manifest delay_bundle))
+            ~substring:"Methodology Profile");
+  let hash = Bundle.identity area_bundle in
+  calls := [];
+  let published = Bundle.publish area_bundle ~store_dir:(output "preview store") |> Or_error.ok_exn in
+  assert (List.is_empty !calls);
+  assert (String.equal hash (Filename.basename published.directory));
+  assert (String.equal (In_channel.read_all (Filename.concat published.directory "manifest.json"))
+            (Bundle.file area_bundle "manifest.json" |> Option.value_exn));
+  let emitted = Project.emit_bundle ~methodology:area p ~source_root
+      ~output_dir:(output "area emitted") |> Or_error.ok_exn in
+  assert (String.equal hash (Bundle.identity emitted));
+  let stored, _ = Project.emit_bundle_to_store ~methodology:delay p ~source_root
+      ~store_dir:(output "delay store") |> Or_error.ok_exn in
+  assert (String.equal (Bundle.identity stored) (Bundle.identity delay_bundle));
+  assert (Sexp.equal declaration_before (Project.describe p));
+  let legacy = Project.render_bundle p ~source_root |> Or_error.ok_exn in
+  assert (String.equal (Bundle.identity legacy) (Bundle.identity default_bundle));
   print_endline "project API: declaration, ordering, failures, overrides and whole-bundle equivalence pass"
 ;;

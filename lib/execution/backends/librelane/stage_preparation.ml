@@ -44,14 +44,21 @@ let reserve p = let fd = Unix.openfile p [Unix.O_WRONLY;Unix.O_CREAT;Unix.O_EXCL
 let now () = let t = Unix.gmtime (Unix.gettimeofday ()) in
   Printf.sprintf "%04d-%02d-%02dT%02d:%02d:%02dZ" (t.Unix.tm_year + 1900) (t.tm_mon + 1) t.tm_mday t.tm_hour t.tm_min t.tm_sec
 type t = {service:Segment_service.t;compatibility:J.t;binding:T.binding;preflight_path:string;
-  evidence_directory:string;summary_path:string;diagnostics_path:string;attempt_id:string}
-type error = {cause:Runner.error;preflight_path:string option}
+  evidence_directory:string;summary_path:string;diagnostics_path:string;attempt_id:string;
+  methodology:Methodology_execution_record.t option}
+type error = {cause:Runner.error;preflight_path:string option;methodology:Methodology_execution_record.t option}
 let installed_resources ~executable = Filename.dirname (Filename.dirname (Unix.realpath executable)) ^ "/lib/hardcaml_asic/flow/hardcaml_asic_flow"
 let prepare ~bundle ~support_tools ~pdk_root ~python ~docker ~git ~resources ~workspace ~checkpoint_store
-     ~evidence_root ~environment ?(timeout=600.) ?(probe_timeout=20.) ?initial_checkpoint ?observation ?failure_exit_code ~plan () =
+     ~evidence_root ~environment ?(timeout=600.) ?(probe_timeout=20.) ?initial_checkpoint ?observation ?failure_exit_code ?methodology ?(after_methodology_snapshot=(fun () -> ())) ~plan () =
   let preflight = ref None in
+  let published_methodology = ref None in
   let operation = ref None in
   let operation_report = ref None in
+  let named_request r = obj ["methodology",Methodology_execution_record.to_json r;
+    "plan",Execution_plan.to_json plan;"bundle",s bundle;"workspace",s workspace;
+    "checkpoint_store",s checkpoint_store;"support_tools",s support_tools;"pdk_root",s pdk_root;
+    "python",s python;"docker",s docker;"git",s git;"resources",s resources;
+    "timeout_seconds",codec (J.float timeout);"probe_timeout_seconds",codec (J.float probe_timeout)] in
   let save_report path report =
     (* Receipt references are operation-relative; retain the exact same report
        there as in the journal, including pending and terminal diagnostics. *)
@@ -66,6 +73,23 @@ let prepare ~bundle ~support_tools ~pdk_root ~python ~docker ~git ~resources ~wo
     preflight := Some report_path;
     save_report report_path (Result_store.pending_report ~bundle ());
     let evidence_directory = Filename.dirname evidence_report in
+    let attempt_id = match observation with None -> Filename.basename evidence_directory | Some w -> Observation_writer.stream_id w in
+    let methodology = Option.map (fun (expected,p) ->
+      if Option.is_some initial_checkpoint then failwith "methodology launch is fresh-only";
+      let derived = checked (Methodology_execution_service.check ~bundle ~expected p) in
+      if J.canonical (Execution_plan.to_json derived) <> J.canonical (Execution_plan.to_json plan)
+      then failwith "methodology launch plan mismatch";
+      let directory = match observation with None -> evidence_directory | Some w -> Observation_writer.directory w in
+      Methodology_execution_record.publish ~directory ~attempt_id ~expected p) methodology in
+    published_methodology := methodology;
+    Option.iter (fun _ -> after_methodology_snapshot ()) methodology;
+    let reference_fields = match methodology with None -> [] | Some r -> ["methodology",Methodology_execution_record.to_json r] in
+    let request_fields = match methodology with None -> [] | Some r ->
+      ["request",named_request r] in
+    let receipt = match receipt with J.Object xs -> obj (xs @ reference_fields @ request_fields) | _ -> assert false in
+    if methodology<>None then (
+      Result_store.save_json receipt_path receipt;
+       save_report report_path (obj (["ready",J.bool false;"issues",J.array [];"status",s "pending"] @ reference_fields @ request_fields)));
     let probe = Runtime_probe.create ~directory:evidence_directory ~environment ~timeout:probe_timeout in
     let docker = Runtime_probe.find_executable ~environment docker and git = Runtime_probe.find_executable ~environment git in
     let bundle = Unix.realpath bundle |> directory in
@@ -122,13 +146,13 @@ let prepare ~bundle ~support_tools ~pdk_root ~python ~docker ~git ~resources ~wo
     let evaluation = checked (Runtime_evidence.evaluate_observations policy ~host ~container ()) in
     let issues = Runtime_evidence.issues evaluation in
     let ready = Runtime_evidence.policy_satisfied evaluation in
-    let report = obj ["ready",J.bool ready;"issues",J.array issues;"waivers",J.array (Runtime_evidence.waivers evaluation);
+    let report = obj (["ready",J.bool ready;"issues",J.array issues;"waivers",J.array (Runtime_evidence.waivers evaluation);
       "metadata_probe",obj ["protocol_version",codec (J.integer "1");"kind",s "stage_runtime_metadata";
         "sha256",s payload_hash];
       "references",J.array references;"requested",requested;"support_tools",s support_tools;"pdk_root",s pdk_root;"python",s python;
       "execution_binding",T.to_json binding;"runtime_contract",obj ["authority",s "bundle.requested_tools";
       "normalized_policy",Runtime_contract.to_json policy;"observations",obj ["host",host;"container",container];
-      "comparisons",J.array (Runtime_evidence.comparisons evaluation)]] in
+        "comparisons",J.array (Runtime_evidence.comparisons evaluation)]] @ reference_fields @ request_fields) in
     save_report report_path report;
     if not ready then failwith "stage runtime policy/readiness mismatch";
     checked (Classic_contract.validate_inventory (get container "classic_inventory"));
@@ -158,28 +182,48 @@ let prepare ~bundle ~support_tools ~pdk_root ~python ~docker ~git ~resources ~wo
       if get ref "source" = s "Support_tools" && hash (safe_child (project ^ "/tt") (text (get ref "path"))) <> expected
       then failwith "staged support reference differs from preflight") refs references;
     if hash manifest_path <> manifest_hash || hash (project ^ "/manifest.json") <> manifest_hash then failwith "staged/original manifest changed";
-    let service = match Segment_service.create ~binding ~workspace ~project ~pdk_root ~checkpoint_store ~compatibility ~environment ~timeout
+     (* Retain the checked frozen plan, not a new baseline read from mutable config.
+        Only inventoried inputs and declared collateral are covered: tool-generated
+        requests, reports, candidates and supplementary files remain mutable. *)
+     let verify_inputs () = try
+       Option.iter (fun r ->
+         let p = Methodology_execution_record.plan r in
+         ignore (checked (Methodology_execution_service.check ~bundle:project
+           ~expected:(Hardcaml_asic.Methodology_plan.plan_identity p) p));
+         List.iter (fun evidence ->
+           if hash (text (get evidence "path")) <> text (get evidence "sha256")
+           then failwith "methodology external input changed") references;
+         List.iter2 (fun ref evidence ->
+           if get ref "source" = s "Support_tools"
+              && hash (safe_child (project ^ "/tt") (text (get ref "path"))) <> text (get evidence "sha256")
+           then failwith "methodology staged support input changed") refs references) methodology;
+       Ok () with exn -> Error (Printexc.to_string exn) in
+     let verify_resolved path = match methodology with None -> Ok () | Some r ->
+       Methodology_execution_service.check_resolved (Methodology_execution_record.plan r) path in
+     let service = match Segment_service.create ~binding ~workspace ~project ~pdk_root ~checkpoint_store ~compatibility ~environment ~timeout
+        ~verify_inputs ~verify_resolved
        ?initial_checkpoint ?failure_exit_code ~verify_runtime:(fun () -> Runtime_probe.verify probe binding) () with Ok t -> t | Error e -> raise (Runner.Callback_error e) in
     (match (Segment_service.callbacks service).validate plan with Ok () -> () | Error e -> raise (Runner.Callback_error e));
-    let attempt_id = match observation with None -> Filename.basename evidence_directory | Some w -> Observation_writer.stream_id w in
-    let summary_path = reserve (workspace ^ "/execution-" ^ attempt_id ^ ".json") in
+    let summary_path = reserve (Stage_execution_record.path ~workspace ~attempt_id) in
     let diagnostics_path = reserve (workspace ^ "/diagnostics-" ^ attempt_id ^ ".json") in
-    Result_store.save_json (evidence_directory ^ "/prepared.json") (obj ["compatibility",compatibility;"workspace",s workspace;"summary_path",s summary_path;"diagnostics_path",s diagnostics_path]);
+    Result_store.save_json (evidence_directory ^ "/prepared.json") (obj (["compatibility",compatibility;"workspace",s workspace;"summary_path",s summary_path;"diagnostics_path",s diagnostics_path] @ reference_fields @ request_fields));
     Result_store.save_json receipt_path (Result_store.finish_receipt receipt ~status:Ready ~exit_code:0 ~ended_at:(now ()) ());
-    Ok {service;compatibility;binding;preflight_path=report_path;evidence_directory;summary_path;diagnostics_path;attempt_id}
+    Ok {service;compatibility;binding;preflight_path=report_path;evidence_directory;summary_path;diagnostics_path;attempt_id;methodology}
   with exn ->
     let cause = match exn with Runner.Callback_error e -> e | _ -> Runner.failure (Printexc.to_string exn) in
     (match !preflight with None -> () | Some p ->
       (try let old = read p in
-        let detail = obj ["ready",J.bool false;"issues",J.array [s cause.message];"previous_report",old;"bundle",s bundle] in
+         let detail = obj (["ready",J.bool false;"issues",J.array [s cause.message];"previous_report",old;"bundle",s bundle]
+           @ (match !published_methodology with None -> [] | Some r ->
+             ["methodology",Methodology_execution_record.to_json r;"request",named_request r])) in
         save_report p detail;
         let receipt_path = Option.get !operation in
         if Sys.file_exists receipt_path then Result_store.save_json receipt_path
           (Result_store.finish_receipt (read receipt_path) ~status:(match cause.kind with Runner.Cancellation _ -> Interrupted | _ -> Failed)
             ~exit_code:cause.exit_code ~ended_at:(now ()) ~error:cause.message ())
        with _ -> ()));
-    Error {cause;preflight_path= !preflight}
+    Error {cause;preflight_path= !preflight;methodology= !published_methodology}
 let execute ?observation t plan =
-  let persist execution = Result_store.save_json t.summary_path (Runner.to_json ~run_json:(fun () -> J.null) execution);
+  let persist execution = Result_store.save_json t.summary_path (Runner.to_json ?methodology:t.methodology ~run_json:(fun () -> J.null) execution);
     Result_store.save_json t.diagnostics_path (Segment_service.diagnostics_json t.service execution) in
   Segment_service.execute ~persist ?lifecycle:(Option.map Observation_writer.lifecycle observation) ~attempt_id:t.attempt_id plan t.service

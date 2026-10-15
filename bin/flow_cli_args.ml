@@ -16,7 +16,7 @@ let grammar command query = match command with
   | "collect" -> ["output"], ["stdout"], "run-dir"
   | "report" -> [], [], "target"
   | "archive" -> ["output"], ["list";"force"], "run-dir"
-  | "stages" -> ["support-tools";"pdk-root";"python";"workspace";"checkpoint-store";"endpoint";"plan";"checkpoint";"timeout";"observation-store"], ["no-observation"], "bundle"
+  | "stages" -> ["support-tools";"pdk-root";"python";"workspace";"checkpoint-store";"endpoint";"plan";"methodology-plan";"expected-plan-identity";"checkpoint";"timeout";"observation-store"], ["no-observation"], "bundle"
   | "finalize" -> ["operation-store";"support-tools";"precheck-python";"testbench";"replay-trace";"testbench-top"], ["accept"], "execution"
   | "finalization-inspect" -> [], [], "attempt"
   | "checkpoint-inspect" -> ["compatibility";"restart-to"], [], "checkpoint"

@@ -25,6 +25,11 @@ open! Core
     from the legacy project adapter/operation selection below. *)
 module Stage = Flow_stage
 module Recipe = Flow_recipe
+module Catalog = Hardcaml_asic_flow_domain.Catalog
+module Methodology = Hardcaml_asic_flow_domain.Methodology
+module Profile = Hardcaml_asic_flow_domain.Profile
+module Selection = Hardcaml_asic_flow_domain.Selection
+module Parameter = Hardcaml_asic_flow_domain.Parameter
 
 [@@@ocamlformat "disable"]
 

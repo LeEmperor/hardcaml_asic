@@ -1,0 +1,7 @@
+(executable
+ (name catalog_domain_consumer)
+ (libraries hardcaml_asic.flow_domain))
+
+(rule
+ (alias runtest)
+ (action (run %{exe:catalog_domain_consumer.exe})))

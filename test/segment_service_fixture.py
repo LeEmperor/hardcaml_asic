@@ -30,6 +30,10 @@ spec = importlib.util.spec_from_file_location("native_fixture", Path(__file__).w
 fixture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fixture)
 fixture.run(bridge, path)
+mutation = os.environ.get("NAMED_INPUT_MUTATION")
+if mutation and (not os.environ.get("NAMED_MUTATE_BOUNDARY") or req["boundary"] == os.environ["NAMED_MUTATE_BOUNDARY"]):
+    target = Path(req["project"]) / mutation
+    target.write_text("changed during backend call")
 reply_path = Path(req["reply_path"])
 reply = json.loads(reply_path.read_text())
 if mode in ("exit17", "transport_record_failure_exit17") or (validating and mode == "validate_exit17"):

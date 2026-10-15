@@ -14,8 +14,10 @@ type step =
 type occurrence = private
   { occurrence_id : string; stage : Stage_id.t; operation : Operation.t; step : step }
 type setting = private
-  { name : string; kind : string; units : string option; default : string option; pdk : bool }
-(** Bounded placement-specific settings, not an exhaustive upstream config schema.
+  { name : string; kind : string; units : string option; default : string option; pdk : bool
+  ; allowed_values : string list option }
+(** Bounded synthesis/placement settings, not an exhaustive upstream config schema.
+     [allowed_values] is present only for enum domains; absent in older descriptors.
     Decimal defaults are exact text. None means no literal default (optional or
     PDK-supplied). Density None derives FP_CORE_UTIL + 5*GPL_CELL_PADDING + 10.
     Native Variable/Config validation owns type conversion and tool constraints;

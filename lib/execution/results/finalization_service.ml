@@ -21,7 +21,13 @@ let now () = let t=Unix.gettimeofday () in let sec=floor t in let tm=Unix.gmtime
 type selection={value:J.t;compatibility:J.t;publications:(string*Checkpoint.t) list}
 let selected execution =
   let value=json execution in
-  ignore (codec (J.exact_object value ~fields:["attempt_id";"plan";"occurrences";"status";"exit_code";"artifacts"]));
+  (* Historical finalization accepted reduced occurrence objects. Preserve that
+     contract when the optional named-flow field is absent; its presence requires
+     the complete new Runner record and a verified immutable snapshot. *)
+  let methodology = match value with
+    | J.Object xs when List.mem_assoc "methodology" xs ->
+      (checked (Stage_execution_record.of_json value)).methodology
+    | _ -> ignore (codec (J.exact_object value ~fields:["attempt_id";"plan";"occurrences";"status";"exit_code";"artifacts"])); None in
   let attempt=text (get value "attempt_id") in if attempt="" then invalid_arg "malformed segmented execution record";
   let plan=checked (Execution_plan.of_json (get value "plan")) in
   (match plan with Execution_plan.Stages p when Execution_plan.Stage_plan.sequence p=S.all && Execution_plan.Stage_plan.source_boundary p=None -> ()
@@ -40,6 +46,8 @@ let selected execution =
     let m=checked (Checkpoint.read path) in
     let c=match !compatibility with Some c->c | None->compatibility:=Some m.compatibility;m.compatibility in
     ignore (checked (Checkpoint.validate ~compatibility:c path));
+    Option.iter (fun r -> if get c "bundle_identity" <> s (Hardcaml_asic.Methodology_plan.bundle_identity (Methodology_execution_record.plan r))
+      then invalid_arg "methodology/checkpoint bundle mismatch") methodology;
     if m.identity<>text (get artifact "identity") || m.boundary<>boundary then invalid_arg "selected publication identity/boundary mismatch";
     if m.schema<>Checkpoint.Schema_2 then invalid_arg "finalization requires checkpoint schema 2";
     path,m) S.all (List.combine occurrences artifacts) in

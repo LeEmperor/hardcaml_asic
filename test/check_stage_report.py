@@ -101,6 +101,7 @@ def suite(cli, consumer, public=None, real=None):
         for p in [checkpoint, workspace, file]:
             j = call(p)
             assert j['contract'] == 'hardcaml-asic.report' and j['schema_version'] == 1
+            assert 'execution_file' not in j and 'methodology' not in j
             assert j['acceptance'] == j['external_postcheck'] == 'not_evaluated'
             cp = j['checkpoints'][0]
             assert cp['validation']['validation'] == 'host_only' and not cp['validation']['runtime_closure_validated']

@@ -243,7 +243,74 @@ module Reader = struct
     (match result with Error e->r.failed<-Some e|Ok _->());result
 end
 let load directory = protect (fun () -> (checked (Reader.create directory)).validated)
-let inspect directory = protect (fun () -> let p=checked (load directory) in let s,_=nonempty p in checked (snapshot p ~writer_active:(writer_active s.allocation.lock_path)))
+let inspect_with_preflight_read_hook ~after_preflight_read directory = protect (fun () ->
+  let p=checked (load directory) in
+  let s,_=nonempty p in
+  let snap=checked (snapshot p ~writer_active:(writer_active s.allocation.lock_path)) in
+  let launch = match s.allocation.request with J.Object xs -> List.assoc_opt "methodology_launch" xs | _ -> None in
+   let delivery_fields,snap = match launch with
+     | None -> [],snap
+    | Some launch ->
+      let rec evidence depth report =
+        require (depth<16) "nested preflight evidence limit";
+        match report with
+        | J.Object xs -> (match List.assoc_opt "methodology" xs with
+          | Some r -> Some (r,Option.value (List.assoc_opt "request" xs) ~default:s.allocation.request)
+          | None ->
+            require (match List.assoc_opt "request" xs with
+              | Some (J.Object request) -> not (List.mem_assoc "methodology" request)
+              | _ -> true) "missing required named preflight reference";
+            (match List.assoc_opt "previous_report" xs with
+             | Some old -> evidence (depth+1) old
+             | None ->
+               require (List.assoc_opt "ready" xs=Some (J.bool false)
+                 && (match List.assoc_opt "diagnostic" xs with
+                   | Some (J.Object diagnostic) -> List.assoc_opt "status" diagnostic=Some (str "pending")
+                   | _ -> false)) "missing required named preflight reference";
+               None))
+        | _ -> fail "invalid named preflight evidence" in
+       let read_report () = if Sys.file_exists s.allocation.preflight_record then
+           evidence 0 (codec (Result_store.read_json s.allocation.preflight_record)) else None in
+       let report = read_report () in
+       after_preflight_read ();
+       (* The reference-bearing report commits metadata, not the earlier sidecar
+          rename. Drain again across writer release and re-read the marker: an old
+          pending read must not hide a newly committed missing/corrupt snapshot. *)
+       let active = writer_active s.allocation.lock_path in
+       let p = if report=None then checked (load directory) else p in
+       let s,_ = nonempty p in
+       let report = if report=None then read_report () else report in
+      let methodology,request,execution_file = match report with
+       | None ->
+          require (s.artifacts=[] && s.runtime_record=None && s.phase<>Executing
+            && (match s.outcome with Some o -> o.status<>Completed | None -> true)
+            && (Sys.file_exists s.allocation.preflight_record
+                || not (Sys.file_exists (string (get launch "snapshot_path")))))
+           "missing required named preflight reference";
+          Historical_methodology.pending launch,s.allocation.request,J.null
+       | Some (raw,request) ->
+         let reference = match (match s.plan with
+           | None -> Methodology_execution_record.of_reference_json ~attempt_id:s.attempt_id raw
+           | Some plan -> Methodology_execution_record.of_json ~attempt_id:s.attempt_id ~plan raw) with
+           | Ok r -> r | Error e -> fail e in
+         require (get raw "snapshot_path"=get launch "snapshot_path"
+           && get raw "expected_plan_identity"=get launch "expected_plan_identity") "named allocation/reference mismatch";
+         (match Stage_execution_record.check_methodology_checkpoints reference (List.map (fun (r:reference) -> r.raw) s.artifacts) with
+          | Ok () -> () | Error e -> fail e);
+         let execution_file = match Stage_execution_record.available ~workspace:s.allocation.workspace
+           ~attempt_id:s.attempt_id ~methodology:reference with
+           | Ok p -> optional str p | Error e -> fail e in
+         (match s.outcome with Some o when o.status=Completed ->
+           require (execution_file<>J.null) "completed named execution record missing"
+          | _ -> ());
+          Historical_methodology.recorded reference,request,execution_file in
+       ["methodology",methodology;"execution_request",request;"execution_file",execution_file],
+       checked (snapshot p ~writer_active:active) in
+   match snap with J.Object xs -> obj (xs @ delivery_fields) | _ -> assert false)
+let inspect directory = inspect_with_preflight_read_hook ~after_preflight_read:(fun () -> ()) directory
+module For_testing = struct
+  let inspect = inspect_with_preflight_read_hook
+end
 let read_updates directory ~stream_id ~after = protect (fun () -> checked (updates (checked (load directory)) ~stream_id ~after))
 let describe () = codec (J.parse {|{
  "contract":"hardcaml-asic.stage-observation","schema_version":2,"supported_schema_versions":[1,2],
@@ -254,7 +321,8 @@ let describe () = codec (J.parse {|{
  "capabilities":{"inspect":true,"read_updates":true,"watch":true,"incremental_reader":true,"reader_mutations":false,"producer_event_timestamps":true,"monotonic_elapsed_seconds":true,"stage_lifecycle":true,"backend_step_lifecycle":false,"runtime_observation":false,"execution_resume":false,"request_idempotency":false,"store_wide_journal":false,"fsync_durability":false},
  "writer_policy":"nonblocking_advisory_workspace_flock; conflict=BUSY; no_takeover",
  "retention":"caller_retains_store_workspace_checkpoints_and_external_roots",
- "lost_writer":"last_recorded_facts_preserved; outer_outcome_unknown",
+  "lost_writer":"last_recorded_facts_preserved; outer_outcome_unknown",
+  "named_execution_delivery":{"execution_file":"named_inspect_and_terminal_only; absolute_validated_readable_record_or_null; empty_reservation_is_null", "validation":"strict_stage_execution_record; exact_attempt_recipe_snapshot_plan_bundle; no_runtime_or_catalog", "stored_record":"unchanged; delivery_field_is_not_persisted"},
  "watch":{"mode":"foreground_in_process_read_only","interval_seconds":0.5,"interval_rule":"positive_finite","reconnect":"stream_id_and_after_required_together","initial_replay":"validate_complete_prefix; deliver_events_after_cursor","idle":"metadata_checks_and_liveness; no_record_reparse; suppress_duplicate_status","release":"drain_committed_tail_after_inactive_or_unknown_lock","prefix_integrity":"dev_inode_size_mtime_ns_ctime_ns; trusted_local_immutable_convention","exit_codes":{"recorded_terminal":0,"writer_lost_or_unknown":3,"query_error":2,"reader_sigint":130},"delivery":"flushed_JSONL; updates_only_when_nonempty; changed_status_and_final_status"},
  "schemas":{
  "legacy_record":{"contract":"hardcaml-asic.stage-observation","schema_version":1,"stream_id":"32_lowercase_hex","sequence":"positive_integer","previous_sha256":"sha256_or_null_at_1","event":"declared_event_enum","data":"event_specific_object","sha256":"canonical_unsigned_record_sha256"},
@@ -262,7 +330,7 @@ let describe () = codec (J.parse {|{
  "event_data":{"allocated":{"request":"object","workspace":"absolute_path","checkpoint_store":"absolute_path","lock_path":"absolute_path","preflight_record":"absolute_path"},"planned":{"plan":"StagePlan_schema_2_or_3"},"prepared":{"runtime_record":"absolute_path_or_null"},"started|published|finished":{"occurrence":"occurrence","artifact":"checkpoint_reference_or_null"},"outcome":{"status":"completed|failed|interrupted","exit_code":"integer","error":"string_or_null"}},
  "occurrence":{"occurrence_id":"stream_id/action_key","action_key":"implementation.boundary","status":"unreached|running|completed|failed|interrupted","exit_code":"integer_or_null","duration_seconds":"nonnegative_number","best_effort":false,"error":"string_or_null","verdict":null},
  "checkpoint_reference":{"path":"absolute_path","identity":"manifest_sha256","boundary":"stage_name","restart_supported":"boolean","restart_targets":"stage_name_array","closure_scope":"path_bound","tested_image_id":"image_id","acceptance":"not_evaluated"},
- "inspect":{"contract":"hardcaml-asic.stage-observation","schema_version":2,"stream_id":"32_lowercase_hex","cursor":"prefix_length","state":"reduced_state","writer_active":"boolean_or_null","observation_status":"final|live|writer_lost_or_unknown","final_results":"final_results"},
+   "inspect":{"contract":"hardcaml-asic.stage-observation","schema_version":2,"stream_id":"32_lowercase_hex","cursor":"prefix_length","state":"reduced_state","writer_active":"boolean_or_null","observation_status":"final|live|writer_lost_or_unknown","final_results":"final_results","methodology":"named_only; hardcaml-asic.historical-methodology_v1_recorded|pending; absent_means_not_recorded","execution_request":"named_only; retained_native_request_or_original_allocation_request","execution_file":"named_only; absolute_validated_readable_record_or_null"},
  "reduced_state":{"attempt_id":"stream_id","request":"object","workspace":"absolute_path","checkpoint_store":"absolute_path","lock_path":"absolute_path","preflight_record":"absolute_path","phase":"preparing|executing|finished","plan":"StagePlan_or_null","occurrences":"occurrence_array","artifacts":"checkpoint_reference_array","runtime_record":"absolute_path_or_null","outcome":"outcome_data_or_null"},
  "final_results":{"physical_completion":"completed|not_recorded","checkpoint_refs":"checkpoint_reference_array","acceptance":"not_evaluated","external_postcheck":"not_evaluated"},
  "read_updates":{"contract":"hardcaml-asic.stage-observation","schema_version":2,"stream_id":"32_lowercase_hex","after":"requested_cursor","cursor":"prefix_length","events":"record_array"},

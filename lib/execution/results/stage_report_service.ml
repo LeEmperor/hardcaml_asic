@@ -37,6 +37,8 @@ let select path = protect (fun () ->
     else invalid_arg "unrecognized report target: expected run, checkpoint, stage workspace, or execution JSON"
   | _ -> invalid_arg "report target must be a directory or execution JSON file")
 type t = {envelope:J.t;human:string}
+let methodology t = match get t.envelope "methodology" with
+  | J.Null -> Historical_methodology.not_recorded | j -> j
 let known = [
   "design__instance__area",("Mapped cell area","µm²",false);
   "design__instance__count",("Mapped cells","cells",true);
@@ -128,18 +130,23 @@ let run ?(verbose=false) target = protect (fun () ->
         let key=text (get o "action_key") in str (String.sub key 15 (String.length key-15)) in
       let physical=if last=str "signoff" then str "full" else last in
       requested,physical in
-  let envelope=obj ["contract",str "hardcaml-asic.report";"schema_version",codec (J.integer "1");
+   let methodology = match execution with
+     | Some {methodology=Some r;_} -> Some (Historical_methodology.recorded r)
+     | _ -> None in
+   let envelope=obj (["contract",str "hardcaml-asic.report";"schema_version",codec (J.integer "1");
     "target",obj ["kind",str kind;"path",str path;"selected_record",selected];
     "execution",(match execution with None -> J.null | Some r -> r.raw);
     "completion",obj ["requested",requested;"physical",physical];
     "acceptance",str "not_evaluated";"external_postcheck",str "not_evaluated";
-    "checkpoints",J.array checkpoints;"diagnostics",J.array !diagnostics] in
+     "checkpoints",J.array checkpoints;"diagnostics",J.array !diagnostics] @
+     (match methodology with None -> [] | Some m -> ["methodology",m])) in
   let b=Buffer.create 2048 in
   let line fmt=Printf.ksprintf (fun s -> Buffer.add_string b (s^"\n")) fmt in
   let show = function J.Null -> "not recorded" | J.String s -> s | v -> J.canonical v in
   line "STAGE REPORT  %s" path;
   line "  requested: %s; physical completion: %s" (show requested) (show physical);
-  line "  acceptance: not_evaluated; external postcheck: not_evaluated";
+   line "  acceptance: not_evaluated; external postcheck: not_evaluated";
+   Option.iter (fun m -> Buffer.add_string b (Historical_methodology.human ~verbose m)) methodology;
   (match execution with None -> () | Some r ->
     line "EXECUTION  %s (%s, exit %s)" (text (get r.raw "attempt_id")) r.status (show (get r.raw "exit_code"));
     line "  %-28s %-14s %s" "Stage" "Status" "Duration (s)";

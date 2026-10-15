@@ -99,7 +99,8 @@ let forge (r : Resolved_flow.t) : Resolved_flow.t =
   { elaborated_project = r.elaborated_project; target = r.target; clock = r.clock;
     clock_period_ns = 0.; clock_hz = r.clock_hz;
     input_delays_ns = r.input_delays_ns; output_delays_ns = r.output_delays_ns;
-    settings = r.settings }
+    settings = r.settings; methodology = r.methodology;
+    effective_parameters = r.effective_parameters }
 """),
             "update_clock": ("t", """
 let forge (r : Resolved_flow.t) = { r with clock_period_ns = 0. }
@@ -124,6 +125,13 @@ let forge : Resolved_flow.Delay_ns.t =
 """),
             "update_delay": ("Delay_ns.t", """
 let forge (d : Resolved_flow.Delay_ns.t) = { d with maximum = -1. }
+"""),
+            "forge_effective": ("Effective_parameter.t", """
+let forge (e : Resolved_flow.Effective_parameter.t) = { e with overridden = [] }
+"""),
+            "forge_contribution": ("Effective_parameter.contribution", """
+let forge (c : Resolved_flow.Effective_parameter.contribution) =
+  { c with owner = Resolved_flow.Setting.Owner.Default }
 """),
         }
         for name, (type_name, snippet) in negatives.items():

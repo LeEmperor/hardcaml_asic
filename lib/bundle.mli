@@ -95,3 +95,7 @@ val manifest : t -> Yojson.Safe.t
 
 (** Lowercase hex SHA-256 of the manifest without its [identity] field. *)
 val identity : t -> string
+
+(** Pure verification using the existing order-sensitive bundle identity algorithm.
+    This verifies the manifest assertion, not files on disk or a source stamp. *)
+val verify_manifest_identity : Yojson.Safe.t -> unit Or_error.t

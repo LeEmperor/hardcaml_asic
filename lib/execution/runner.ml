@@ -62,7 +62,12 @@ let occurrence_json (o : occurrence) = obj ["occurrence_id",str o.occurrence_id;
   "status",str (status_name o.status); "exit_code",opt int o.exit_code;
   "duration_seconds",(if o.exit_code=None then int 0 else float o.duration_seconds);
   "best_effort",J.bool o.best_effort; "error",opt str o.error; "verdict",opt (fun s -> str (status_name s)) o.verdict]
-let to_json ~run_json t = obj (["attempt_id",str t.attempt_id; "plan",Execution_plan.to_json t.plan;
+let to_json ?methodology ~run_json t = obj ((match methodology with None -> [] | Some r ->
+  let raw = Methodology_execution_record.to_json r in
+  (match t.plan with Coarse _ -> invalid_arg "methodology reference requires stage execution"
+   | Stages plan -> (match Methodology_execution_record.of_json ~attempt_id:t.attempt_id ~plan raw with
+     | Ok _ -> () | Error e -> invalid_arg e));
+  ["methodology",raw]) @ ["attempt_id",str t.attempt_id; "plan",Execution_plan.to_json t.plan;
   "occurrences",J.array (List.map occurrence_json t.occurrences); "status",str (status_name t.status); "exit_code",int t.exit_code]
   @ (match t.run with None -> [] | Some r -> ["run",run_json r])
   @ (match t.archive with None -> [] | Some p -> ["archive",str p])

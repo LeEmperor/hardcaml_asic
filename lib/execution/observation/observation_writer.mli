@@ -4,7 +4,12 @@
     stable local parent directories. Close is idempotent and never writes events. *)
 type t
 exception Busy
+
+(** [request_for_allocation], when supplied, constructs request metadata using
+    the actual reserved directory/stream ID before the immutable allocated event.
+    It supplies metadata only, never execution authority. *)
 val create : ?wall_clock:(unit -> float) -> ?clock:(unit -> float)
+   -> ?request_for_allocation:(directory:string -> attempt_id:string -> Identity_json.t)
   -> root:string -> workspace:string -> checkpoint_store:string
   -> request:Identity_json.t -> unit -> t
 val directory : t -> string

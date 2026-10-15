@@ -7,7 +7,7 @@ let description value =
   (match get value "capabilities" with J.Object xs -> List.iter (fun (k,v) -> field k v) xs | _ -> ());
   fields value ["writer_policy","writer_policy";"retention","retention";"lost_writer","lost_writer"];
   output "\nUse --json for the complete event and response schemas."
-let inspection directory value =
+let inspection ?(verbose=false) directory value =
   let state=get value "state" in
   let plan=get state "plan" and request=get state "request" and outcome=get state "outcome" in
   let sequence=items (get plan "stages") in
@@ -25,7 +25,9 @@ let inspection directory value =
   field "observation status" (get value "observation_status");
   field "writer active" (match get value "writer_active" with J.Null -> str "unknown" | x -> x);
   field "phase" (get state "phase");
-  if get outcome "error"<>J.null then field "execution error" (get outcome "error");
+   if get outcome "error"<>J.null then field "execution error" (get outcome "error");
+    if present (get value "methodology") then
+      output (Hardcaml_asic_execution.Historical_methodology.human ~verbose (get value "methodology"));
   section "STAGES (recorded durations)";
   let occurrences=items (get state "occurrences") in
   if occurrences=[] then output "  none recorded";

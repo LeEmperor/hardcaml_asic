@@ -10,7 +10,9 @@ type t = { workspace : string; project : string; pdk_root : string; store : stri
   compatibility : J.t; runtime : runtime; environment : string list; timeout : float;
    initial : checkpoint Runner.source option; completed : (string, segment) Hashtbl.t;
    mutable transport_records : (string * string) list;
-   verify_runtime : unit -> (unit, string) result;
+    verify_runtime : unit -> (unit, string) result;
+    verify_inputs : unit -> (unit, string) result;
+    verify_resolved : string -> (unit, string) result;
    failure_exit_code : B.operation -> T.result -> int option }
 let bridge_sha256 = "e8dc9532c61010ae8699d3a6f27cdfd0d773ff3e24d06f9eefbe2d0f5b2da841"
 let protocol_sha256 = "732c05a5009f0510ec2624f7ddc03e86bb2a20cf824a9bb9c96d947bc0f2e49d"
@@ -46,7 +48,7 @@ let handoff t ~boundary path =
   if not (within t.store path) then fail "checkpoint must belong to selected mounted store";
   let manifest = checked (Checkpoint.validate ~restart:true ~restart_to:boundary ~compatibility:t.compatibility path) in
   {path; manifest}
-let create_internal ~runtime ~workspace ~project ~pdk_root ~checkpoint_store ~compatibility ~environment ~timeout ?initial_checkpoint ?(verify_runtime=(fun () -> Ok ())) ?(failure_exit_code=(fun _ _ -> None)) () = protect (fun () ->
+let create_internal ~runtime ~workspace ~project ~pdk_root ~checkpoint_store ~compatibility ~environment ~timeout ?initial_checkpoint ?(verify_runtime=(fun () -> Ok ())) ?(verify_inputs=(fun () -> Ok ())) ?(verify_resolved=(fun _ -> Ok ())) ?(failure_exit_code=(fun _ _ -> None)) () = protect (fun () ->
   if not (Float.is_finite timeout) || timeout <= 0. then fail "finite positive timeout required";
   let workspace = directory workspace and project = directory project and pdk_root = directory pdk_root
   and store = directory checkpoint_store in
@@ -64,7 +66,7 @@ let create_internal ~runtime ~workspace ~project ~pdk_root ~checkpoint_store ~co
        ~declared_ref:selected.declared_ref ~image_id:selected.image_id ~repo_digests:selected.repo_digests
        ~os:selected.os ~architecture:selected.architecture ~variant:selected.variant ~flags:selected.flags ()) <> T.to_json binding
        then fail "selected runtime differs from compatibility" | Fixture _ -> ());
-    let t = {workspace;project;pdk_root;store;compatibility;runtime;environment;timeout;initial=None;completed=Hashtbl.create 8;transport_records=[];verify_runtime;failure_exit_code} in
+     let t = {workspace;project;pdk_root;store;compatibility;runtime;environment;timeout;initial=None;completed=Hashtbl.create 8;transport_records=[];verify_runtime;verify_inputs;verify_resolved;failure_exit_code} in
   let prog = match runtime with Docker d ->
     ignore (T.docker_command d ~project:workspace ~pdk_root ~name:(T.owned_name ()) ~workdir:project
       ~pdk:(text (get (get compatibility "target") "technology")) ~uid:(Unix.getuid ()) ~gid:(Unix.getgid ()) ());
@@ -81,7 +83,7 @@ let create_internal ~runtime ~workspace ~project ~pdk_root ~checkpoint_store ~co
   {t with initial})
 let create ~binding = match binding with
   | T.Docker d -> create_internal ~runtime:(Docker d)
-   | T.Native _ -> fun ~workspace:_ ~project:_ ~pdk_root:_ ~checkpoint_store:_ ~compatibility:_ ~environment:_ ~timeout:_ ?initial_checkpoint:_ ?verify_runtime:_ ?failure_exit_code:_ () ->
+    | T.Native _ -> fun ~workspace:_ ~project:_ ~pdk_root:_ ~checkpoint_store:_ ~compatibility:_ ~environment:_ ~timeout:_ ?initial_checkpoint:_ ?verify_runtime:_ ?verify_inputs:_ ?verify_resolved:_ ?failure_exit_code:_ () ->
     Error (Runner.failure "native physical stage support is not demonstrated")
 let initial t = t.initial
 (* POSIX signal values at Runner's boundary, rather than OCaml's negative
@@ -149,6 +151,7 @@ let diagnostics_json t execution =
 let call t ~operation ~boundary ~candidate ~source tag =
   checked (t.verify_runtime ());
   verify_resources t;
+  checked (t.verify_inputs ());
   let request = checked (B.make_request ~operation ~boundary ~candidate ~project:t.project ~pdk_root:t.pdk_root
     ~request_id:tag ~tag ~reply_path:(t.project ^ "/" ^ tag ^ "-reply.json") ~bridge_sha256
     ~checkpoint:(Option.map (fun (c:checkpoint) -> c.path) source)
@@ -204,12 +207,15 @@ let call t ~operation ~boundary ~candidate ~source tag =
         | Runner.Cancellation signal -> Runner.cancellation ~signal ~secondary cause.message in
       raise (Service_error cause));
    Option.iter fail recording_error;
-  checked (t.verify_runtime ());
-  verify_resources t;
-  let reply = verify_reply request in
+   checked (t.verify_runtime ());
+   verify_resources t;
+   checked (t.verify_inputs ());
+   let reply = verify_reply request in
+   checked (t.verify_resolved (candidate ^ "/resolved.json"));
    request,process,reply,launch_path,terminal_path
 let validate t plan = protect (fun () ->
   verify_resources t;
+  checked (t.verify_inputs ());
   match plan with Execution_plan.Coarse _ -> fail "segment service requires a stage plan"
   | Execution_plan.Stages p ->
     checked (Hardcaml_asic_flow_domain.Backends.Librelane.Mapping.validate_sequence
@@ -244,7 +250,9 @@ let publish t action (_:(unit,checkpoint) Runner.context) segment = protect (fun
   let boundary = stage action in
   if segment.request.boundary <> boundary || Hashtbl.find_opt t.completed segment.request.candidate <> Some segment
      || not (T.succeeded segment.process) then fail "publication requires this service's completed call";
-  verify_resources t;
+   verify_resources t;
+   checked (t.verify_inputs ());
+   checked (t.verify_resolved (segment.request.candidate ^ "/resolved.json"));
   let reply = verify_reply segment.request in
   if B.reply_to_json reply <> B.reply_to_json segment.reply then fail "completed reply evidence changed";
   ignore (checked (Segment_report.of_json ~request:segment.request (read_json (segment.request.candidate ^ "/segment.json"))));
@@ -254,8 +262,10 @@ let publish t action (_:(unit,checkpoint) Runner.context) segment = protect (fun
     let tag = "validate-" ^ Stage.to_string boundary ^ "-" ^ random () in
     ignore (call t ~operation:B.Validate_publication ~boundary:r.boundary ~candidate:r.staging ~source:None tag);
     Checkpoint_publisher.Validated in
-  let p = match Checkpoint_publisher.publish ~candidate:segment.request.candidate ~store:t.store ~compatibility:t.compatibility
-    ~boundary ~validate_runtime () with Ok p -> p | Error e -> raise (Service_error (publisher_error e)) in
+   let p = match Checkpoint_publisher.publish ~candidate:segment.request.candidate ~store:t.store ~compatibility:t.compatibility
+     ~boundary ~validate_runtime ~before_promote:(fun staging ->
+       checked (t.verify_inputs ());
+       checked (t.verify_resolved (staging ^ "/resolved.json"))) () with Ok p -> p | Error e -> raise (Service_error (publisher_error e)) in
   Hashtbl.remove t.completed segment.request.candidate;
   {Runner.evidence=Runner.of_checkpoint_publication p; checkpoint={path=p.path;manifest=p.checkpoint}})
 let callbacks t = {Runner.validate=validate t;invoke=invoke t;publish=publish t}

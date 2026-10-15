@@ -37,7 +37,11 @@ val error_message : error -> string
     reply and matching artifact evidence. Return [Validated] only on all of those;
     return failures/interruption explicitly. No readiness may be reported by the
     callback. It must not mutate staging. Host validation and source checks repeat
-    after it. Callback exceptions propagate unchanged, after owned cleanup.
+     after it. Callback exceptions propagate unchanged, after owned cleanup.
+     [before_promote] always runs on the read-only staging directory immediately
+     before atomic promotion, including host-only closures. It may veto by raising;
+     exceptions retain their identity after owned staging cleanup. It must not
+     mutate staging. This is the caller's final input/parameter contract check.
 
     View copies are streaming and checked before/after against source/destination
     hashes and stat identities. All candidate metadata is similarly checked.
@@ -54,5 +58,6 @@ val error_message : error -> string
     adopted, overwritten or cleaned, including empty directories and symlinks. *)
 val publish : ?name:(unit -> string)
   -> ?validate_runtime:(runtime_request -> runtime_outcome)
+  -> ?before_promote:(string -> unit)
   -> candidate:string -> store:string -> compatibility:Identity_json.t
   -> boundary:Stage.t -> unit -> (publication, error) result

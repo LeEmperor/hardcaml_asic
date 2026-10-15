@@ -3,12 +3,15 @@
 **Status:** implementation in progress. Native public CLI, explicit/coarse
 execution, results/acceptance/archive services, thin Python runtime installation,
 and responsibility-oriented source organization are delivered as of 2026-10-14.
-Physical and installed-service verification are recorded separately. Finer
-per-operation execution and modularized flows remain later work. Written 2026-10-13.
+Physical and installed-service verification are recorded separately. The standalone
+[named-flow milestone](guides/named-flows.md) was subsequently delivered on
+2026-10-15; finer per-operation execution and configuration-changing checkpoint
+reuse remain later work. Written 2026-10-13.
 
-**Priority clarification (2026-10-14):** the next feature is the
+**Priority clarification (2026-10-14; first milestone delivered 2026-10-15):** the
 [project flow catalog and named methodology contract](development/project-flow-catalog.md)
-for Workbench's active-flow integration. Named profiles and fresh parameter
+establishes a standalone interface usable by Workbench's active-flow integration.
+Named profiles and fresh parameter
 experiments do not depend on arbitrary per-operation invocation. The active queue
 reflects this ordering; the original infrastructure slices below retain their scope.
 

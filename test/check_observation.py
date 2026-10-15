@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
+from reference_harness import observation_description
 
 sys.dont_write_bytecode = True
 RETAINED = [Path('/tmp/opencode/backend-v1-integration/results/observations'),
@@ -26,6 +27,8 @@ def verify(cli, consumer, flow, root, historical=False):
         r = subprocess.run([str(cli), *map(str, args)], cwd=root, env=env,
                            capture_output=True, text=True, timeout=10)
         value = json.loads(r.stdout)
+        if args[0] == 'describe' and expected is not None:
+            expected = observation_description(expected)
         if code:
             assert r.returncode == 2 and value['error']['code'] == code, (args, r, value)
         else:
@@ -365,6 +368,9 @@ def verify(cli, consumer, flow, root, historical=False):
         query('inspect', directory, code='INVALID_RECORD')
     if historical:
         for retained in RETAINED:
+            if retained.is_relative_to('/tmp/opencode') and not retained.exists():
+                print(f'SKIP optional retained observations: {retained}')
+                continue
             files = sorted(retained.glob('**/observations/*/000000000001.json'))
             if retained.name == 'observations':
                 files = sorted(retained.glob('*/000000000001.json'))

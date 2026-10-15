@@ -5,9 +5,14 @@ type step =
 type occurrence =
   { occurrence_id : string; stage : Stage_id.t; operation : Operation.t; step : step }
 type setting =
-  { name : string; kind : string; units : string option; default : string option; pdk : bool }
-let setting ?units ?default ?(pdk=false) name kind = {name;kind;units;default;pdk}
+  { name : string; kind : string; units : string option; default : string option; pdk : bool
+  ; allowed_values : string list option }
+let setting ?units ?default ?(pdk=false) ?allowed_values name kind = {name;kind;units;default;pdk;allowed_values}
 let settings implementation = match implementation with
+  | "Yosys.Synthesis" ->
+    [setting ~default:(Parameter.Strategy.to_string Parameter.Strategy.Area_0)
+       ~allowed_values:(List.map Parameter.Strategy.to_string Parameter.Strategy.all) "SYNTH_STRATEGY" "enum";
+     setting ~default:"false" "SYNTH_ABC_BUFFERING" "boolean"]
   | "OpenROAD.GlobalPlacement" | "OpenROAD.GlobalPlacementSkipIO" ->
     [setting ~units:"%" "PL_TARGET_DENSITY_PCT" "optional_decimal";
      setting ~default:"false" "PL_SKIP_INITIAL_PLACEMENT" "boolean";

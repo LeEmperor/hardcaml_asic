@@ -99,8 +99,10 @@ Historical records retain their original API names and commands.
 
 For the next modularized-flow feature and Workbench's active-flow boundary, see
 [Project flow catalog and named methodologies](development/project-flow-catalog.md).
-This is a proposed contract for discovery, profiles, preview and execution;
-named methodologies take priority over arbitrary backend-step rearrangement.
+The first standalone catalog/profile/preview/execution milestone is implemented;
+see [using named flows](guides/named-flows.md) and the
+[verification record](development/project-flow-catalog-progress.md). Workbench
+can consume these public interfaces but is not required to use them.
 
 For human-readable synthesis metrics and cell inventories from existing checkpoints
 or stage workspaces, see [checkpoint and stage reporting](development/checkpoint-reporting.md).
@@ -112,8 +114,9 @@ For the OCaml-first execution refactor and stage/step decomposition, see
 CLI, explicit/coarse execution, results/acceptance/archive services, checkpoints,
 observation and watch now use OCaml. Installed Python is limited to backend,
 probe and bootstrap resources; installed Python service imports are retired.
-Physical-flow and reduced-install evidence are recorded separately. Finer step
-execution and **modularized flow** files/profiles remain later work. The
+Physical-flow and reduced-install evidence are recorded separately. Named
+fixed-recipe flows/profiles are now delivered; finer step execution and
+configuration-changing checkpoint branches remain later work. The
 [phase plan](phase_plan.md#ocaml-first-flow-infrastructure) owns the remaining queue.
 
 | Area | Purpose | Start here |

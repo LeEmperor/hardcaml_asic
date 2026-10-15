@@ -39,6 +39,8 @@ def main():
             assert p.returncode == 0, p.stderr
         actual = json.loads(run(binary, ['--json', '--version'], root, env=env).stdout)
         expected = identity.describe()
+        # Additive native-only named-flow launch contract; CLI4 is unchanged.
+        expected['cli_contract']['capabilities']['namedflow1'] = True
         expected.update(module_dir=str(package), data_dir=str(package / 'data'),
                         toolchain_lock=str(package / 'data/toolchain.lock'),
                         package_version_source='installed-package-metadata')
@@ -54,7 +56,10 @@ def main():
             p = run(binary, args, root, env=env)
             assert p.returncode == oracle.returncode, (args, p.stderr, oracle.stderr)
             if '--json' in args:
-                assert json.loads(p.stdout) == json.loads(oracle.stdout), (args, p.stdout, oracle.stdout)
+                expected = json.loads(oracle.stdout)
+                # ENTRY already applies the exact named-only describe expectation
+                # from reference_harness; do not overwrite it with the old shape.
+                assert json.loads(p.stdout) == expected, (args, p.stdout, oracle.stdout)
             else:
                 assert p.stdout == oracle.stdout, (args, p.stdout, oracle.stdout)
             assert p.stderr == oracle.stderr, (args, p.stderr, oracle.stderr)
