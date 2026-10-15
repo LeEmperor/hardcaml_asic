@@ -274,6 +274,22 @@ Usage measured at `936e82d`:
   [consumer dependency workflow](consumer-dependency-workflow.md) to move its
   pin. This survey's grep missed the example's uses of `Technology` and
   `Flow_spec`; both became top-level aliases during step 5.
+
+  **Correction (2026-10-15, after commit `ad290d8`):** the example's OCaml needs
+  no edit, but its dependency script does. `scripts/asic_dependency.py` checks
+  provider source and installed `.mli` files at fixed flat paths
+  (`lib/elaborated_project.mli`, `lib/flow/catalog.mli`, …) and the spelling of
+  types in `project.mli`, so a development refresh of `ad290d8` was refused
+  before building. The script now selects a `flat` or `grouped` layout and
+  refuses a mix; its setup tests cover both (22 tests). That change is in the
+  example repo, not here. With it, a development refresh of `ad290d8` followed
+  by the `standard`/`balanced` named flow through signoff and accepted
+  finalization passed: six stages in 26 min 27 s, finalization 669.6 s,
+  DRC/LVS/antenna, TT precheck and the 11,429-row gate replay all pass, and
+  cells, area and slack match
+  [the previous physical evidence](../../evidence/librelane-observation/native-final-integration.json)
+  exactly. Results are under the example's
+  `_flow_results/reorg-ad290d8-20261015/` (not curated evidence).
 - **References inside this repo to modules that lose their top-level name.**
   These either get a qualified path or, if a name is wanted publicly, an alias:
 
