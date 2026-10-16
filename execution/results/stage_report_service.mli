@@ -9,6 +9,20 @@ type t = { envelope : Identity_json.t; human : string }
     Recorded failures are evidence, not report-query failures. *)
 val run : ?verbose:bool -> target -> (t, string) result
 
+(** The report's execution/checkpoint/compatibility/shared-file validation,
+    without reading optional supplementary producer reports. *)
+val validate_execution : string -> (Stage_execution_record.t, string) result
+
+(** Validate the supplied captured execution value and retain the exact
+    validated manifests. Subsequent segment reads must match their inventories. *)
+val validate_execution_snapshot : ?admit_metadata:(string -> unit) -> Identity_json.t ->
+  (Stage_execution_record.t * (string * Checkpoint.t) list, string) result
+
+(** Bind exact segment bytes to a previously validated inventory hash before
+    decoding. Also used by race regression fixtures; a final rehash alone is
+    insufficient to establish this association. *)
+val decode_segment_bytes : expected_sha256:string -> string -> (Identity_json.t, string) result
+
 (** Normalized metadata, explicitly [state=not_recorded] for historical records.
     Legacy report bytes omit the additive named-only envelope field. *)
 val methodology : t -> Identity_json.t

@@ -10,6 +10,10 @@ let choice a k choices = Option.iter (fun v -> if not (List.mem v choices) then 
 let validate a =
   let c=a.command in
   let endpoints=["synthesis";"floorplan";"placement";"cts";"routing";"signoff"] in
+  if c="inspect" then (require a ["domain";"stage"];
+    choice a "domain" ["timing";"clocks";"physical";"routing"]; choice a "stage" endpoints;
+    if Option.is_some (get a "row-id") <> Option.is_some (get a "expected-digest") then
+      error "--row-id and --expected-digest are required together");
   if List.mem c ["run";"execute"] then (require a ["stage"];choice a "stage" ["synthesis";"full"]);
   if c="postcheck" then require a ["testbench";"testbench-top"];
   if c="finalize" then require a ["operation-store"];
@@ -112,6 +116,7 @@ let route a request =
     | "postcheck" -> c,["--public-cli4"] @ fields ["run-dir";"support-tools";"pdk-root";"precheck-python";"testbench";"testbench-top";"replay-trace";"timeout"] @ presentation
     | "collect" -> c,fields ["run-dir"] @ (if flag a "stdout" then ["--stdout"] else fields ["output"]) @ presentation
     | "report" -> c,fields ["target"] @ presentation
+    | "inspect" -> c,fields ["execution";"domain";"stage";"row-id";"expected-digest"] @ presentation
     | "archive" -> c,fields ["run-dir";"output"] @ switches ["list";"force"] @ presentation
     | "checkpoint-inspect" -> c,(if flag a "json" then ["--json"] else []) @ [value a "checkpoint"] @ fields ["compatibility";"restart-to"]
     | "observation" -> "observation-read",[a.query] @ (if a.query="describe" then [] else [value a "attempt"]) @

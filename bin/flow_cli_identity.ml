@@ -21,7 +21,8 @@ let describe () =
         "runs",`String "<results-root>/runs";"stage_observations",`String "<resolved-workspace-parent>/observations"];
       "capabilities",`Assoc [
         "namedflow1",`Bool true;
-        "json_commands",strings ["preflight";"run";"postcheck";"collect";"report";"execute";"archive";"stages";"checkpoint-inspect";
+        "inspection1",`Bool true;
+        "json_commands",strings ["preflight";"run";"postcheck";"collect";"report";"inspect";"execute";"archive";"stages";"checkpoint-inspect";
           "observation describe";"observation inspect";"observation read-updates";"observation watch";"finalize";"finalization-inspect"];
         "json_lines_commands",strings ["stages";"finalize";"observation watch"];
         "observation_watch",`Assoc ["incremental",`Bool true;"interval_seconds",`Float 0.5;

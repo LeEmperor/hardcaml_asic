@@ -10,6 +10,7 @@ let fields = function J.Object xs -> xs | _ -> invalid_arg "expected metrics obj
 let json p = codec (Result_store.read_json p)
 let protect f = try Ok (f ()) with
   | Invalid_argument s | Failure s | Sys_error s -> Error s
+  | End_of_file -> Error "report source truncated while reading"
   | Unix.Unix_error (e,f,p) -> Error (f^" "^p^": "^Unix.error_message e)
 type target = Coarse_run of string | Checkpoint of string
             | Stage_execution of {path:string;selected_record:string}
@@ -62,10 +63,16 @@ let metric source (key,raw) =
         (if count then "not_a_finite_nonnegative_integer" else "nonfinite_or_nonnumeric") else "not_recorded") in
   obj ["label",str label;"raw_key",str key;"availability",(if recognized then str (if available then "available" else "unavailable") else get raw "availability");
        "value",(if not recognized || available then value else J.null);"unit",(if unit="" then J.null else str unit);
-       "reason",reason;"source",obj ["path",str source;"field",str ("metrics."^key);"raw",raw]]
-let checkpoint reference compatibility =
+        "reason",reason;"source",obj ["path",str source;"field",str ("metrics."^key);"raw",raw]]
+let decode_segment_bytes ~expected_sha256 raw = protect (fun () ->
+  if String.length raw>32*1024*1024 then invalid_arg "checkpoint segment byte bound exceeded";
+  if J.sha256_bytes raw<>expected_sha256 then invalid_arg "checkpoint segment bytes differ from validated inventory SHA-256";
+  codec (J.parse raw))
+let checkpoint ?(supplementary=true) ?(admit_metadata=(fun _ -> ())) reference compatibility =
   let path=text (get reference "path") in
+  admit_metadata (Filename.concat path "manifest.json");
   let m=checked (Checkpoint.read path) in
+  List.iter (fun name -> admit_metadata (Filename.concat path name)) ["segment.json";"state.json";"resolved.json";"closure.json"];
   let compatibility=Option.value compatibility ~default:m.compatibility in
   let m=checked (Checkpoint.validate ~compatibility path) in
   if get reference "identity"<>str m.identity || get reference "boundary"<>str (S.to_string m.boundary)
@@ -73,7 +80,14 @@ let checkpoint reference compatibility =
   let source=Filename.concat path "segment.json" in
   (* Read the inventoried bytes only after Checkpoint.validate has checked them;
      never decode backend-native metrics or guess a run directory. *)
-  let segment=json source in
+  let inventory=match List.assoc_opt "segment.json" m.files with
+    | Some record -> record | None -> invalid_arg "validated checkpoint has no segment inventory" in
+  let ic=open_in_bin source in
+  let bytes=Fun.protect ~finally:(fun () -> close_in_noerr ic) (fun () ->
+    let n=in_channel_length ic in
+    if n>32*1024*1024 then invalid_arg "checkpoint segment byte bound exceeded";
+    really_input_string ic n) in
+  let segment=checked (decode_segment_bytes ~expected_sha256:inventory.sha256 bytes) in
   if get segment "metrics"<>m.metrics then invalid_arg "checkpoint manifest/segment metrics mismatch";
   if get segment "boundary"<>str (S.to_string m.boundary) then invalid_arg "checkpoint segment boundary mismatch";
   let metrics=fields m.metrics |> List.sort (fun (a,_) (b,_) -> String.compare a b) |> List.map (metric source) in
@@ -85,11 +99,35 @@ let checkpoint reference compatibility =
     | None -> None
     | Some m -> (match get m "value" with J.Integer s -> Some (Z.of_string s)
       | J.Float f -> Some (Z.of_float f) | _ -> None) in
-  let supplementary,diagnostics=match get segment "run_dir" with
+  let supplementary,diagnostics=if not supplementary then [],[] else match get segment "run_dir" with
     | J.String run_dir when run_dir<>"" -> Yosys_stat_evidence.read ~run_dir ~mapped_count
     | _ -> [],[] in
   m,obj ["reference",reference;"validation",Checkpoint.inspection ~compatibility_source:`Recorded m;
     "metric_origin",origin;"metrics",J.array (metrics@missing);"supplementary",J.array supplementary],diagnostics
+let validate_shared_files refs =
+  List.iter (fun name ->
+    let hashes=List.map (fun r -> (checked (Checkpoint.file_record (Filename.concat (text (get r "path")) name))).sha256) refs in
+    match hashes with [] -> () | h::rest ->
+      if not (List.for_all ((=) h) rest) then invalid_arg ("selected checkpoints have different "^name)) ["closure.json";"resolved.json"]
+let validate_execution_snapshot ?(admit_metadata=(fun _ -> ())) raw = protect (fun () ->
+  (* Resource admission precedes named-record validation, which itself validates
+     its associated checkpoints. Only the subsequently decoded record is used. *)
+  (match get raw "artifacts" with J.Array refs ->
+    if List.length refs>6 then invalid_arg "execution checkpoint count bound exceeded";
+    List.iter (fun reference -> let path=text (get reference "path") in
+      List.iter (fun name -> admit_metadata (Filename.concat path name))
+        ["manifest.json";"segment.json";"state.json";"resolved.json";"closure.json"]) refs | _ -> ());
+  let record=checked (Stage_execution_record.of_json raw) in
+  let compatibility=ref None in
+  let manifests=List.map (fun reference ->
+    let manifest,_,_=checkpoint ~supplementary:false ~admit_metadata reference !compatibility in
+    compatibility:=Some manifest.Checkpoint.compatibility;
+    text (get reference "path"),manifest) record.references in
+  validate_shared_files record.references;
+  record,manifests)
+let validate_execution path = protect (fun () ->
+  let raw=json path in
+  fst (checked (validate_execution_snapshot raw)))
 let grouped s =
   let whole,fraction=match String.index_opt s '.' with
     | None -> s,"" | Some i -> String.sub s 0 i,String.sub s i (String.length s-i) in
@@ -117,10 +155,7 @@ let run ?(verbose=false) target = protect (fun () ->
   let checkpoints=List.map (fun r -> let m,p,ds=checkpoint r !compatibility in
     diagnostics:= !diagnostics@ds;
     compatibility:=Some m.Checkpoint.compatibility;p) refs in
-  List.iter (fun name ->
-    let hashes=List.map (fun r -> (checked (Checkpoint.file_record (Filename.concat (text (get r "path")) name))).sha256) refs in
-    match hashes with [] -> () | h::rest ->
-      if not (List.for_all ((=) h) rest) then invalid_arg ("selected checkpoints have different "^name)) ["closure.json";"resolved.json"];
+  validate_shared_files refs;
   let requested,physical=match execution with
     | None -> J.null,J.null
     | Some r ->

@@ -786,6 +786,11 @@ completion. **No synthetic `run.json` or `stat.json` is written.** Results are
 published only after collection and consistency checks; failed acceptance still
 keeps collected evidence and the `acceptance.txt` diagnostics.
 
+For the minimal Workbench terminal integration, consume this operation's exact
+`results.path` and verify `results.sha256`; a finalization directory is not a
+`report TARGET` target. The [terminal client contract](../development/workbench-terminal-contract.md)
+describes normalized timing, physical checks, units and declared clock intent.
+
 ### Retention
 
 Keep the operation directory, the selected checkpoints, the original path-bound
