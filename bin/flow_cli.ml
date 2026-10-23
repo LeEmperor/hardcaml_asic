@@ -9,11 +9,11 @@ let exclusive a keys required =
 let choice a k choices = Option.iter (fun v -> if not (List.mem v choices) then error ("invalid --"^k^": "^v)) (get a k)
 let validate a =
   let c=a.command in
-  let endpoints=["synthesis";"floorplan";"placement";"cts";"routing";"signoff"] in
+  let endpoints=["synthesis";"floorplan";"placement";"cts";"routing";"timing";"signoff"] in
   if c="inspect" then (require a ["domain";"stage"];
     choice a "domain" ["timing";"clocks";"physical";"routing"]; choice a "stage" endpoints;
-    if Option.is_some (get a "row-id") <> Option.is_some (get a "expected-digest") then
-      error "--row-id and --expected-digest are required together");
+    if Option.is_some (get a "row-id") && Option.is_none (get a "expected-digest") then
+      error "--row-id requires --expected-digest");
   if List.mem c ["run";"execute"] then (require a ["stage"];choice a "stage" ["synthesis";"full"]);
   if c="postcheck" then require a ["testbench";"testbench-top"];
   if c="finalize" then require a ["operation-store"];

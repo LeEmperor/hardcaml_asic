@@ -212,48 +212,7 @@ let native_entries ?(max_entries=4096) raw =
     with Query_stop message -> diagnostics:=message::!diagnostics);
   List.rev !entries,List.rev !diagnostics)
 
-let liberty_time_units raw =
-  if String.length raw>32*1024*1024 then [],["Liberty source byte bound exceeded"] else
-  match bounded_lines ~max_lines:262144 raw with Error message -> [],["Liberty "^message] | Ok lines ->
-  let declarations=ref [] and diagnostics=ref [] in
-  let diagnostic message=if List.length !diagnostics>=256 then raise (Query_stop "Liberty diagnostic bound exceeded")
-    else diagnostics:=message::!diagnostics in
-  let block=ref false and quoted=ref false and escaped=ref false in
-  let attribute=Str.regexp "^[ \t]*time_unit[ \t]*:[ \t]*\"\\([^\"]*\\)\"[ \t]*;[ \t\r]*$" in
-  (try Array.iteri (fun i line ->
-    (* Preserve line positions while ignoring comments. Quote state persists
-       across lines, so a multiline Liberty comment attribute is not evidence. *)
-    let initially_quoted= !quoted in
-    let b=Buffer.create (String.length line) and pos=ref 0 in
-    while !pos<String.length line do
-      let c=line.[!pos] in
-      let pair a b = c=a && !pos+1<String.length line && line.[!pos+1]=b in
-      if !block then (
-        if pair '*' '/' then (block:=false;Buffer.add_string b "  ";pos:= !pos+2)
-        else (Buffer.add_char b ' ';incr pos))
-      else if !quoted then (
-        Buffer.add_char b c;
-        if !escaped then escaped:=false else if c='\\' then escaped:=true else if c='"' then quoted:=false;
-        incr pos)
-      else if pair '/' '*' then (block:=true;Buffer.add_string b "  ";pos:= !pos+2)
-      else if pair '/' '/' then (Buffer.add_string b (String.make (String.length line- !pos) ' ');pos:=String.length line)
-      else (if c='"' then quoted:=true;Buffer.add_char b c;incr pos)
-    done;
-    let clean=Buffer.contents b in
-    let trimmed=String.trim clean in
-    let candidate=not initially_quoted && starts ~prefix:"time_unit" trimmed &&
-      (String.length trimmed=9 || List.mem trimmed.[9] [' ';'\t';':']) in
-    if candidate then (
-      if Str.string_match attribute clean 0 && Str.match_end ()=String.length clean then (
-        let unit=Str.matched_group 1 clean in
-        if contains unit "\\" then diagnostic (Printf.sprintf "malformed Liberty time_unit declaration line %d: escaped unit" (i+1))
-        else (
-          if List.length !declarations>=64 then raise (Query_stop "Liberty declaration bound exceeded (64)");
-          declarations:=(i+1,unit,line)::!declarations))
-      else diagnostic (Printf.sprintf "malformed Liberty time_unit declaration line %d: expected quoted unit and semicolon" (i+1)))) lines
-    with Query_stop message -> diagnostics:=message::!diagnostics);
-  if !block then diagnostics:="malformed Liberty unit evidence: unterminated block comment"::!diagnostics;
-  List.rev !declarations,List.rev !diagnostics
+let liberty_time_units = Liberty_unit_evidence.parse
 
 type source = {path:string; raw:string; hash:string; lines:string array}
 type producer = {id:string; class_id:string; occurrence:int; boundary:string; dir:string; config:J.t; config_source:source; run_dir:string}
@@ -289,9 +248,9 @@ let excerpt s first last =
 
 let run ~execution ~domain ~stage ?row_id ?expected_digest () = protect (fun () ->
   if not (List.mem domain ["timing";"clocks";"physical";"routing"]) then invalid_arg "invalid inspection domain";
-  let stages=["synthesis";"floorplan";"placement";"cts";"routing";"signoff"] in
+  let stages=["synthesis";"floorplan";"placement";"cts";"routing";"timing";"signoff"] in
   if not (List.mem stage stages) then invalid_arg "invalid inspection stage";
-  if Option.is_some row_id<>Option.is_some expected_digest then invalid_arg "row-id and expected-digest must be supplied together";
+  if Option.is_some row_id && Option.is_none expected_digest then invalid_arg "row-id requires expected-digest";
   let input_bytes=ref 0 and source_count=ref 0 in
   let admit bytes=match admit_input ~used_bytes:!input_bytes ~source_count:!source_count ~bytes with
     | Error message -> raise (Input_limit message)
@@ -323,6 +282,34 @@ let run ~execution ~domain ~stage ?row_id ?expected_digest () = protect (fun () 
   let observe s = observed:=source_ref s::!observed;s in
   let read root p=read_source ~root ~admit p |> observe in
   let attempt= text (get record.raw "attempt_id") in
+  let analysis =
+    if domain = "timing" && List.mem stage [ "timing"; "signoff" ]
+    then (
+      match
+        Timing_analysis.load
+          ~execution:execution_source.path
+          ~execution_raw:execution_source.raw
+      with
+      | Some a when get a "stage" = str stage -> Some a
+      | _ -> None)
+    else None
+  in
+  Option.iter (fun a ->
+    Timing_analysis.validate_sources a;
+    let captured=read (Filename.dirname execution_source.path) (Timing_analysis.path (text (get a "execution_file"))) in
+    if codec (J.parse captured.raw)<>a then invalid_arg "timing analysis changed between validation and capture";
+    observed:=List.rev_append (array (get a "inventory")) !observed) analysis;
+  (match row_id,expected_digest with
+   | None,Some expected -> (match analysis with
+     | Some a when get a "source_digest"=str expected -> ()
+     | _ -> invalid_arg "stale or unavailable timing analysis source_digest")
+   | _ -> ());
+  let read root path =
+    let s=read root path in
+    Option.iter (fun a ->
+      if not (List.exists (fun ref -> get ref "path"=str s.path && get ref "sha256"=str s.hash) (array (get a "inventory")))
+      then invalid_arg ("source was not captured by timing analysis: " ^ path)) analysis;
+    s in
   let provenance p s first last units = obj ["file",source_ref s;"span",obj ["first_line",int first;"last_line",int last];
     "step_id",str p.id;"occurrence",int p.occurrence;
     "boundary",str p.boundary;"carry_forward",J.bool (p.boundary<>stage);
@@ -347,11 +334,20 @@ let run ~execution ~domain ~stage ?row_id ?expected_digest () = protect (fun () 
       let detail=if row_id=Some id then excerpt s first last else "" in
       rows:={json;detail}::!rows) in
   let perform () =
-  let selected=List.filter (fun r -> get r "boundary"=str stage) record.references in
-  if selected=[] then diagnostic ("missing published checkpoint for stage "^stage);
+  let selected=if analysis<>None then [] else List.filter (fun r -> get r "boundary"=str stage) record.references in
+  if selected=[] && analysis=None then diagnostic ("missing published checkpoint for stage "^stage);
   let rank s=let rec find i=function [] -> -1 | x::xs -> if x=s then i else find (i+1) xs in find 0 stages in
   let references=if domain="physical" && selected<>[] then List.filter (fun r -> rank (text (get r "boundary"))<=rank stage) record.references else selected in
   let producers=ref [] in
+  Option.iter (fun a ->
+    if get a "status"<>str "completed" then diagnostic ("post-PNR analysis unavailable: " ^ text (get a "reason"))
+    else (
+      let p=get a "producer" in
+      let dir=text (get p "directory") and run_dir=text (get p "run_dir") in
+      let config_source=read run_dir (dir^"/config.json") in
+      let config=codec (J.parse config_source.raw) in
+      let occurrence=match get p "ordinal" with J.Integer s -> int_of_string s | _ -> invalid_arg "invalid analysis ordinal" in
+      producers:=[{id=text (get p "step_id");class_id="OpenROAD.STAPostPNR";occurrence;boundary=stage;dir;config;config_source;run_dir}])) analysis;
   let producer_count=ref 0 and corner_count=ref 0 and log_count=ref 0 in
   let relevant_class class_id =
     List.mem domain ["timing";"clocks"] && starts ~prefix:"OpenROAD.STA" class_id ||
@@ -613,9 +609,10 @@ let run ~execution ~domain ~stage ?row_id ?expected_digest () = protect (fun () 
   let identity=["contract",str "hardcaml-asic.inspection";"schema_version",int 1;
     "execution_file",str execution_source.path;"execution_sha256",str execution_source.hash;"attempt_id",str attempt;
     "domain",str domain;"stage",str stage;"source_digest",str digest;
-    "diagnostics",J.array (List.map str !diagnostics);"truncated",J.bool !truncated] in
+    "diagnostics",J.array (List.map str !diagnostics);"truncated",J.bool !truncated] @
+    (match analysis with None -> [] | Some a -> ["analysis_digest",get a "source_digest";"analysis_id",get a "analysis_id"]) in
   let result=match row_id,expected_digest with
-  | None,None -> obj (identity@["rows",J.array (List.map (fun r -> r.json) rows)])
+   | None,_ -> obj (identity@["rows",J.array (List.map (fun r -> r.json) rows)])
   | Some id,Some expected ->
     if expected<>digest then invalid_arg "stale inspection source_digest: refresh the index";
     let row=match List.find_opt (fun r -> get r.json "id"=str id) rows with Some r -> r | None -> invalid_arg "unknown inspection row_id" in

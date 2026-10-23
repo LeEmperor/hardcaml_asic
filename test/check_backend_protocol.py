@@ -89,7 +89,7 @@ def verify(emitter, package_root, root, fixture):
         check(req, p.read_reply(req), valid=True)
         assert cp.read(Path(req["candidate"]) / "segment.json")["from"] == "Checker.YosysUnmappedCells"
     previous, previous_boundary = source, "synthesis"
-    for boundary in ("floorplan", "placement", "cts", "routing", "signoff"):
+    for boundary in ("floorplan", "placement", "cts", "routing", "timing", "signoff"):
         req = request(boundary=boundary, source=previous_boundary, checkpoint=previous)
         assert call(req).returncode == 0
         check(req, p.read_reply(req), valid=True)

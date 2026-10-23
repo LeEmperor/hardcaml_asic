@@ -323,7 +323,20 @@ let resolved_of_yojson j =
            ())
     in
     (* Re-encoding is also an exact recursive schema check for asserted evidence. *)
-    if not (J.equal j (resolved_to_yojson r))
+    let encoded = resolved_to_yojson r in
+    let historical =
+      match encoded with
+      | `Assoc xs ->
+        `Assoc
+          (List.map xs ~f:(function
+            | "stages", `List stages ->
+              ( "stages"
+              , `List
+                  (List.filter stages ~f:(fun s -> not (J.equal s (`String "timing")))) )
+            | field -> field))
+      | _ -> encoded
+    in
+    if not (J.equal j encoded || J.equal j historical)
     then J.fail "snapshot differs from checked resolution";
     r)
 ;;

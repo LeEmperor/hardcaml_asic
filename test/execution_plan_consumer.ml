@@ -22,7 +22,7 @@ let () =
     | Ok p ->
       assert (P.to_json (P.of_stages p) = P.Stage_plan.to_json p);
       assert (P.actions (P.of_stages p) = P.Stage_plan.actions p);
-      assert (P.Stage_plan.schema_version p = 2);
+      assert (P.Stage_plan.schema_version p = 4);
       assert (S.equal (P.Stage_plan.endpoint p) endpoint);
       emit (P.Stage_plan.to_json p)
     | Error _ -> assert (resume && S.equal endpoint S.Synthesis)) [false; true]) S.all;
@@ -31,7 +31,7 @@ let () =
     let recipe = R.through ?initial_boundary:source endpoint in
     match resolved, recipe with
     | Ok p, Ok r ->
-      assert (P.Stage_plan.schema_version p = 3);
+      assert (P.Stage_plan.schema_version p = 4);
       assert (P.Stage_plan.source_boundary p = source);
       assert (P.Stage_plan.sequence p = R.stages r);
       let q = ok (P.Stage_plan.resolve_sequence ?initial_boundary:source (R.stages r)) in

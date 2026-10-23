@@ -13,7 +13,7 @@ let main () =
   let options = [
     "--public-cli4",Arg.Set public," Internal CLI4 delegation";
     "--request",Arg.Set_string request_json,"JSON Internal public request metadata";
-     "--plan",Arg.Set_string plan_file,"PATH Strict schema-2/3 stage plan";
+     "--plan",Arg.Set_string plan_file,"PATH Strict schema-4 stage plan (schemas 2/3 retained for reading)";
      "--methodology-plan",Arg.Set_string methodology_file,"PATH Checked frozen methodology plan (fresh only)";
      "--expected-plan-identity",Arg.Set_string expected_plan_identity,"HASH Required named-launch plan identity";
     "--bundle",Arg.Set_string bundle,"PATH Existing emitted bundle (required)";

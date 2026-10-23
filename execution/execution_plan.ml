@@ -118,7 +118,7 @@ module Stage_plan = struct
     (match Hardcaml_asic_flow_domain.Backends.Librelane.Mapping.validate_sequence
        ~initial_boundary:(Recipe.initial_boundary recipe) (Recipe.stages recipe) with
      | Ok () -> () | Error e -> invalid_arg e);
-    { schema_version = 3; recipe }
+    { schema_version = 4; recipe }
   let resolve_sequence ?initial_boundary stages =
     let* recipe = or_error (Recipe.create ?initial_boundary stages) in Ok (of_recipe recipe)
   let through ?initial_boundary endpoint =
@@ -126,7 +126,7 @@ module Stage_plan = struct
   let resolve ?(resume=false) endpoint =
     let initial_boundary = if resume then Some Stage.Synthesis else None in
     let* recipe = or_error (Recipe.through ?initial_boundary endpoint) in
-    Ok { schema_version = 2; recipe }
+    Ok (of_recipe recipe)
   let actions t =
     let rec loop previous = function
       | [] -> []
@@ -141,25 +141,61 @@ module Stage_plan = struct
           key Action.Segment (Action.Physical d.stage) name :: loop (Some key) ds in
     loop None (Recipe.declarations t.recipe)
   let to_json t =
-    if t.schema_version = 2 then obj
-      ["schema_version", integer 2; "endpoint", str (Stage.to_string (endpoint t));
-       "resume", J.bool (source_boundary t <> None)]
-    else obj ["schema_version", integer 3;
-              "stages", strings (List.map Stage.to_string (sequence t));
-              "initial_boundary", optional_stage (source_boundary t)]
+    if t.schema_version = 2
+    then
+      obj
+        [ "schema_version", integer 2
+        ; "endpoint", str (Stage.to_string (endpoint t))
+        ; "resume", J.bool (source_boundary t <> None)
+        ]
+    else
+      obj
+        [ "schema_version", integer t.schema_version
+        ; "stages", strings (List.map Stage.to_string (sequence t))
+        ; "initial_boundary", optional_stage (source_boundary t)
+        ]
+  ;;
+
   let of_json value =
     match value with
-    | J.Object f when List.assoc_opt "schema_version" f = Some (integer 3) ->
-      let* f = fields ["schema_version"; "stages"; "initial_boundary"] value in
+    | J.Object f
+      when List.mem
+             (List.assoc_opt "schema_version" f)
+             [ Some (integer 3); Some (integer 4) ] ->
+      let* f = fields [ "schema_version"; "stages"; "initial_boundary" ] value in
       let* stages = array stage (get f "stages") in
       let* initial_boundary = boundary (get f "initial_boundary") in
-      resolve_sequence ?initial_boundary stages
+      if get f "schema_version" = integer 4
+      then resolve_sequence ?initial_boundary stages
+      else (
+        let* recipe = or_error (Recipe.decode_legacy ?initial_boundary stages) in
+        Ok { schema_version = 3; recipe })
     | _ ->
-      let* f = fields ["schema_version"; "endpoint"; "resume"] value in
-      let* () = match get f "schema_version" with J.Integer "2" -> Ok () | _ -> Error "expected integer schema 2 or 3" in
+      let* f = fields [ "schema_version"; "endpoint"; "resume" ] value in
+      let* () =
+        match get f "schema_version" with
+        | J.Integer "2" -> Ok ()
+        | _ -> Error "expected integer schema 2 or 3"
+      in
       let* endpoint = stage (get f "endpoint") in
+      let* () =
+        if endpoint = Stage.Timing
+        then Error "timing requires recipe schema 4"
+        else Ok ()
+      in
       let* resume = boolean (get f "resume") in
-      resolve ~resume endpoint
+      let initial_boundary = if resume then Some Stage.Synthesis else None in
+      let names =
+        List.filter
+          (fun s ->
+            s <> Stage.Timing
+            && Stage.compare s endpoint <= 0
+            && ((not resume) || s <> Stage.Synthesis))
+          Stage.all
+      in
+      let* recipe = or_error (Recipe.decode_legacy ?initial_boundary names) in
+      Ok { schema_version = 2; recipe }
+  ;;
 end
 
 type t = Coarse of Coarse.t | Stages of Stage_plan.t

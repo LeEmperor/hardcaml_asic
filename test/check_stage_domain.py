@@ -12,7 +12,7 @@ import tempfile
 
 def verify(consumer, inspector, payload, selected=False):
     inventory = json.loads(subprocess.check_output([consumer], text=True))
-    plan = {"schema_version": 3, "stages": ["synthesis", "floorplan", "placement", "cts", "routing", "signoff"],
+    plan = {"schema_version": 4, "stages": ["synthesis", "floorplan", "placement", "cts", "routing", "timing", "signoff"],
             "initial_boundary": None}
     discovery = json.loads(subprocess.run([inspector], input=json.dumps(plan), text=True,
         capture_output=True, check=True).stdout)
@@ -20,12 +20,12 @@ def verify(consumer, inspector, payload, selected=False):
     flat = [o for stage in plan["stages"] for o in groups[stage]]
     assert [o["backend"] for o in flat] == inventory
     assert discovery["operation_sequence"] == flat
-    assert len(inventory) == 80 and [len(groups[s]) for s in plan["stages"]] == [6, 7, 21, 1, 12, 33]
+    assert len(inventory) == 80 and [len(groups[s]) for s in plan["stages"]] == [6, 7, 21, 1, 12, 11, 22]
     assert len({o["occurrence_id"] for o in flat}) == 80
     for i, stage in enumerate(plan["stages"]):
         cap = discovery["capabilities"][stage]
         assert groups[stage][-1]["backend"]["id"] == cap["endpoint"]
-        assert cap["successor"] == (None if i == 5 else groups[plan["stages"][i+1]][0]["backend"]["id"])
+        assert cap["successor"] == (None if i == 6 else groups[plan["stages"][i+1]][0]["backend"]["id"])
         assert all(o["execution_evidence"] is None and not o["durable_checkpoint"] for o in groups[stage])
     sta = [o for o in flat if o["operation"] == "timing.mid_pnr"]
     assert [o["backend"]["id"] for o in sta] == ["OpenROAD.STAMidPNR", *[f"OpenROAD.STAMidPNR-{n}" for n in range(1,4)]]
@@ -90,9 +90,9 @@ def verify(consumer, inspector, payload, selected=False):
         code = payload.read_text()
         # The consumer's selected host and exact bound image, network disabled.
         host_python = Path('/home/wayne/devel/jane/hardcaml_asic_example/_flow_tools/.venv/bin/python')
-        host = json.loads(subprocess.check_output([host_python, '-I', '-B', '-c', code, 'container'], text=True))
-        selected = json.loads(subprocess.check_output(['docker', 'run', '--rm', '--network', 'none',
-            '--entrypoint', 'python3', image, '-I', '-B', '-c', code, 'container'], text=True))
+        host = json.loads(subprocess.check_output([host_python, '-I', '-B', '-c', code, 'container'], text=True, timeout=30))
+        selected = json.loads(subprocess.check_output(['docker', 'run', '--rm', '--network', 'none', '--cpus', '6',
+            '--entrypoint', 'python3', image, '-I', '-B', '-c', code, 'container'], text=True, timeout=30))
         for observed in (host, selected):
             actual = observed['metadata']['classic_inventory']
             result = subprocess.run([consumer, 'validate'], input=json.dumps(actual), text=True, capture_output=True)
@@ -106,7 +106,7 @@ def verify(consumer, inspector, payload, selected=False):
               f"Yosys.Synthesis enum/type/default/domain and boolean/default verified; "
               f"container LibreLane {selected['metadata']['librelane_version']}, "
               f"Python {selected['metadata']['python_version']}; payload sha256 {hashlib.sha256(payload.read_bytes()).hexdigest()}")
-    print(f"six exact groups, 80 unique occurrences, shared STA, {len(negatives)} inventory, 5 placement and {len(synth_negatives)} synthesis drift negatives passed")
+    print(f"seven exact groups, 80 unique occurrences, shared STA, {len(negatives)} inventory, 5 placement and {len(synth_negatives)} synthesis drift negatives passed")
 
 
 def main():

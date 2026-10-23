@@ -30,11 +30,25 @@ let selected execution =
     | _ -> ignore (codec (J.exact_object value ~fields:["attempt_id";"plan";"occurrences";"status";"exit_code";"artifacts"])); None in
   let attempt=text (get value "attempt_id") in if attempt="" then invalid_arg "malformed segmented execution record";
   let plan=checked (Execution_plan.of_json (get value "plan")) in
-  (match plan with Execution_plan.Stages p when Execution_plan.Stage_plan.sequence p=S.all && Execution_plan.Stage_plan.source_boundary p=None -> ()
-   | _->invalid_arg "finalization requires a complete fresh six-stage execution");
+  let stages =
+    match plan with
+    | Execution_plan.Stages p ->
+      let expected =
+        if Execution_plan.Stage_plan.schema_version p = 4
+        then S.all
+        else List.filter (fun s -> s <> S.Timing) S.all
+      in
+      if Execution_plan.Stage_plan.sequence p <> expected
+         || Execution_plan.Stage_plan.source_boundary p <> None
+      then invalid_arg "finalization requires a complete fresh recipe";
+      expected
+    | _ -> invalid_arg "finalization requires a complete fresh stage recipe"
+  in
   if get value "status"<>s "completed" || get value "exit_code"<>int "0" then invalid_arg "implementation execution did not complete";
   let occurrences=array (get value "occurrences") and artifacts=array (get value "artifacts") in
-  if List.length occurrences<>6 || List.length artifacts<>6 then invalid_arg "missing selected stage evidence";
+  if List.length occurrences <> List.length stages
+     || List.length artifacts <> List.length stages
+  then invalid_arg "missing selected stage evidence";
   let compatibility=ref None in
   let publications=List.map2 (fun boundary (occurrence,artifact) ->
     let name=S.to_string boundary in
@@ -50,7 +64,7 @@ let selected execution =
       then invalid_arg "methodology/checkpoint bundle mismatch") methodology;
     if m.identity<>text (get artifact "identity") || m.boundary<>boundary then invalid_arg "selected publication identity/boundary mismatch";
     if m.schema<>Checkpoint.Schema_2 then invalid_arg "finalization requires checkpoint schema 2";
-    path,m) S.all (List.combine occurrences artifacts) in
+     path,m) stages (List.combine occurrences artifacts) in
   List.iter (fun name -> let hashes=List.map (fun (p,_)->hash (p^"/"^name)) publications in
     if not (List.for_all ((=) (List.hd hashes)) hashes) then invalid_arg "selected stages have different configuration/closure") ["closure.json";"resolved.json"];
   {value;compatibility=Option.get !compatibility;publications}
@@ -91,7 +105,8 @@ let run ~execution ~store ~environment ?(accept=false) ?support_tools ?precheck_
     Option.iter (fun f->f directory a.identity) allocated; check_cancel ();
     let selected_=selected execution in let c=selected_.compatibility and pubs=selected_.publications in
     ignore (codec (J.exact_object c ~fields:["bundle_identity";"target";"requested_tools";"binding";"bridge_sha256";"project";"pdk_root"]));
-    let execution_hash=hash execution in
+     let execution_hash=hash execution in
+     Option.iter (set "timing_analysis") (Timing_analysis.load_file ~expected_record:selected_.value execution);
     set "execution" (obj ["path",s (Unix.realpath execution);"sha256",s execution_hash;"attempt_id",get selected_.value "attempt_id"]);
     let binding=checked (T.of_json (get c "binding")) in
     set "binding" (T.to_json binding);

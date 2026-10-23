@@ -1,0 +1,24 @@
+(rule
+ (alias runtest)
+ (deps
+  check.py
+  ../check_stage_preparation.py
+  ../stage_preparation_engine.py
+  ../segment_service_engine.py
+  ../segment_service_fixture.py
+  ../bridge_protocol_fixture.py
+  ../../bin/experimental_report.exe
+  ../../bin/experimental_inspect.exe
+  ../../bin/flow_cli.exe
+  ../finalization_consumer.exe
+  ../../bin/experimental_plan_inspect.exe
+  (source_tree ../../flow/hardcaml_asic_flow))
+ (action
+  (run
+   python3
+   -B
+   %{dep:check.py}
+   --cli
+   %{exe:../../bin/experimental_stages.exe}
+   --consumer
+   %{exe:../stage_preparation_consumer.exe})))

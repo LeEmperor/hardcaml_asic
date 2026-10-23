@@ -59,7 +59,11 @@ let request_of_json value =
   let valid_source = match operation, checkpoint, source_boundary with
     | Validate_publication, None, None -> true
     | Execute_segment, None, None -> boundary = Stage.Synthesis
-    | Execute_segment, Some _, Some source -> List.mem boundary (Stage.capability source).restart_targets
+    | Execute_segment, Some _, Some source ->
+      (* Historical wire evidence remains decodable. The new bridge and
+         checkpoint compatibility independently reject this old transition. *)
+      (source = Stage.Routing && boundary = Stage.Signoff)
+      || List.mem boundary (Stage.capability source).restart_targets
     | _ -> false in
   if not valid_source then Error "unsupported backend source transition"
   else if String.contains tag '/' || tag = "." || tag = ".." then Error "invalid backend tag"

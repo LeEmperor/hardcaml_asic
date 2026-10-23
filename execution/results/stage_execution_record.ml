@@ -65,7 +65,20 @@ let decode raw =
   List.iter (fun r ->
     let boundary=match S.of_string (text (get r "boundary")) with Ok b -> b | Error _ -> invalid_arg "invalid reference boundary" in
     let reference=checked (Runner.reference ~boundary ~path:(text (get r "path")) ~identity:(text (get r "identity"))) in
-    if J.canonical r<>J.canonical (Runner.reference_json reference) then invalid_arg "invalid checkpoint reference capabilities";
+    let expected = Runner.reference_json reference in
+    let expected =
+      if Execution_plan.Stage_plan.schema_version plan < 4 && boundary = S.Routing
+      then (
+        match expected with
+        | J.Object xs ->
+          codec
+            (J.object_
+               (("restart_targets", J.array [ codec (J.string "signoff") ])
+                :: List.remove_assoc "restart_targets" xs))
+        | _ -> assert false)
+      else expected
+    in
+    if J.canonical r<>J.canonical expected then invalid_arg "invalid checkpoint reference capabilities";
     let rec locate i = if i>=List.length actions then invalid_arg "checkpoint reference order/association mismatch"
       else let a=List.nth actions i in
         if a.stage=Execution_plan.Action.Physical boundary then i else locate (i+1) in

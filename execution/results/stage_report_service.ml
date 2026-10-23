@@ -23,7 +23,8 @@ let select path = protect (fun () ->
     let marker n=List.mem n names in
     let coarse=marker "run.json" in
     let checkpoint=marker "manifest.json" || marker "segment.json" || marker "state.json" || marker "closure.json" in
-    let executions=List.filter (fun n -> String.starts_with ~prefix:"execution-" n && String.ends_with ~suffix:".json" n) names |> List.sort String.compare in
+    let executions=List.filter (fun n -> String.starts_with ~prefix:"execution-" n && String.ends_with ~suffix:".json" n
+      && not (String.ends_with ~suffix:".timing-analysis.json" n)) names |> List.sort String.compare in
     let observation=marker "000000000001.json" || marker "attempt.json" || marker "events.jsonl" || marker "snapshot.json" in
     let count=List.length (List.filter Fun.id [coarse;checkpoint;executions<>[];observation]) in
     if count>1 then invalid_arg "conflicting report target markers (run/checkpoint/execution/observation)";
@@ -113,7 +114,7 @@ let validate_execution_snapshot ?(admit_metadata=(fun _ -> ())) raw = protect (f
   (* Resource admission precedes named-record validation, which itself validates
      its associated checkpoints. Only the subsequently decoded record is used. *)
   (match get raw "artifacts" with J.Array refs ->
-    if List.length refs>6 then invalid_arg "execution checkpoint count bound exceeded";
+    if List.length refs>7 then invalid_arg "execution checkpoint count bound exceeded";
     List.iter (fun reference -> let path=text (get reference "path") in
       List.iter (fun name -> admit_metadata (Filename.concat path name))
         ["manifest.json";"segment.json";"state.json";"resolved.json";"closure.json"]) refs | _ -> ());
@@ -174,7 +175,9 @@ let run ?(verbose=false) target = protect (fun () ->
     "completion",obj ["requested",requested;"physical",physical];
     "acceptance",str "not_evaluated";"external_postcheck",str "not_evaluated";
      "checkpoints",J.array checkpoints;"diagnostics",J.array !diagnostics] @
-     (match methodology with None -> [] | Some m -> ["methodology",m])) in
+      (match methodology with None -> [] | Some m -> ["methodology",m]) @
+      (match execution with None -> [] | Some r ->
+        match Timing_analysis.load_file ~expected_record:r.raw (text selected) with None -> [] | Some analysis -> ["timing_analysis",analysis])) in
   let b=Buffer.create 2048 in
   let line fmt=Printf.ksprintf (fun s -> Buffer.add_string b (s^"\n")) fmt in
   let show = function J.Null -> "not recorded" | J.String s -> s | v -> J.canonical v in
@@ -221,5 +224,20 @@ let run ?(verbose=false) target = protect (fun () ->
          line "  %-52s %s" (if String.exists (fun c -> Char.code c<32 || c='"' || c='\\') name then J.canonical (str name) else name) (readable value)) ranked;
        if not verbose && List.length types>10 then line "  ... %d more types; use --verbose or --json for all types" (List.length types-10)) supplements | _ -> ())) checkpoints;
    List.iter (fun d -> line "DIAGNOSTIC  %s: %s" (text (get d "path")) (text (get d "message"))) !diagnostics;
-  if checkpoints=[] then line "CHECKPOINTS  none published";
-  {envelope;human=Buffer.contents b})
+   if checkpoints=[] then line "CHECKPOINTS  none published";
+   (match get envelope "timing_analysis" with
+    | J.Null -> ()
+    | analysis ->
+      line
+        "POST-PNR STA ANALYSIS  %s; producer stage: %s; timing goal: %s"
+        (show (get analysis "status"))
+        (show (get analysis "stage"))
+        (show (get analysis "timing_goal"));
+      line
+        "  Native STA runtime (s): %s; full segment duration is listed in EXECUTION"
+        (show (get (get analysis "duration") "seconds"));
+      line
+        "  Exact source: %s; digest: %s"
+        (show (get analysis "execution_file"))
+        (show (get analysis "source_digest")));
+   {envelope;human=Buffer.contents b})

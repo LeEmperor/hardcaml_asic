@@ -37,7 +37,8 @@ def run(bridge, request_path):
     ids = ["Yosys.Synthesis", "Checker.YosysUnmappedCells", "OpenROAD.Floorplan",
            "OpenROAD.DumpRCValues", "OpenROAD.DetailedPlacement", "OpenROAD.CTS",
            "OpenROAD.STAMidPNR-1", "OpenROAD.DetailedRouting",
-           "Odb.RemoveRoutingObstructions", "Misc.ReportManufacturability"]
+           "Odb.RemoveRoutingObstructions", "OpenROAD.FillInsertion", "OpenROAD.RCX",
+           "OpenROAD.STAPostPNR", "OpenROAD.IRDropReport", "Misc.ReportManufacturability"]
     class Classic:
         Steps = [types.SimpleNamespace(id=id_) for id_ in ids]
         gating_config_vars = {"*": ["CLOCK_PERIOD"]}
@@ -66,9 +67,41 @@ def run(bridge, request_path):
                 os.kill(os.getpid(), signal.SIGTERM)
             selected = ids[(ids.index(frm) if frm else 0):ids.index(to) + 1]
             self.step_objects = [types.SimpleNamespace(id=id_) for id_ in selected]
-            self.run_dir = str(self.project / "runs" / tag)
+            self.run_dir = str(self.project / "src/runs" / tag)
             output = Path(self.run_dir)
             output.mkdir(parents=True)
+            sta_mode = os.environ.get("STA_COMPLETION_MODE")
+            if sta_mode and to == "OpenROAD.STAPostPNR":
+                producer = output / "11-openroad-stapostpnr"
+                corner = producer / "typ"
+                corner.mkdir(parents=True)
+                (producer / "config.json").write_text(json.dumps({
+                    "meta": {"step": "OpenROAD.STAPostPNR", "librelane_version": "3.1.0.dev3"},
+                    "STA_CORNERS": ["typ"]}))
+                (producer / "state_in.json").write_text('{"metrics":{}}')
+                lib = corner / "generated.lib"
+                lib.write_text('library (fixture) {\n time_unit : "1ns";\n}\n')
+                metrics = {"timing__setup__ws__corner:typ": 1.25,
+                           "timing__hold__ws__corner:typ": 0.25,
+                           "timing__setup_vio__count__corner:typ": 0,
+                           "timing__hold_vio__count__corner:typ": 0}
+                (corner / "sta.log").write_text("\n".join(
+                    ("%OL_METRIC_I" if "count" in key else "%OL_METRIC_F") + f" {key} {value}"
+                    for key, value in metrics.items()) + "\n")
+                for report in ("max.rpt", "min.rpt"):
+                    (corner / report).write_text("Startpoint: input\nEndpoint: output\nPath Group: clk\nPath Type: max\n 1.0 slack (MET)\n")
+                (producer / "state_out.json").write_text(json.dumps({"metrics": metrics, "lib": {"typ": str(lib)}}))
+                (producer / "runtime.txt").write_text("00:00:01.575")
+                (self.project / "sta-completed").touch()
+                if sta_mode == "timing_failure":
+                    raise ValueError("Timing deferred check failed after native STA")
+            if sta_mode and to == "Misc.ReportManufacturability":
+                (self.project / "signoff-started").touch()
+                if sta_mode == "failure":
+                    raise ValueError("later DRC failed after STA completed")
+                if sta_mode == "timeout":
+                    import time
+                    time.sleep(20)
             view = output / "view.v"
             view.write_text("module fixture; endmodule")
             raw = {"nl": str(view), "json_h": str(view), "odb": str(view), "def": str(view),

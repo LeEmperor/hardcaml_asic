@@ -2,7 +2,7 @@ module P = Hardcaml_asic_execution.Execution_plan
 module J = Hardcaml_asic_execution.Identity_json
 
 let usage = "Usage: hardcaml-asic-experimental-plan-inspect [FILE|-]\n\
-             Validate schema 1/2/3 JSON and print normalized plan, actions and static capabilities.\n\
+             Validate schema 1/2/3/4 JSON and print normalized plan, actions and static capabilities.\n\
              Omitted FILE or - reads stdin. No tools are probed or executed."
 let read_all ic =
   let b = Buffer.create 4096 in

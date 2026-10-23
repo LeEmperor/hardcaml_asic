@@ -75,7 +75,9 @@ let reference raw =
   let identity=string (get raw "identity") in
   require (hex 64 identity) "invalid artifact identity";
   let capability = get (Execution_plan.capabilities ()) name in
-  List.iter (fun k -> require (equal (get raw k) (get capability k)) "invalid checkpoint capability") ["restart_supported";"restart_targets";"tested_image_id";"closure_scope";"acceptance"];
+  List.iter (fun k -> require (equal (get raw k) (get capability k)
+    || (name="routing" && k="restart_targets" && get raw k=J.array [str "signoff"]))
+    "invalid checkpoint capability") ["restart_supported";"restart_targets";"tested_image_id";"closure_scope";"acceptance"];
   {boundary; identity; path=path (get raw "path"); raw}
 let decode_event ~name data = match name with
   | "allocated" ->

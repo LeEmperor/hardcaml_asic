@@ -153,4 +153,4 @@ let validate_sequence ~initial_boundary stages =
   let rec prefix stages remaining = match stages,remaining with
     | [],_ -> true | x::xs,y::ys when Stage_id.equal x y -> prefix xs ys | _ -> false in
   if stages <> [] && prefix stages remaining then Ok ()
-  else Error "Only the trusted contiguous six-stage Classic composition is runnable"
+  else Error "Only the trusted contiguous schema-4 seven-stage Classic composition is runnable; historical recipes are read-only"

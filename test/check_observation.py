@@ -93,10 +93,10 @@ def verify(cli, consumer, flow, root, historical=False):
         w.close()
         writers.append(w)
         fixtures.append(py.load(w.directory)[1])
-        if i == 5:
+        if i == 6:
             final = py.inspect(w.directory)['final_results']
             assert final['physical_completion'] == 'completed' and final['acceptance'] == 'not_evaluated'
-            assert final['external_postcheck'] == 'not_evaluated' and len(final['checkpoint_refs']) == 6
+            assert final['external_postcheck'] == 'not_evaluated' and len(final['checkpoint_refs']) == 7
         query('inspect', w.directory, expected=py.inspect(w.directory))
         for after in range(w.sequence + 1):
             query('read-updates', w.directory, '--stream-id', w.stream_id, '--after', after,

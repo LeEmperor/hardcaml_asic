@@ -1,5 +1,9 @@
 # Retained rich inspection (schema 1)
 
+For terminal post-PNR evidence that survives a failed signoff without a checkpoint,
+see [timing analysis v1](timing-analysis.md). It adds an exact analysis-digest index
+selector to the existing timing/signoff invocation; legacy sources remain supported.
+
 ```sh
 hardcaml-asic-flow inspect EXECUTION --domain timing --stage signoff --json
 hardcaml-asic-flow inspect EXECUTION --domain timing --stage signoff \

@@ -1,10 +1,16 @@
 open! Core
 
-type t = Hardcaml_asic_flow_domain.Stage_id.t = Synthesis | Floorplan | Placement | Cts | Routing | Signoff
+type t = Hardcaml_asic_flow_domain.Stage_id.t =
+  | Synthesis
+  | Floorplan
+  | Placement
+  | Cts
+  | Routing
+  | Timing
+  | Signoff
 [@@deriving compare, equal, sexp_of]
 
 let all = Hardcaml_asic_flow_domain.Stage_id.all
-
 let to_string = Hardcaml_asic_flow_domain.Stage_id.to_string
 let of_string = Hardcaml_asic_flow_domain.Stage_id.of_string
 

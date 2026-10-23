@@ -103,6 +103,8 @@ def validate(path, *, compatibility, restart=False, restart_to=None, check_exter
         raise CheckpointError("incompatible target, tools, runtime, bridge or workspace")
     boundary = manifest["boundary"]
     targets = (("floorplan", "placement") if boundary == "synthesis" else ()) if version == 1 else RESTART_TARGETS.get(boundary, ())
+    if version == 2 and boundary == "routing" and manifest.get("restart_targets") == ["signoff"]:
+        targets = ("signoff",)  # historical evidence; bridge compatibility still gates restart
     if (boundary not in (BOUNDARIES if version == 2 else ("synthesis", "floorplan", "placement"))
             or manifest["restart_supported"] is not bool(targets)
             or manifest["acceptance"] != "not_evaluated"):

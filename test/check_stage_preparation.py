@@ -12,7 +12,7 @@ import time
 import signal
 
 
-def verify(cli, consumer, package, root, fixtures, installed=False):
+def verify(cli, consumer, package, root, fixtures, installed=False, timing_only=False):
     sys.path.insert(0, str(package.parent))
     from hardcaml_asic_flow import runtime_contract as rc, execution_plan as ep, checkpoint as cp, flow_observation as fo
     count = 0
@@ -109,6 +109,123 @@ def verify(cli, consumer, package, root, fixtures, installed=False):
         assert not list(Path(cfg["workspace"]).glob("project/*-request.json"))
         count += 1
 
+    if timing_only:
+        report_cli = cli.with_name("experimental_report.exe")
+        inspect_cli = cli.with_name("experimental_inspect.exe")
+        finalizer = consumer.with_name("finalization_consumer.exe")
+        def query(argv):
+            p = subprocess.run([str(x) for x in argv], text=True, capture_output=True, timeout=30)
+            assert p.returncode == 0, p.stderr
+            return json.loads(p.stdout)
+        # Real bridge + publisher: stop at routing, then execute only the two
+        # adjacent continuations. No repeated STA in the signoff range.
+        case, cfg, env, _ = fixture()
+        env["STA_COMPLETION_MODE"] = "success"
+        result = call(case, cfg, env, through="routing")
+        assert result.returncode == 0, result.stderr
+        routing = json.loads(result.stdout)
+        cfg["checkpoint"] = routing["artifacts"][-1]["path"]
+        # Historical routing metadata remains readable but cannot be adopted by
+        # the new bridge. No new segment is launched on rejection.
+        manifest_path = Path(cfg["checkpoint"]) / "manifest.json"
+        original = manifest_path.read_bytes()
+        old = json.loads(original)
+        old["restart_targets"] = ["signoff"]
+        old["compatibility"]["bridge_sha256"] = "e8dc9532c61010ae8699d3a6f27cdfd0d773ff3e24d06f9eefbe2d0f5b2da841"
+        old["identity"] = cp.identity({k:v for k,v in old.items() if k != "identity"})
+        manifest_path.chmod(0o600)
+        manifest_path.write_text(json.dumps(old))
+        cp.validate(cfg["checkpoint"], compatibility=old["compatibility"])
+        rejected = call(case, cfg, env, through="timing")
+        assert rejected.returncode != 0 and "incompatible" in rejected.stderr, rejected.stderr
+        manifest_path.write_bytes(original)
+        manifest_path.chmod(0o400)
+        result = call(case, cfg, env, through="timing")
+        assert result.returncode == 0, result.stderr
+        timing = json.loads(result.stdout)
+        assert [a["boundary"] for a in timing["artifacts"]] == ["timing"]
+        segment = json.loads((Path(timing["artifacts"][0]["path"]) / "segment.json").read_text())
+        assert segment["from"] == "Odb.RemoveRoutingObstructions"
+        assert segment["returned_steps"] == ["Odb.RemoveRoutingObstructions", "OpenROAD.FillInsertion", "OpenROAD.RCX", "OpenROAD.STAPostPNR"]
+        project = Path(cfg["workspace"]) / "project"
+        assert not (project / "signoff-started").exists()
+        cfg["checkpoint"] = timing["artifacts"][-1]["path"]
+        result = call(case, cfg, env, through="signoff")
+        assert result.returncode == 0, result.stderr
+        signoff = json.loads(result.stdout)
+        segment = json.loads((Path(signoff["artifacts"][0]["path"]) / "segment.json").read_text())
+        assert segment["returned_steps"] == ["OpenROAD.IRDropReport", "Misc.ReportManufacturability"]
+        # Both full success and downstream failure retain a frozen Timing source.
+        for mode in ("success", "failure", "timing_failure"):
+            case, cfg, env, _ = fixture()
+            env["STA_COMPLETION_MODE"] = mode
+            result = call(case, cfg, env, through="signoff")
+            assert (result.returncode == 0) == (mode == "success"), result.stderr
+            summary = json.loads(result.stdout)
+            assert summary["plan"]["schema_version"] == 4
+            assert len(summary["artifacts"]) == (7 if mode == "success" else 5 if mode == "timing_failure" else 6)
+            execution = Path(cfg["workspace"]) / ("execution-" + summary["attempt_id"] + ".json")
+            report = query([report_cli, "--target", execution, "--json"])
+            analysis = report["timing_analysis"]
+            assert analysis["stage"] == "timing" and analysis["status"] == "completed"
+            assert analysis["duration"]["seconds"] == 1.575
+            assert analysis["schema_version"] == 2
+            assert analysis["enclosing_status"] == ("failed" if mode == "timing_failure" else "running")
+            if mode != "timing_failure":
+                assert Path(analysis["execution_file"]).read_bytes() != execution.read_bytes()
+            index = query([inspect_cli, "--execution", execution, "--domain", "timing", "--stage", "timing", "--expected-digest", analysis["source_digest"], "--json"])
+            assert index["rows"] and index["analysis_digest"] == analysis["source_digest"]
+            public_index = query([cli.with_name("flow_cli.exe"), "inspect", execution, "--domain", "timing", "--stage", "timing", "--expected-digest", analysis["source_digest"], "--json"])
+            assert public_index == index
+            (case / "report.json").write_text(json.dumps(report, indent=2))
+            if mode == "failure":
+                saved = execution.read_bytes()
+                changed = json.loads(saved)
+                changed["occurrences"][-2]["duration_seconds"] += 1
+                execution.write_text(json.dumps(changed))
+                stale = subprocess.run([str(report_cli), "--target", str(execution), "--json"], capture_output=True, text=True)
+                assert stale.returncode == 2 and "timing prefix source changed" in stale.stderr
+                execution.write_bytes(saved)
+                wrong_stage = subprocess.run([str(inspect_cli), "--execution", str(execution), "--domain", "timing", "--stage", "signoff", "--expected-digest", analysis["source_digest"], "--json"], capture_output=True, text=True)
+                assert wrong_stage.returncode == 2
+            if mode == "success":
+                p = subprocess.run([str(finalizer), "select", str(execution)], text=True, capture_output=True)
+                assert p.returncode == 0, p.stderr
+            elif mode == "failure":
+                assert summary["occurrences"][-2]["status"] == "completed"
+                assert summary["occurrences"][-1]["status"] == "failed"
+            else:
+                assert summary["occurrences"][-2]["status"] == "failed"
+                assert summary["occurrences"][-1]["status"] == "unreached"
+        case, cfg, env, _ = fixture()
+        env["STA_COMPLETION_MODE"] = "timeout"
+        process = call(case, cfg, env, through="signoff", live=True, extra=("--timeout", "30"))
+        deadline = time.monotonic() + 30
+        while not (Path(cfg["workspace"]) / "project/signoff-started").exists():
+            assert process.poll() is None and time.monotonic() < deadline
+            time.sleep(.02)
+        execution = next(p for p in Path(cfg["workspace"]).glob("execution-*.json") if ".json." not in p.name)
+        report = query([report_cli, "--target", execution, "--json"])
+        assert report["execution"]["status"] == "running"
+        digest = report["timing_analysis"]["source_digest"]
+        process.send_signal(signal.SIGTERM)
+        stdout, stderr = process.communicate(timeout=20)
+        assert process.returncode == 143, stderr
+        assert query([report_cli, "--target", execution, "--json"])["timing_analysis"]["source_digest"] == digest
+        case, cfg, env, _ = fixture()
+        env["STA_COMPLETION_MODE"] = "success"
+        result = call(case, cfg, env, through="timing")
+        assert result.returncode == 0, result.stderr
+        summary = json.loads(result.stdout)
+        assert len(summary["occurrences"]) == len(summary["artifacts"]) == 6
+        assert summary["plan"]["stages"][-1] == "timing"
+        execution = Path(cfg["workspace"]) / ("execution-" + summary["attempt_id"] + ".json")
+        report = query([report_cli, "--target", execution, "--json"])
+        assert report["completion"]["requested"] == report["completion"]["physical"] == "timing"
+        assert report["timing_analysis"]["stage"] == "timing" and report["timing_analysis"]["status"] == "completed"
+        assert not (Path(cfg["workspace"]) / "project/signoff-started").exists()
+        print("Executable Timing: stop-at-routing, Routing->Timing->Signoff, seven-stage selection, exact inspection, live signoff/cancellation and signoff-failure evidence passed")
+        return
     case, cfg, env, _ = fixture()
     result = call(case, cfg, env, through="floorplan")
     assert result.returncode == 0, result.stderr
@@ -243,6 +360,43 @@ def verify(cli, consumer, package, root, fixtures, installed=False):
         execution_path = Path(cfg["workspace"]) / ("execution-" + summary["attempt_id"] + ".json")
         assert json.loads(execution_path.read_text()) == summary
         assert execution_path.stat().st_mtime <= Path(allocated["attempt"], f"{len(events):012d}.json").stat().st_mtime
+        count += 1
+    # Actual terminal transport cleanup -> persisted observation, independent of
+    # publication. The bridge API is a fixture; provider/supervisor/journal are real.
+    for sta_mode in ("success", "failure", "timeout", "cancel"):
+        case, cfg, env, _ = fixture()
+        env["STA_COMPLETION_MODE"] = "timeout" if sta_mode == "cancel" else sta_mode
+        if sta_mode == "cancel":
+            process = call(case, cfg, env, journal=True, through="signoff", live=True)
+            deadline = time.monotonic() + 60
+            while not (Path(cfg["workspace"]) / "project/signoff-started").exists():
+                if process.poll() is not None:
+                    stdout, stderr = process.communicate()
+                    raise AssertionError(("STA cancellation fixture exited before marker", process.returncode, stdout, stderr))
+                if time.monotonic() >= deadline:
+                    process.terminate()
+                    stdout, stderr = process.communicate(timeout=20)
+                    raise AssertionError(("STA cancellation fixture marker deadline", stdout, stderr))
+                time.sleep(.01)
+            process.send_signal(signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=20)
+            result = subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
+            assert result.returncode == 143, result.stderr
+        else:
+            result = call(case, cfg, env, journal=True, through="signoff")
+        assert (result.returncode == 0) == (sta_mode == "success"), result.stderr
+        allocated = json.loads(result.stdout.splitlines()[0])
+        state, _ = fo.load(allocated["attempt"])
+        execution_path = Path(cfg["workspace"]) / ("execution-" + allocated["stream_id"] + ".json")
+        summary = json.loads(execution_path.read_text())
+        analysis_path = Path(str(execution_path) + ".timing-source.timing-analysis.json")
+        assert analysis_path.is_file(), result.stderr
+        analysis = json.loads(analysis_path.read_text())
+        assert analysis["status"] == "completed" and analysis["duration"]["seconds"] == 1.575, analysis
+        assert analysis["timing_goal"] == "pass" and analysis["attempt_id"] == summary["attempt_id"]
+        assert analysis["stage"] == "timing" and analysis["enclosing_status"] == "running"
+        assert summary["status"] == state["outcome"]["status"]
+        assert len(summary["artifacts"]) == (7 if sta_mode == "success" else 6)
         count += 1
     # Explicit store and human mode follow the same lifecycle, without JSONL.
     case, cfg, env, _ = fixture()

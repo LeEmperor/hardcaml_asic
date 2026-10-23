@@ -129,7 +129,7 @@ class FinalizationTest(unittest.TestCase):
         result = phase4.read_json(directory / "results.json")
         self.assertEqual(result["metrics"]["setup_slack"]["corner"], "slow")
         self.assertEqual(result["metrics"]["mapped_area"]["origin_boundary"], "synthesis")
-        self.assertEqual(len(receipt["selected_checkpoints"]), 6)
+        self.assertEqual(len(receipt["selected_checkpoints"]), 7)
         self.assertFalse(list(directory.rglob("stat.json")))
 
     def test_accept_uses_real_shared_policy_and_exact_simulator(self):

@@ -1,5 +1,8 @@
 (** Host-only, read-only inspection of supplementary retained producer evidence.
-    Checkpoint validation precedes producer discovery. No runtime or EDA probes. *)
+    Checkpoint validation precedes legacy producer discovery. A terminal timing
+    observation can authorize exact post-PNR evidence without a signoff checkpoint.
+    With no row_id, expected_digest pins the timing analysis digest. With row_id,
+    it pins the inspection index digest as before. No runtime or EDA probes. *)
 val run : execution:string -> domain:string -> stage:string -> ?row_id:string
   -> ?expected_digest:string -> unit -> (Identity_json.t, string) result
 

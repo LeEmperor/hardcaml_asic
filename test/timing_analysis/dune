@@ -1,0 +1,20 @@
+(executable
+ (name consumer)
+ (libraries hardcaml_asic.execution))
+
+(rule
+ (alias runtest)
+ (deps check.py ../check_stage_report.py)
+ (action
+  (run
+   python3
+   -B
+   %{dep:check.py}
+   --consumer
+   %{exe:consumer.exe}
+   --inspect
+   %{exe:../../bin/experimental_inspect.exe}
+   --report
+   %{exe:../../bin/experimental_report.exe}
+   --public
+   %{exe:../../bin/flow_cli.exe})))

@@ -14,8 +14,8 @@ type t = { workspace : string; project : string; pdk_root : string; store : stri
     verify_inputs : unit -> (unit, string) result;
     verify_resolved : string -> (unit, string) result;
    failure_exit_code : B.operation -> T.result -> int option }
-let bridge_sha256 = "e8dc9532c61010ae8699d3a6f27cdfd0d773ff3e24d06f9eefbe2d0f5b2da841"
-let protocol_sha256 = "732c05a5009f0510ec2624f7ddc03e86bb2a20cf824a9bb9c96d947bc0f2e49d"
+let bridge_sha256 = "f22dd1074c8cd4b987bb598a4429690d053b9fdfd3e31d47e2a319a9be42460f"
+let protocol_sha256 = "eb6490db856f551ffe2ab35ea872bdc85c86801339e67a9d5bdf427238b25ae1"
 exception Service_error of Runner.error
 let fail s = raise (Service_error (Runner.failure s))
 let checked = function Ok x -> x | Error s -> fail s
@@ -174,9 +174,13 @@ let call t ~operation ~boundary ~candidate ~source tag =
    let correlation = ["schema_version",int 1;"request_id",str request.request_id;
      "request_path",str path;"request_sha256",str (B.request_identity request);
      "launch_record",str launch_path;"terminal_record",str terminal_path] in
+   let run_dir=t.project ^ "/src/runs/" ^ tag in
+   let fresh_run_dir =
+     if operation=B.Execute_segment && (try ignore (Unix.lstat run_dir);false with Unix.Unix_error (Unix.ENOENT,_,_) -> true)
+     then str run_dir else J.null in
    (* Immutable per-call launch and terminal records. Never serialize the ambient
       environment: only the explicit argv/resources and checked binding. *)
-   write_fresh launch_path (obj (correlation @ ["kind",str "backend_transport_launch";
+   write_fresh launch_path (obj (correlation @ ["kind",str "backend_transport_launch";"fresh_run_dir",fresh_run_dir;
      "recorded_at_unix",float (Unix.gettimeofday ());"argv",J.array (List.map str specification.argv);
      "executable",str specification.prog;"cwd",str specification.cwd;"binding",T.to_json binding;
      "container_name",opt (fun (_,name) -> str name) (T.container invocation);
@@ -218,6 +222,8 @@ let validate t plan = protect (fun () ->
   checked (t.verify_inputs ());
   match plan with Execution_plan.Coarse _ -> fail "segment service requires a stage plan"
   | Execution_plan.Stages p ->
+    if Execution_plan.Stage_plan.schema_version p <> 4 then
+      fail "historical six-stage recipes are read-only; prepare a schema-4 recipe for this bridge";
     checked (Hardcaml_asic_flow_domain.Backends.Librelane.Mapping.validate_sequence
       ~initial_boundary:(Execution_plan.Stage_plan.source_boundary p)
       (Execution_plan.Stage_plan.sequence p));

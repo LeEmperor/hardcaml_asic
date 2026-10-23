@@ -111,15 +111,16 @@ def resolve(endpoint, *, archive=False):
 TESTED_IMAGE = "sha256:d109140b8f17fc54f4fca998beb8124f4949404ec52e339eebd2250854a18b5a"
 BOUNDARIES = {"synthesis": "Yosys.Synthesis", "floorplan": "OpenROAD.Floorplan",
               "placement": "OpenROAD.DetailedPlacement", "cts": "OpenROAD.CTS",
-              "routing": "OpenROAD.DetailedRouting", "signoff": "Misc.ReportManufacturability"}
+              "routing": "OpenROAD.DetailedRouting", "timing": "OpenROAD.STAPostPNR", "signoff": "Misc.ReportManufacturability"}
 STAGE_ORDER = tuple(BOUNDARIES)
+LEGACY_STAGE_ORDER = tuple(s for s in STAGE_ORDER if s != "timing")
 SUCCESSORS = {"synthesis": "Checker.YosysUnmappedCells", "floorplan": "OpenROAD.DumpRCValues",
               "placement": "OpenROAD.CTS", "cts": "OpenROAD.STAMidPNR-1",
-              "routing": "Odb.RemoveRoutingObstructions"}
+              "routing": "Odb.RemoveRoutingObstructions", "timing": "OpenROAD.IRDropReport"}
 # The direct synthesis -> placement segment is retained as a proven standalone
 # API. Recipes expand the contiguous sequence and never elide a physical stage.
 RESTART_TARGETS = {"synthesis": ("floorplan", "placement"), "floorplan": ("placement",),
-                   "placement": ("cts",), "cts": ("routing",), "routing": ("signoff",),
+                   "placement": ("cts",), "cts": ("routing",), "routing": ("timing",), "timing": ("signoff",),
                    "signoff": ()}
 
 
@@ -135,18 +136,23 @@ def boundary_capabilities():
 class StagePlan:
     endpoint: str
     resume: bool = False
-    schema_version: int = 2
+    schema_version: int = 4
     stages: tuple[str, ...] = ()
     initial_boundary: str | None = None
 
     def __post_init__(self):
-        if (type(self.schema_version) is not int or self.schema_version not in (2, 3)
+        if self.schema_version == 4 and not self.stages and self.endpoint in STAGE_ORDER:
+            source = self.initial_boundary or ("synthesis" if self.resume else None)
+            start = STAGE_ORDER.index(source) + 1 if source in STAGE_ORDER else 0
+            object.__setattr__(self, "initial_boundary", source)
+            object.__setattr__(self, "stages", STAGE_ORDER[start:STAGE_ORDER.index(self.endpoint) + 1])
+        if (type(self.schema_version) is not int or self.schema_version not in (2, 3, 4)
                 or not isinstance(self.endpoint, str) or self.endpoint not in BOUNDARIES
                 or type(self.resume) is not bool
                 or (self.resume and self.endpoint == "synthesis")):
             raise ValueError("unsupported stage recipe")
         if self.schema_version == 2:
-            if self.stages or self.initial_boundary is not None:
+            if self.stages or self.initial_boundary is not None or self.endpoint == "timing":
                 raise ValueError("legacy endpoint recipe cannot contain sequence fields")
         else:
             if (not isinstance(self.stages, tuple) or not self.stages
@@ -156,11 +162,16 @@ class StagePlan:
                 raise ValueError("malformed explicit stage sequence")
             start = 0
             if self.initial_boundary is not None:
-                if not isinstance(self.initial_boundary, str) or self.initial_boundary not in SUCCESSORS:
+                if (not isinstance(self.initial_boundary, str) or self.initial_boundary not in SUCCESSORS
+                        or self.initial_boundary not in self.order):
                     raise ValueError("unsupported initial boundary")
-                start = STAGE_ORDER.index(self.initial_boundary) + 1
-            if self.stages != STAGE_ORDER[start:start + len(self.stages)]:
+                start = self.order.index(self.initial_boundary) + 1
+            if self.stages != self.order[start:start + len(self.stages)]:
                 raise ValueError("stage sequence must be contiguous; required Classic stages cannot be skipped")
+
+    @property
+    def order(self):
+        return STAGE_ORDER if self.schema_version == 4 else LEGACY_STAGE_ORDER
 
     @property
     def source_boundary(self):
@@ -168,7 +179,7 @@ class StagePlan:
 
     @property
     def sequence(self):
-        return (STAGE_ORDER[1 if self.resume else 0:STAGE_ORDER.index(self.endpoint) + 1]
+        return (self.order[1 if self.resume else 0:self.order.index(self.endpoint) + 1]
                 if self.schema_version == 2 else self.stages)
 
     @property
@@ -182,18 +193,18 @@ class StagePlan:
                      for i, name in enumerate(names))
 
     def as_dict(self):
-        if self.schema_version == 3:
-            return {"schema_version": 3, "stages": list(self.stages), "initial_boundary": self.initial_boundary}
+        if self.schema_version in (3, 4):
+            return {"schema_version": self.schema_version, "stages": list(self.stages), "initial_boundary": self.initial_boundary}
         return {"schema_version": 2, "endpoint": self.endpoint, "resume": self.resume}
 
     @classmethod
     def from_dict(cls, value):
-        if isinstance(value, dict) and value.get("schema_version") == 3:
+        if isinstance(value, dict) and value.get("schema_version") in (3, 4):
             if (type(value["schema_version"]) is not int
                     or set(value) != {"schema_version", "stages", "initial_boundary"}
                     or not isinstance(value["stages"], list) or not value["stages"]):
                 raise ValueError("malformed explicit stage recipe")
-            return cls(value["stages"][-1], value["initial_boundary"] is not None, 3,
+            return cls(value["stages"][-1], value["initial_boundary"] is not None, value["schema_version"],
                        tuple(value["stages"]), value["initial_boundary"])
         if not isinstance(value, dict) or set(value) != {"schema_version", "endpoint", "resume"}:
             raise ValueError("malformed stage recipe")
@@ -208,7 +219,8 @@ def resolve_stages(endpoint, *, resume=False, initial_boundary=None):
         return resolve_sequence(STAGE_ORDER[STAGE_ORDER.index(initial_boundary) + 1:
                                            STAGE_ORDER.index(endpoint) + 1],
                                 initial_boundary=initial_boundary)
-    return StagePlan(endpoint, resume)
+    return resolve_sequence(STAGE_ORDER[1 if resume else 0:STAGE_ORDER.index(endpoint) + 1],
+                            initial_boundary="synthesis" if resume else None)
 
 
 def resolve_sequence(stages, *, initial_boundary=None):
@@ -216,4 +228,4 @@ def resolve_sequence(stages, *, initial_boundary=None):
     names = tuple(stages)
     if not names:
         raise ValueError("empty stage sequence")
-    return StagePlan(names[-1], initial_boundary is not None, 3, names, initial_boundary)
+    return StagePlan(names[-1], initial_boundary is not None, 4, names, initial_boundary)

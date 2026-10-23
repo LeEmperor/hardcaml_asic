@@ -6,7 +6,7 @@ let () =
     "--domain",Arg.Set_string domain,"DOMAIN timing|clocks|physical|routing";
     "--stage",Arg.Set_string stage,"STAGE Published boundary";
     "--row-id",Arg.Set_string row,"ID Detail row";
-    "--expected-digest",Arg.Set_string digest,"SHA256 Current index digest";
+    "--expected-digest",Arg.Set_string digest,"SHA256 Analysis digest for index; index digest for detail";
     "--json",Arg.Set json," JSON envelope";"--verbose",Arg.Set verbose," Diagnostics"]
     (fun _ -> raise (Arg.Bad "unexpected positional argument")) "Read-only retained rich inspection";
   match Inspection_service.run ~execution:!execution ~domain:!domain ~stage:!stage

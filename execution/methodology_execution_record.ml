@@ -43,9 +43,9 @@ let decode ~attempt_id ?plan raw =
     let p = decode bytes in
     List.iter (fun (key,actual) -> if text (get raw key) <> actual then failwith ("methodology reference mismatch: " ^ key))
       ["expected_plan_identity",M.plan_identity p;"plan_identity",M.plan_identity p;"methodology_hash",M.methodology_hash p;"bundle_identity",M.bundle_identity p];
-    let derived = Execution_plan.Stage_plan.of_recipe (M.recipe p) in
     Option.iter (fun plan ->
-      if J.canonical (Execution_plan.Stage_plan.to_json derived) <> J.canonical (Execution_plan.Stage_plan.to_json plan)
+      if Hardcaml_asic.Flow.Recipe.stages (M.recipe p) <> Execution_plan.Stage_plan.sequence plan
+         || Hardcaml_asic.Flow.Recipe.initial_boundary (M.recipe p) <> Execution_plan.Stage_plan.source_boundary plan
       then failwith "methodology execution stage plan mismatch") plan;
     Ok {raw;plan=p}
   with exn -> Error (Printexc.to_string exn)

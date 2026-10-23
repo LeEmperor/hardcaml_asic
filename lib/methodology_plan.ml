@@ -7,13 +7,13 @@ let str s = `String s
 let obj xs = `Assoc xs
 let arr f xs = `List (List.map xs ~f)
 
-let translation =
+let translation legacy =
   obj
     [ "contract", str "hardcaml-asic.librelane-classic-translation"
     ; "schema_version", `Int 1
     ; "backend_recipe", str "librelane.classic.v1"
     ; "input", str "fresh"
-    ; "recipe_schema_version", `Int 3
+    ; "recipe_schema_version", `Int (if legacy then 3 else 4)
     ; "assignment_encoding", str "backend-key/enum-string/boolean"
     ; "unspecified", str "runtime-backend-default-not-observed"
     ]
@@ -61,7 +61,8 @@ let project_read j =
 ;;
 
 type t =
-  { methodology : Hardcaml_asic_flow_domain.Catalog.resolved
+  { legacy : bool
+  ; methodology : Hardcaml_asic_flow_domain.Catalog.resolved
   ; effective_parameters : E.t list
   ; project_assignments : (P.assignment * string) list
   ; project_name : string
@@ -81,13 +82,38 @@ let recipe t = t.recipe
 let methodology_hash t = t.methodology_hash
 let plan_identity t = t.plan_identity
 
-let methodology_payload methodology effective_parameters project_assignments recipe =
+let historical_stages = function
+  | `Assoc xs ->
+    `Assoc
+      (List.map xs ~f:(function
+        | "stages", `List stages ->
+          ( "stages"
+          , `List (List.filter stages ~f:(fun s -> not (J.equal s (`String "timing")))) )
+        | field -> field))
+  | j -> j
+;;
+
+let methodology_payload legacy methodology effective_parameters project_assignments recipe
+  =
+  let snapshot = Flow.Spec.resolved_to_yojson methodology in
+  let recipe_json = Flow.Recipe.to_yojson recipe in
+  let recipe_json =
+    if legacy
+    then (
+      match recipe_json with
+      | `Assoc xs ->
+        `Assoc
+          (("schema_version", `Int 3)
+           :: List.Assoc.remove xs ~equal:String.equal "schema_version")
+      | _ -> assert false)
+    else recipe_json
+  in
   obj
-    [ "snapshot", Flow.Spec.resolved_to_yojson methodology
+    [ ("snapshot", if legacy then historical_stages snapshot else snapshot)
     ; "project_assignments", projects project_assignments
     ; "effective_parameters", effective effective_parameters
-    ; "translation", translation
-    ; "recipe", Flow.Recipe.to_yojson recipe
+    ; "translation", translation legacy
+    ; "recipe", recipe_json
     ]
 ;;
 
@@ -97,6 +123,7 @@ let payload t =
     ; "schema_version", `Int 1
     ; ( "methodology"
       , methodology_payload
+          t.legacy
           t.methodology
           t.effective_parameters
           t.project_assignments
@@ -218,6 +245,7 @@ let verify_associations
 ;;
 
 let make
+  ~legacy
   ~methodology
   ~project_assignments
   ~project_name
@@ -233,9 +261,19 @@ let make
   in
   let effective_parameters =
     J.checked
-      (Elaboration.Resolved.resolve_effective_parameters ~methodology ~project_assignments)
+      (Elaboration.Resolved.resolve_effective_parameters
+         ~methodology
+         ~project_assignments)
   in
-  let recipe = J.checked (Flow.Recipe.create (Hardcaml_asic_flow_domain.Catalog.stages methodology)) in
+  let stages = Hardcaml_asic_flow_domain.Catalog.stages methodology in
+  let recipe =
+    J.checked
+      (if legacy
+       then
+         Flow.Recipe.decode_legacy
+           (List.filter stages ~f:(fun s -> not (Flow.Stage.equal s Flow.Stage.Timing)))
+       else Flow.Recipe.create stages)
+  in
   let m =
     verify_associations
       ~project_name
@@ -246,7 +284,8 @@ let make
   in
   let configurable =
     Hardcaml_asic_flow_domain.Methodology.configurable
-      (Hardcaml_asic_flow_domain.Catalog.Entry.methodology (Hardcaml_asic_flow_domain.Catalog.entry methodology))
+      (Hardcaml_asic_flow_domain.Catalog.Entry.methodology
+         (Hardcaml_asic_flow_domain.Catalog.entry methodology))
   in
   List.iter configurable ~f:(fun key ->
     let assigned =
@@ -263,10 +302,16 @@ let make
     J.checked
       (J.identity
          ~contract:"hardcaml-asic.methodology-hash"
-         (methodology_payload methodology effective_parameters project_assignments recipe))
+         (methodology_payload
+            legacy
+            methodology
+            effective_parameters
+            project_assignments
+            recipe))
   in
   let t =
-    { methodology
+    { legacy
+    ; methodology
     ; effective_parameters
     ; project_assignments
     ; project_name
@@ -310,6 +355,7 @@ let of_yojson j =
         ];
     let t =
       make
+        ~legacy:(J.equal (J.get (J.get md "recipe") "schema_version") (`Int 3))
         ~methodology:(J.checked (Flow.Spec.resolved_of_yojson (J.get md "snapshot")))
         ~project_assignments:
           (List.map (J.array (J.get md "project_assignments")) ~f:project_read)
@@ -336,7 +382,8 @@ let of_rendered rendered =
     in
     let configurable =
       Hardcaml_asic_flow_domain.Methodology.configurable
-        (Hardcaml_asic_flow_domain.Catalog.Entry.methodology (Hardcaml_asic_flow_domain.Catalog.entry methodology))
+        (Hardcaml_asic_flow_domain.Catalog.Entry.methodology
+           (Hardcaml_asic_flow_domain.Catalog.entry methodology))
     in
     let project_assignments =
       match (Elaboration.Elaborated_project.flow r.elaborated_project).adapter with
@@ -354,6 +401,7 @@ let of_rendered rendered =
     let configuration = Option.value_exn (Elaboration.Bundle.file b "src/config.json") in
     let t =
       make
+        ~legacy:false
         ~methodology
         ~project_assignments
         ~project_name:(Elaboration.Elaborated_project.project_name r.elaborated_project)
@@ -391,7 +439,9 @@ let prepare
   ~source_root
   =
   let open Or_error.Let_syntax in
-  let%bind methodology = Hardcaml_asic_flow_domain.Catalog.resolve ?selection ?request catalog ~endpoint () in
+  let%bind methodology =
+    Hardcaml_asic_flow_domain.Catalog.resolve ?selection ?request catalog ~endpoint ()
+  in
   let%bind rendered =
     Project.render_result
       ?inputs

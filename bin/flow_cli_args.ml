@@ -47,7 +47,7 @@ let help command query =
   else (let values,flags,pos = grammar command query in
     if pos<>"" then Printf.printf "required argument: %s\n" (if command="report" then "TARGET" else pos);
     if command="report" then print_endline "TARGET: coarse run, stage checkpoint, stage workspace, or explicit execution JSON";
-    if command="inspect" then print_endline "Read-only retained evidence: --domain timing|clocks|physical|routing --stage synthesis|floorplan|placement|cts|routing|signoff. Detail requires --row-id and --expected-digest together. JSON contract: hardcaml-asic.inspection schema 1.";
+    if command="inspect" then print_endline "Read-only retained evidence: --domain timing|clocks|physical|routing --stage synthesis|floorplan|placement|cts|routing|timing|signoff. --expected-digest alone pins a timing_analysis1 source; with --row-id it pins the index for detail. JSON contract: hardcaml-asic.inspection schema 1.";
     List.iter (fun k -> Printf.printf "  --%s VALUE\n" k) values;
     List.iter (fun k -> Printf.printf "  --%s\n" k) flags);
   print_endline "-h, --help  show help\n--json  machine-readable payload (default: human summary)\n--verbose  expanded diagnostics on stderr";

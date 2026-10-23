@@ -22,6 +22,8 @@ let describe () =
       "capabilities",`Assoc [
         "namedflow1",`Bool true;
         "inspection1",`Bool true;
+        "timing_analysis1",`Bool true;
+        "timing_stage1",`Bool true;
         "json_commands",strings ["preflight";"run";"postcheck";"collect";"report";"inspect";"execute";"archive";"stages";"checkpoint-inspect";
           "observation describe";"observation inspect";"observation read-updates";"observation watch";"finalize";"finalization-inspect"];
         "json_lines_commands",strings ["stages";"finalize";"observation watch"];

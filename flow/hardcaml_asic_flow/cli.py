@@ -276,7 +276,7 @@ def build_parser():
     for name in ("support-tools", "pdk-root", "python", "workspace", "checkpoint-store"):
         stages.add_argument("--" + name, type=nonempty_path, required=True)
     recipe = stages.add_mutually_exclusive_group(required=True)
-    recipe.add_argument("--endpoint", choices=("synthesis", "floorplan", "placement", "cts", "routing", "signoff"),
+    recipe.add_argument("--endpoint", choices=("synthesis", "floorplan", "placement", "cts", "routing", "timing", "signoff"),
                          help="expand contiguous stages through this endpoint")
     recipe.add_argument("--plan", type=nonempty_path, help="strict version-2 endpoint or version-3 stage sequence JSON")
     stages.add_argument("--checkpoint", type=nonempty_path, help="published path-bound handoff")
@@ -302,7 +302,7 @@ def build_parser():
     inspect_checkpoint.add_argument("checkpoint", type=nonempty_path)
     inspect_checkpoint.add_argument("--compatibility", type=nonempty_path,
                                     help="expected compatibility JSON; defaults to recorded compatibility")
-    inspect_checkpoint.add_argument("--restart-to", choices=("synthesis", "floorplan", "placement", "cts", "routing", "signoff"))
+    inspect_checkpoint.add_argument("--restart-to", choices=("synthesis", "floorplan", "placement", "cts", "routing", "timing", "signoff"))
     observation = sub.add_parser("observation", help="read-only structured stage observation API")
     add_presentation(observation)
     queries = observation.add_subparsers(dest="query", required=True)

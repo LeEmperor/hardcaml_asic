@@ -154,7 +154,7 @@ def main():
                                            for a in actual.actions]
 
     for case in payload["cases"]:
-        raw = dict(schema_version=3, stages=case["requested"], initial_boundary=case["source"])
+        raw = dict(schema_version=4, stages=case["requested"], initial_boundary=case["source"])
         try:
             expected = plans.StagePlan.from_dict(raw)
         except ValueError:

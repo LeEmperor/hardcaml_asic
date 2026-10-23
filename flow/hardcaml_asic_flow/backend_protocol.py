@@ -19,7 +19,7 @@ REQUEST_FIELDS = {"protocol_version", "operation", "request_id", "reply_path",
 REPLY_FIELDS = {"protocol_version", "operation", "request_id", "request_sha256",
                 "boundary", "candidate", "bridge_sha256", "outcome", "artifacts", "error"}
 TRANSITIONS = {"synthesis": ("floorplan", "placement"), "floorplan": ("placement",),
-               "placement": ("cts",), "cts": ("routing",), "routing": ("signoff",),
+               "placement": ("cts",), "cts": ("routing",), "routing": ("timing",), "timing": ("signoff",),
                "signoff": ()}
 OPERATIONS = ("execute_segment", "validate_publication")
 
@@ -113,7 +113,9 @@ def validate_request(value):
             raise ValueError("fresh segment must be synthesis without a source")
     else:
         path(checkpoint)
-        if not isinstance(source, str) or value["boundary"] not in TRANSITIONS.get(source, ()):
+        if (not isinstance(source, str) or
+                (value["boundary"] not in TRANSITIONS.get(source, ())
+                 and (source, value["boundary"]) != ("routing", "signoff"))):
             raise ValueError("unsupported backend source transition")
     if value["reply_path"] == value["candidate"]:
         raise ValueError("reply path aliases candidate")

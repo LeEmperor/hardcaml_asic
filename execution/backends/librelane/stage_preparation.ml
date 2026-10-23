@@ -224,6 +224,68 @@ let prepare ~bundle ~support_tools ~pdk_root ~python ~docker ~git ~resources ~wo
        with _ -> ()));
     Error {cause;preflight_path= !preflight;methodology= !published_methodology}
 let execute ?observation t plan =
-  let persist execution = Result_store.save_json t.summary_path (Runner.to_json ?methodology:t.methodology ~run_json:(fun () -> J.null) execution);
-    Result_store.save_json t.diagnostics_path (Segment_service.diagnostics_json t.service execution) in
-  Segment_service.execute ~persist ?lifecycle:(Option.map Observation_writer.lifecycle observation) ~attempt_id:t.attempt_id plan t.service
+  let persist execution =
+    Result_store.save_json
+      t.summary_path
+      (Runner.to_json ?methodology:t.methodology ~run_json:(fun () -> J.null) execution);
+    Result_store.save_json
+      t.diagnostics_path
+      (Segment_service.diagnostics_json t.service execution);
+    let raw =
+      Runner.to_json ?methodology:t.methodology ~run_json:(fun () -> J.null) execution
+    in
+    let get j k =
+      match j with
+      | J.Object xs -> Option.value (List.assoc_opt k xs) ~default:J.null
+      | _ -> J.null
+    in
+    let snapshot = t.summary_path ^ ".timing-source" in
+    let finished =
+      match get raw "occurrences" with
+      | J.Array xs ->
+        List.exists
+          (fun o ->
+            get o "action_key" = s "implementation.timing"
+            && get o "status" = s "completed")
+          xs
+      | _ -> false
+    in
+    if finished && not (Sys.file_exists snapshot)
+    then (
+      (* A separate immutable execution prefix anchors the analysis while the mutable
+         summary advances through signoff. Never retarget its hash. *)
+      Unix.link t.summary_path snapshot;
+      try
+        Timing_analysis.publish
+          ~execution:snapshot
+          ~transport_records:(Segment_service.transport_records t.service)
+      with
+      | exn ->
+        prerr_endline ("timing analysis capture unavailable: " ^ Printexc.to_string exn))
+  in
+  let result =
+    Segment_service.execute
+      ~persist
+      ?lifecycle:(Option.map Observation_writer.lifecycle observation)
+      ~attempt_id:t.attempt_id
+      plan
+      t.service
+  in
+  (* Supplementary capture cannot replace the primary implementation outcome. *)
+  (try
+     let snapshot = t.summary_path ^ ".timing-source" in
+     let execution = if Sys.file_exists snapshot then snapshot else t.summary_path in
+     if not (Sys.file_exists (Timing_analysis.path execution))
+     then
+       Timing_analysis.publish
+         ~execution
+         ~transport_records:(Segment_service.transport_records t.service)
+   with
+   | exn ->
+     (try
+        prerr_endline
+          ("timing analysis observation unavailable: " ^ Printexc.to_string exn)
+      with
+      | _ -> ()));
+  result
+;;

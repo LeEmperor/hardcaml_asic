@@ -39,10 +39,11 @@ end
 module Stage_plan : sig
   type t
 
-  (** Schema 2. Resumption is from synthesis, including all intervening stages. *)
+  (** Schema 4. Resumption is from synthesis, including all intervening stages. *)
   val resolve : ?resume:bool -> Stage.t -> (t, string) result
 
-  (** Schema 3, using the hardware library's checked contiguous recipe. *)
+  (** Schema 4, using the hardware library's checked contiguous recipe.
+      [of_json] also reads historical schemas 2/3 without adding Timing. *)
   val of_recipe : Recipe.t -> t
   val resolve_sequence : ?initial_boundary:Stage.t -> Stage.t list -> (t, string) result
   val through : ?initial_boundary:Stage.t -> Stage.t -> (t, string) result
@@ -68,7 +69,7 @@ val actions : t -> Action.t list
 val capabilities : unit -> Identity_json.t
 
 (** Normalized plan, resolved actions, source boundary/sequence (null for coarse),
-    static capabilities, all six [operation_groups], and requested
+    static capabilities, all seven [operation_groups], and requested
     [operation_sequence] (null for coarse). Occurrences describe the trusted
     selected-Classic composition; gates/defaults are configuration contracts,
     [execution_evidence] is null, and individual steps advertise no durable

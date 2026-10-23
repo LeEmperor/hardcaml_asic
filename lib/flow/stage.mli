@@ -1,9 +1,16 @@
 open! Core
 
-(** Tested LibreLane Classic segment boundaries, not individual backend steps.
-    Successor checks remain part of the next segment. No stage settings are
-    implied by these declarations; project adapter settings remain on [Flow]. *)
-type t = Hardcaml_asic_flow_domain.Stage_id.t = Synthesis | Floorplan | Placement | Cts | Routing | Signoff
+(** Tested LibreLane Classic segment boundaries, not individual backend steps. Successor
+    checks remain part of the next segment. No stage settings are implied by these
+    declarations; project adapter settings remain on [Flow]. *)
+type t = Hardcaml_asic_flow_domain.Stage_id.t =
+  | Synthesis
+  | Floorplan
+  | Placement
+  | Cts
+  | Routing
+  | Timing
+  | Signoff
 [@@deriving compare, equal, sexp_of]
 
 val all : t list
@@ -28,11 +35,11 @@ type capability =
   }
 [@@deriving sexp_of]
 
-(** Static demonstrated capabilities, not a probe of the caller's installation.
-    Docker, the exact tested image, retained workspace/input/support/PDK roots,
-    and runtime bridge/configuration closure validation are required. Native,
-    relocated and macro handoffs are outside the implemented stage service.
-    Signoff is terminal and does not imply external postcheck or acceptance.
-    Synthesis -> placement is supported by the standalone Python segment API;
-    recipes always include the intermediate floorplan stage. *)
+(** Static demonstrated capabilities, not a probe of the caller's installation. Docker,
+    the exact tested image, retained workspace/input/support/PDK roots, and runtime
+    bridge/configuration closure validation are required. Native, relocated and macro
+    handoffs are outside the implemented stage service. Signoff is terminal and does not
+    imply external postcheck or acceptance. Synthesis -> placement is supported by the
+    standalone Python segment API; recipes always include the intermediate floorplan
+    stage. *)
 val capability : t -> capability

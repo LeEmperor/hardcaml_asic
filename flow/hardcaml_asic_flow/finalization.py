@@ -27,7 +27,8 @@ def inspect(directory):
                 "acceptance", "external_postcheck", "request", "commands", "results", "error"}
     optional = {"exit_code", "execution", "binding", "selected_checkpoints", "runtime_validation",
                 "selected_evidence", "mapped_files", "adapter", "evidence_context", "postcheck_collateral",
-                "postcheck_record", "postcheck_sha256", "acceptance_report", "container_cleanup", "client_termination"}
+                "postcheck_record", "postcheck_sha256", "acceptance_report", "container_cleanup", "client_termination",
+                "timing_analysis"}
     if (not isinstance(value, dict) or not required <= set(value) or set(value) - required - optional
             or value["contract"] != CONTRACT or type(value["schema_version"]) is not int
             or value["schema_version"] != 1 or not isinstance(value["attempt_id"], str)
@@ -60,17 +61,17 @@ def selected(execution):
             or not isinstance(value["occurrences"], list) or not isinstance(value["artifacts"], list)):
         raise ValueError("malformed segmented execution record")
     plan = execution_plan.StagePlan.from_dict(value["plan"])
-    if plan.sequence != execution_plan.STAGE_ORDER or plan.source_boundary is not None:
+    if plan.sequence != plan.order or plan.source_boundary is not None:
         raise ValueError("finalization requires a complete fresh six-stage execution")
     if value.get("exit_code") != 0 or value.get("status") != "completed":
         raise ValueError("implementation execution did not complete")
     occurrences = value["occurrences"]
     artifacts = value["artifacts"]
-    if len(occurrences) != 6 or len(artifacts) != 6:
+    if len(occurrences) != len(plan.order) or len(artifacts) != len(plan.order):
         raise ValueError("missing selected stage evidence")
     compatibility = None
     publications = []
-    for boundary, occurrence, artifact in zip(execution_plan.STAGE_ORDER, occurrences, artifacts):
+    for boundary, occurrence, artifact in zip(plan.order, occurrences, artifacts):
         if (occurrence.get("status") != "completed" or type(occurrence.get("exit_code")) is not int
                 or occurrence.get("exit_code") != 0
                 or occurrence.get("action_key") != "implementation." + boundary

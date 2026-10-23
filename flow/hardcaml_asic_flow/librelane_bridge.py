@@ -19,16 +19,18 @@ from librelane.state import State
 
 ENDPOINTS = {"synthesis": "Yosys.Synthesis", "floorplan": "OpenROAD.Floorplan",
              "placement": "OpenROAD.DetailedPlacement", "cts": "OpenROAD.CTS",
-             "routing": "OpenROAD.DetailedRouting", "signoff": "Misc.ReportManufacturability"}
+             "routing": "OpenROAD.DetailedRouting", "timing": "OpenROAD.STAPostPNR",
+             "signoff": "Misc.ReportManufacturability"}
 SUCCESSORS = {"synthesis": "Checker.YosysUnmappedCells", "floorplan": "OpenROAD.DumpRCValues",
               "placement": "OpenROAD.CTS", "cts": "OpenROAD.STAMidPNR-1",
-              "routing": "Odb.RemoveRoutingObstructions"}
+              "routing": "Odb.RemoveRoutingObstructions", "timing": "OpenROAD.IRDropReport"}
 RESTART_TARGETS = {"synthesis": ("floorplan", "placement"), "floorplan": ("placement",),
-                   "placement": ("cts",), "cts": ("routing",), "routing": ("signoff",)}
+                   "placement": ("cts",), "cts": ("routing",), "routing": ("timing",),
+                   "timing": ("signoff",)}
 
 # This literal is part of the bridge digest used by checkpoint compatibility.
 # Load only these verified bytes, including under Python -I (no sys.path edits).
-PROTOCOL_SHA256 = "732c05a5009f0510ec2624f7ddc03e86bb2a20cf824a9bb9c96d947bc0f2e49d"
+PROTOCOL_SHA256 = "eb6490db856f551ffe2ab35ea872bdc85c86801339e67a9d5bdf427238b25ae1"
 
 
 def protocol_module():

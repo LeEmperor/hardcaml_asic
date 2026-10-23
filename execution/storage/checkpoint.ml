@@ -79,7 +79,13 @@ let decode raw =
   let boundary = stage (string (get raw "boundary")) in
   if schema = Schema_1 && not (List.mem boundary [Stage.Synthesis; Stage.Floorplan; Stage.Placement])
   then fail "invalid boundary capability";
-  let restart_targets = targets schema boundary in
+  let restart_targets =
+    if schema = Schema_2
+       && boundary = Stage.Routing
+       && get raw "restart_targets" = J.array [ str "signoff" ]
+    then [ Stage.Signoff ]
+    else targets schema boundary
+  in
   if not (equal (get raw "restart_supported") (J.bool (restart_targets <> [])))
      || get raw "acceptance" <> str "not_evaluated" then fail "invalid boundary capability";
   if schema = Schema_2 &&
