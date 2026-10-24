@@ -274,13 +274,20 @@ the flow adapter validates and renders the views needed for its operation.
 | --- | --- | --- |
 | Behavioural model | implemented, P1 | Diagnostic poison per section 5.1; reference for defined behavior |
 | Generic flop implementation | implemented, P1 | Synthesizable, no macro; explicitly selected or explicitly allowed as fallback |
-| IHP CMOS5L macro | **capability unresolved; backend unimplemented** | S.1 inventory, S.2a functional checks and qualified S.3 feasibility have evidence; S.2 remains open and gates S.4 |
+| IHP CMOS5L macro | **exact 256×16 backend and fresh synthesis implemented** | PT.1a–c/PT.2a have public-example evidence; physical execution and timed-model conformance remain open |
 
-The macro backend must not be started yet. The
-[S.1 investigation](../sram/sram-candidate-investigation.md) found and inventoried the
+As of 2026-10-24, the public backend directly instantiates the stock macro without
+adding registers or altering this contract. The independent example has vendor-
+functional RTL and zero-delay mapped-netlist evidence. See the
+[integration record](../development/sram-example-integration.md) and
+[current phase plan](../phase_plan.md). Physical Hardening/checkpoints are explicitly
+unsupported until power, KLayout/CDL and electrical acceptance are verified.
+
+The [S.1 investigation](../sram/sram-candidate-investigation.md) found and inventoried the
 exact-shape `RM_IHPSG13_1P_256x16_c2_bm_bist`. Later functional checks and qualified
 flow feasibility are recorded in the [SRAM checkpoint](../sram/sram-status.md);
-target permission, accepted supply mapping and timed-model evidence remain open.
+the October 23 checkpoint resolves eligibility and records accepted-in-practice
+supply mapping. Timed-model evidence remains open.
 The earlier targeted
 check of pinned `tt-support-tools` revision `da63c99` found:
 
@@ -298,10 +305,10 @@ At the time of that earlier check the PDK itself was not inspected and no local
 checkout was available. S.1 has now established candidate availability and
 collateral from the locked PDK. The historical inventory alone does not establish
 the later gates; consult the checkpoint and S.3 disposition for current evidence
-and limitations before proposing a macro backend.
+and limitations before extending physical backend support.
 
-The first project milestone uses an explicitly selected flop implementation and
-does not wait for a macro. A macro-required request must fail if no supported
+The historical first project milestone used an explicitly selected flop implementation
+and did not wait for a macro. A macro-required request must fail if no supported
 exact mapping exists and no fallback was explicitly permitted. Never silently
 change shape, latency, or behavior, or compose several macros. Record the chosen
 implementation and any fallback reason in the build manifest.

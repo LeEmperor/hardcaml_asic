@@ -58,7 +58,9 @@ let run ~run_dir ~support_tools ~pdk_root ~precheck_python ~testbench ~testbench
     invalid_arg "postcheck requires a completed full flow";
   let flow=text (get (get run "outputs") "flow") in
   let flow=if Filename.is_relative flow then Filename.concat run_dir flow else flow in
-  let top=text (get (json (run_dir^"/project/manifest.json")) "top_module") in
+  let manifest=json (run_dir^"/project/manifest.json") in
+  Macro_contract.require_synthesis manifest;
+  let top=text (get manifest "top_module") in
   let gds=flow^"/final/gds/"^top^".gds" and netlist=flow^"/final/nl/"^top^".nl.v" in
   List.iter (fun p -> if not (try (Unix.stat p).Unix.st_kind=Unix.S_REG with _ -> false) then
     invalid_arg ("missing postcheck input: "^p))

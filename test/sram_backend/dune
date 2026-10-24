@@ -1,0 +1,8 @@
+(executable
+ (name backend_fixture)
+ (libraries core hardcaml hardcaml_asic)
+ (preprocess (pps ppx_hardcaml ppx_jane)))
+
+(rule
+ (alias runtest)
+ (action (run %{exe:backend_fixture.exe})))

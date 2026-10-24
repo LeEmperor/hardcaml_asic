@@ -66,11 +66,12 @@ class InspectorPresentationTest(unittest.TestCase):
         self.assertNotIn('"schema_version"', stdout)
 
     def test_explicit_plan_signoff_completion_still_not_acceptance(self):
-        self.writer.run(lambda: execution_plan.resolve_sequence(execution_plan.STAGE_ORDER),
+        self.writer.run(lambda: execution_plan.resolve_sequence(test_stages.EXPECTED_STAGE_SEQUENCE),
                         lambda: self.fixture.adapter())
         stdout = self.invoke("observation", "inspect", str(self.writer.directory))[1]
         self.assertIn("requested endpoint     signoff", stdout)
-        self.assertIn("synthesis -> floorplan -> placement -> cts -> routing -> signoff", stdout)
+        self.assertIn("synthesis -> floorplan -> placement -> cts -> routing -> timing -> signoff", stdout)
+        self.assertIn("implementation.timing", stdout)
         self.assertIn("full physical flow     completed", stdout)
         self.assertIn("acceptance             not_evaluated", stdout)
 

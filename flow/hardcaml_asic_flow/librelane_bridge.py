@@ -78,10 +78,10 @@ def closure(config, project, pdk_root):
     Inventory typed config paths recursively (including corners/lists), all
     bundle inputs and support references, and the entire target PDK tree to cover
     indirect Tcl/collateral reads. Runtime-only files are tied to the exact image.
-    MACROS are deliberately unsupported until a complete macro contract is proved.
+    The stock macro is supported for fresh synthesis only. Its typed paths and
+    generated stub participate in the same conservative closure as other inputs.
     """
-    if config.get("MACROS"):
-        raise ValueError("macro handoffs are not supported by this bounded contract")
+    validate_macro_bundle(project)
     paths = set()
 
     def tree(path, ancestors=()):
@@ -120,6 +120,147 @@ def closure(config, project, pdk_root):
     return {p: record(p) for p in sorted(paths)}
 
 
+def validate_macro_bundle(project):
+    """Validate the raw public bundle before LibreLane expands paths/defaults.
+
+    This admits no custom macros or physical checkpoint transitions. Supplying
+    CDL is an identified dependency, not a transistor-LVS claim.
+    """
+    manifest = json.loads((project / "manifest.json").read_text())
+    raw = json.loads((project / "src/config.json").read_text())
+    contract = manifest.get("macro_contract")
+    if contract is None:
+        if raw.get("MACROS"):
+            raise ValueError("MACROS require a public macro contract")
+        return False
+    name = "RM_IHPSG13_1P_256x16_c2_bm_bist"
+    prefix = "pdk_dir::libs.ref/sg13cmos5l_sram/"
+    def path(directory, suffix):
+        return prefix + directory + "/" + name + suffix
+    corners = {"nom_fast_1p32V_m40C": "fast_1p32V_m55C",
+               "nom_slow_1p08V_125C": "slow_1p08V_125C",
+               "nom_typ_1p20V_25C": "typ_1p20V_25C"}
+    if (contract.get("schema_version") != 1 or contract.get("execution") != "synthesis_only"
+            or manifest.get("operation") != "Synthesis"
+            or raw != manifest.get("flow_configuration")
+            or raw.get("PDK") != "ihp-sg13cmos5l"
+            or raw.get("STA_CORNERS") != list(corners)
+            or raw.get("DEFAULT_CORNER") != "nom_typ_1p20V_25C"
+            or set(raw.get("MACROS", {})) != {name}):
+        raise ValueError("unsupported SRAM synthesis bundle contract")
+    stub = "macros/" + name + ".blackbox.v"
+    if (raw.get("EXTRA_VERILOG_MODELS") != ["dir::../" + stub]
+            or contract.get("blackbox_sources") != [stub]):
+        raise ValueError("SRAM requires its generated synthesis stub")
+    macro = raw["MACROS"][name]
+    for key, expected in {"lef": [path("lef", ".lef")],
+                          "gds": [path("gds", ".gds")],
+                          "spice": [path("cdl", ".cdl")],
+                          "lib": {c: [path("lib", "_" + suffix + ".lib")]
+                                  for c, suffix in corners.items()}}.items():
+        if macro.get(key) != expected:
+            raise ValueError("incorrect exact SRAM collateral: " + key)
+    entries = contract.get("macros", [])
+    if not entries or any(m.get("module") != name for m in entries):
+        raise ValueError("invalid SRAM resource inventory")
+    instances = [m["instance"] for m in entries]
+    if len(set(instances)) != len(instances):
+        raise ValueError("duplicate SRAM RTL instance")
+    # Resource records are independently emitted from elaboration. Compare their
+    # structured sexps, not whitespace-stripped strings or the contract itself.
+    def sexp(source):
+        if not isinstance(source, str):
+            raise ValueError("invalid resource inventory sexp")
+        offset = 0
+        def parse(depth=0):
+            nonlocal offset
+            if depth > 64:
+                raise ValueError("resource inventory sexp too deep")
+            while offset < len(source) and source[offset].isspace():
+                offset += 1
+            if offset == len(source):
+                raise ValueError("truncated resource inventory sexp")
+            if source[offset] == '(':
+                offset += 1
+                result = []
+                while True:
+                    while offset < len(source) and source[offset].isspace():
+                        offset += 1
+                    if offset == len(source):
+                        raise ValueError("unclosed resource inventory sexp")
+                    if source[offset] == ')':
+                        offset += 1
+                        return result
+                    result.append(parse(depth + 1))
+            if source[offset] == '"':
+                value, end = json.JSONDecoder().raw_decode(source, offset)
+                if not isinstance(value, str):
+                    raise ValueError("invalid resource inventory atom")
+                offset = end
+                return value
+            start = offset
+            while offset < len(source) and not source[offset].isspace() and source[offset] not in '()"':
+                offset += 1
+            if offset == start:
+                raise ValueError("invalid resource inventory atom")
+            return source[start:offset]
+        result = parse()
+        if source[offset:].strip():
+            raise ValueError("trailing resource inventory sexp")
+        return result
+    def field(record, key):
+        if not isinstance(record, list):
+            raise ValueError("invalid resource inventory record")
+        values = [v[1] for v in record if isinstance(v, list) and len(v) == 2 and v[0] == key]
+        if len(values) != 1:
+            raise ValueError("missing or duplicate resource field: " + key)
+        return values[0]
+    expected_request = sexp("((kind single_port_ram) (contract ((width 16) (depth 256) "
+                            "(read_latency 1) (port 1rw) (disabled_output hold) (write_output unspecified))))")
+    registered = {}
+    resource_ids = set()
+    for r in manifest["resources"]:
+        resource = r["id"]
+        if resource in resource_ids:
+            raise ValueError("duplicate registered resource")
+        resource_ids.add(resource)
+        implementation = field(sexp(r["selection"]), "implementation")
+        if implementation == "Flops":
+            continue
+        if implementation != ["Macro", name]:
+            raise ValueError("unsupported registered macro implementation")
+        if sexp(r["request"]) != expected_request or sexp(r["elaborated_as"]) != "Selected_implementation":
+            raise ValueError("registered macro requires elaborated exact256x16 implementation")
+        components = resource.split('/')
+        if any(not c or not c.isascii() or c[0].isdigit()
+               or any(not (ch.isalnum() or ch == '_') for ch in c) for c in components):
+            raise ValueError("invalid registered macro resource ID")
+        registered[resource] = "hc_resource_" + '_'.join(str(len(c)) + '_' + c for c in components)
+    resources = [m["resource"] for m in entries]
+    if len(resources) != len(set(resources)) or set(resources) != set(registered):
+        raise ValueError("macro resources differ from registered exact-SRAM inventory")
+    placements = {}
+    for m in entries:
+        if m["instance"] != registered[m["resource"]]:
+            raise ValueError("macro instance differs from canonical resource encoding")
+        intent = m.get("physical_intent")
+        if intent is not None:
+            location = intent.get("location_um")
+            if (intent.get("orientation") != "R0" or not isinstance(location, list) or len(location) != 2
+                    or any(type(x) is not float or not (-float('inf') < x < float('inf')) for x in location)):
+                raise ValueError("invalid macro placement intent")
+            placements[m["instance"]] = {"location": location, "orientation": "R0"}
+    if macro.get("instances") != placements:
+        raise ValueError("configuration placements differ from declared macro intent inventory")
+    for m in entries:
+        for c in m["collateral"]:
+            ref = c["reference"]
+            if ref != "generated:" + name + ".blackbox.v":
+                if not ref.startswith(prefix) or any(p in ("", ".", "..") for p in ref[9:].split("/")):
+                    raise ValueError("unsupported SRAM collateral reference")
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("request", type=Path)
@@ -145,6 +286,9 @@ def execute(request):
     candidate = Path(request["candidate"])
     boundary = request["boundary"]
     validating = request["operation"] == "validate_publication"
+    macro = validate_macro_bundle(project)
+    if macro:
+        raise ValueError("SRAM segmented checkpoints are unsupported; use run --stage synthesis (fresh coarse synthesis)")
     if not validating:
         candidate.mkdir()  # fresh output only, never read a stale success file
     classic = Flow.factory.get("Classic")

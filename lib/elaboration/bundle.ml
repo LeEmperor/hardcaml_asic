@@ -363,6 +363,42 @@ let info_yaml (resolved : Resolved.t) source_name =
    TODO (future fix): the three generated settings are written out again in [render]'s
    "generated_settings"; one shared list would stop the two from drifting apart;
 *)
+let macro_stub_path = "macros/" ^ Resolved.stock_macro ^ ".blackbox.v"
+
+let macro_configuration (resolved : Resolved.t) =
+  let names = List.dedup_and_sort (List.map resolved.macros ~f:(fun m -> m.name)) ~compare:String.compare in
+  assoc (List.map names ~f:(fun name ->
+    let macros = List.filter resolved.macros ~f:(fun m -> String.equal m.name name) in
+    let paths role =
+      List.hd_exn macros |> fun (m : Resolved.Macro.t) ->
+      List.filter_map m.collateral ~f:(fun c ->
+        if Resource.Technology.Collateral.Role.equal c.role role then Some (string c.reference) else None)
+      |> fun xs -> `List xs in
+    name, assoc
+      [ "instances", assoc (List.filter_map macros ~f:(fun m ->
+          Option.map m.intent ~f:(fun i -> m.instance, assoc
+            [ "location", `List [`Float i.x_um; `Float i.y_um]
+            ; "orientation", string "R0" ])))
+      ; "lef", paths Physical_abstract
+      ; "gds", paths Physical_layout
+      ; "spice", paths Spice_netlist
+      ; "lib", assoc (List.map Resolved.macro_corners ~f:(fun (corner, suffix) ->
+          corner, `List [string (Resolved.macro_path "lib" ("_" ^ suffix ^ ".lib"))]))
+      ]))
+;;
+
+let generated_settings (resolved : Resolved.t) source_name =
+  [ "VERILOG_FILES", `List [ `String ("dir::" ^ source_name) ]
+  ; "PNR_SDC_FILE", `String "dir::../constraints/top.sdc"
+  ; "SIGNOFF_SDC_FILE", `String "dir::../constraints/top.sdc"
+  ] @ if List.is_empty resolved.macros then [] else
+    [ "MACROS", macro_configuration resolved
+    ; "EXTRA_VERILOG_MODELS", `List [string ("dir::../" ^ macro_stub_path)]
+    ; "STA_CORNERS", list (fun (corner, _) -> string corner) Resolved.macro_corners
+    ; "DEFAULT_CORNER", string "nom_typ_1p20V_25C"
+    ]
+;;
+
 let config (resolved : Resolved.t) source_name =
 
   (* Resolved settings as (key, value), with only the floorplan path rewritten *)
@@ -378,10 +414,7 @@ let config (resolved : Resolved.t) source_name =
 
   (* Settings that point at files this bundle emits *)
   let generated =
-    [ "VERILOG_FILES", `List [ `String ("dir::" ^ source_name) ]
-    ; "PNR_SDC_FILE", `String "dir::../constraints/top.sdc"
-    ; "SIGNOFF_SDC_FILE", `String "dir::../constraints/top.sdc"
-    ]
+    generated_settings resolved source_name
   in
 
   assoc
@@ -429,6 +462,37 @@ let setting_json (setting : Resolved.Setting.t) =
     ; "value", setting.value
     ; "owner", sexp Resolved.Setting.Owner.sexp_of_t setting.owner
     ]
+;;
+
+let macro_json (m : Resolved.Macro.t) =
+  assoc
+    [ "resource", string (Resource.Id.to_string m.resource)
+    ; "module", string m.name
+    ; "instance", string m.instance
+    ; "collateral", list (fun (c : Resource.Technology.Collateral.t) ->
+        assoc [ "role", sexp Resource.Technology.Collateral.Role.sexp_of_t c.role
+              ; "reference", string c.reference ]) m.collateral
+    ; "physical_intent", Option.value_map m.intent ~default:`Null ~f:(fun i ->
+        assoc [ "location_um", `List [`Float i.x_um; `Float i.y_um]
+              ; "orientation", string "R0"; "halo_um", `Float i.halo_um
+              ; "power", assoc ["VDD!", string "VPWR"; "VDDARRAY!", string "VPWR"; "VSS!", string "VGND"]
+              ; "execution", string "unsupported_pending_verified_power_geometry" ])
+    ]
+;;
+
+(* Empty synthesis declaration, never a functional model. *)
+let macro_stub =
+  "(* blackbox *)\nmodule RM_IHPSG13_1P_256x16_c2_bm_bist (\n\
+   input A_CLK, A_MEN, A_WEN, A_REN,\n\
+   input [7:0] A_ADDR,\n\
+   input [15:0] A_DIN,\n\
+   input A_DLY,\n\
+   output [15:0] A_DOUT,\n\
+   input [15:0] A_BM,\n\
+   input A_BIST_CLK, A_BIST_EN, A_BIST_MEN, A_BIST_WEN, A_BIST_REN,\n\
+   input [7:0] A_BIST_ADDR,\n\
+   input [15:0] A_BIST_DIN, A_BIST_BM\n\
+   );\nendmodule\n"
 ;;
 
 (* The main sauce here for bundles; given a resolved flow, produce every file of the
@@ -552,8 +616,9 @@ let render
     [ "src/" ^ source_name, rtl
     ; "src/config.json", json flow_configuration
     ; "constraints/top.sdc", sdc resolved
-    ; "info.yaml", info_yaml resolved source_name
-    ]
+     ; "info.yaml", info_yaml resolved source_name
+     ]
+     @ (if List.is_empty resolved.macros then [] else [macro_stub_path, macro_stub])
     @ Option.value_map simulation_rtl ~default:[] ~f:(fun rtl ->
       [ "simulation/" ^ source_name, rtl ])
   in
@@ -604,7 +669,7 @@ let render
   *)
   let payload =
     assoc
-      [ "schema_version", `Int 1
+      ([ "schema_version", `Int 1
       ; "project", string (Elaborated_project.project_name elaborated_project)
       ; "top_module", string top
       ; "source_revision", string source_revision
@@ -615,8 +680,30 @@ let render
       ; "resources", list resource_json (Elaborated_project.resources elaborated_project)
       ; ( "simulation_resources"
         , Option.value_map simulation_project ~default:(`List []) ~f:(fun simulation ->
-            list resource_json (Elaborated_project.resources simulation)) )
-      ; ( "target"
+             list resource_json (Elaborated_project.resources simulation)) )
+       ] @ (if List.is_empty resolved.macros then [] else
+       [ "macro_contract", assoc
+           [ "schema_version", `Int 1
+           ; "execution", string "synthesis_only"
+           ; "macros", list macro_json resolved.macros
+           ; "blackbox_sources", `List [string macro_stub_path]
+           ; "implementation_simulation", assoc
+               [ "defines", `List [string "FUNCTIONAL"]
+               ; "models", list string (List.concat_map resolved.macros ~f:(fun m ->
+                   List.filter_map m.collateral ~f:(fun c -> match c.role with
+                     | Simulation_model -> Some c.reference | _ -> None))
+                   |> List.dedup_and_sort ~compare:String.compare)
+               ]
+           ; "physical_policy", assoc
+               [ "geometry", string "pinned_cmos5l_klayout_real_gds_required"
+               ; "lvs", string "cdl_consumption_and_extraction_scope_unverified"
+               ; "magic_findings", string "retain_and_disposition_no_blanket_waiver"
+               ; "electrical", string "preserve_liberty_limits_no_architectural_registers"
+               ]
+           ; "fast_temperature_difference", string "standard_cells_m40C_macro_m55C"
+           ]
+       ]) @ [
+         ( "target"
         , assoc
             [ "harness", sexp Platform.Harness.sexp_of_t resolved.target.harness
             ; "technology", string resolved.target.technology_name
@@ -631,10 +718,7 @@ let render
       ; "flow_configuration", flow_configuration
       ; ( "generated_settings"
         , assoc
-            [ "VERILOG_FILES", `List [ string ("dir::" ^ source_name) ]
-            ; "PNR_SDC_FILE", string "dir::../constraints/top.sdc"
-            ; "SIGNOFF_SDC_FILE", string "dir::../constraints/top.sdc"
-            ] )
+             (generated_settings resolved source_name) )
       ; ( "requested_tools"
         , assoc
             [ "support_tools_revision", string resolved.target.floorplan.revision
@@ -674,7 +758,7 @@ let render
                          ] )
                    ] )
              ] )
-      ]
+       ])
   in
 
   (* Hashed in compact form, so pretty printing of manifest.json never affects it *)

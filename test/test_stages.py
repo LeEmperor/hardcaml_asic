@@ -16,6 +16,9 @@ sys.path.insert(0, os.environ.get("STAGE_TEST_PACKAGE_ROOT",
 from hardcaml_asic_flow import checkpoint as cp, cli, execution_plan as plans, runner, stages, backend_protocol
 
 
+EXPECTED_STAGE_SEQUENCE = ("synthesis", "floorplan", "placement", "cts", "routing", "timing", "signoff")
+
+
 class StagesTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -88,11 +91,14 @@ class StagesTest(unittest.TestCase):
                                      checkpoint_store=self.store, initial_checkpoint=initial)
 
     def test_recipe_roundtrip_and_capabilities(self):
+        self.assertEqual(plans.STAGE_ORDER, EXPECTED_STAGE_SEQUENCE)
         for endpoint in plans.BOUNDARIES:
             plan = plans.resolve_stages(endpoint)
             self.assertEqual(plans.StagePlan.from_dict(plan.as_dict()), plan)
         caps = plans.boundary_capabilities()
         self.assertEqual(caps["placement"]["restart_targets"], ["cts"])
+        self.assertEqual(caps["routing"]["restart_targets"], ["timing"])
+        self.assertEqual(caps["timing"]["restart_targets"], ["signoff"])
         self.assertFalse(caps["signoff"]["restart_supported"])
         for raw in ({"endpoint": "unknown", "resume": False, "schema_version": 2},
                     {"endpoint": "synthesis", "resume": True, "schema_version": 2},
@@ -423,13 +429,17 @@ class StagesTest(unittest.TestCase):
     def test_explicit_sequence_rejects_skips_reordering_repeats_and_wrong_initial(self):
         for names, initial in ((["synthesis", "placement"], None), (["placement", "floorplan"], "floorplan"),
                                (["floorplan", "floorplan"], "synthesis"), (["cts"], "floorplan"),
-                               (["signoff"], "signoff"), (["cts"], []), ([], None)):
+                               (["signoff"], "signoff"), (["cts"], []), ([], None),
+                               (["placement", "cts", "routing", "signoff"], "floorplan"),
+                               (["signoff"], "routing")):
             with self.assertRaises(ValueError):
                 plans.resolve_sequence(names, initial_boundary=initial)
-        plan = plans.resolve_sequence(["placement", "cts", "routing", "signoff"], initial_boundary="floorplan")
+        plan = plans.resolve_sequence(["placement", "cts", "routing", "timing", "signoff"], initial_boundary="floorplan")
         self.assertEqual(plans.StagePlan.from_dict(plan.as_dict()), plan)
         self.assertEqual(plan.actions[1].requires, ("implementation.placement",))
         self.assertEqual(plan.actions[0].inputs, ("floorplan_checkpoint",))
+        self.assertEqual(plan.actions[3].requires, ("implementation.routing",))
+        self.assertEqual(plan.actions[4].inputs, ("timing_checkpoint",))
         self.assertEqual(plans.resolve_stages("placement").sequence, ("synthesis", "floorplan", "placement"))
         for raw in ({"schema_version": 3.0, "stages": ["synthesis"], "initial_boundary": None},
                     {"schema_version": 3, "stages": "synthesis", "initial_boundary": None},
@@ -438,7 +448,8 @@ class StagesTest(unittest.TestCase):
                 plans.StagePlan.from_dict(raw)
 
     def test_only_tested_physical_transitions_can_launch(self):
-        for boundary, target in (("floorplan", "cts"), ("placement", "routing"), ("cts", "signoff")):
+        for boundary, target in (("floorplan", "cts"), ("placement", "routing"), ("cts", "signoff"),
+                                 ("routing", "signoff")):
             candidate = self.candidate(self.root / ("candidate-" + boundary), boundary)
             artifact = cp.publish(candidate, self.store, compatibility=self.compat, boundary=boundary)
             with self.assertRaises(ValueError):
@@ -446,14 +457,14 @@ class StagesTest(unittest.TestCase):
         self.assertEqual(self.launches, [])
 
     def test_full_explicit_sequence_and_physical_resume(self):
-        execution = runner.execute(plans.resolve_sequence(plans.STAGE_ORDER), self.adapter())
+        execution = runner.execute(plans.resolve_sequence(EXPECTED_STAGE_SEQUENCE), self.adapter())
         self.assertEqual(execution.exit_code, 0)
-        self.assertEqual([a["boundary"] for a in execution.artifacts], list(plans.STAGE_ORDER))
+        self.assertEqual([a["boundary"] for a in execution.artifacts], list(EXPECTED_STAGE_SEQUENCE))
         physical = execution.artifacts[2]
-        plan = plans.resolve_sequence(["cts", "routing", "signoff"], initial_boundary="placement")
+        plan = plans.resolve_sequence(["cts", "routing", "timing", "signoff"], initial_boundary="placement")
         result = runner.execute(plan, self.adapter(initial=physical["path"]))
         self.assertEqual(result.exit_code, 0)
-        self.assertEqual(len(result.artifacts), 3)
+        self.assertEqual([a["boundary"] for a in result.artifacts], ["cts", "routing", "timing", "signoff"])
         with self.assertRaises(ValueError):
             runner.execute(plans.resolve_stages("cts", resume=True), self.adapter(initial=physical["path"]))
 

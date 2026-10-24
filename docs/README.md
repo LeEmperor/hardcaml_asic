@@ -68,6 +68,9 @@ to the phase plan for current status.
 
 **Consumers, packaging and Workbench**
 
+- [SRAM example integration](development/sram-example-integration.md): current
+  production-style testbed work, architectural ownership, blog findings and
+  agent-sized backend/flow/consumer assignments.
 - [PT.0 implementation](development/pt0-implementation.md): agent-sized SRAM
   correction/testbed work, actual checks and remaining physical findings.
 - [Consumer dependency workflow](development/consumer-dependency-workflow.md):

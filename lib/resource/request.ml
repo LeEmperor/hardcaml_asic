@@ -22,3 +22,21 @@ let create_exn ~kind ~contract =
   then raise_s [%message "resource kind must be an identifier" (kind : string)];
   { kind; contract }
 ;;
+
+(* Canonical portable 1RW request. Keep this below the resource constructors so
+   both technology capabilities and hardware construction share field order
+   without introducing a Technology/Context/Single_port_ram dependency cycle.
+   Shape support is checked by Single_port_ram.Config, not rounded here. *)
+let single_port_ram ~width ~depth ~read_latency =
+  create_exn
+    ~kind:"single_port_ram"
+    ~contract:
+      [%sexp
+        { width = (width : int)
+        ; depth = (depth : int)
+        ; read_latency = (read_latency : int)
+        ; port = ("1rw" : string)
+        ; disabled_output = ("hold" : string)
+        ; write_output = ("unspecified" : string)
+        }]
+;;

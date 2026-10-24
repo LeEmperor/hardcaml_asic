@@ -361,14 +361,20 @@ int flock(int fd, int op) {
         producer.communicate("close\n", timeout=5)
         self.assertEqual(producer.returncode, 0)
 
-    def test_human_delivers_all_twenty_two_events(self):
+    def test_human_delivers_all_twenty_five_events(self):
         fixture = test_stages.StagesTest()
         fixture.setUp()
         try:
             self.writer.run(lambda: execution_plan.resolve_stages("signoff"), lambda: fixture.adapter())
             self.writer.close()
             events = obs.load(self.writer.directory)[1]
-            self.assertEqual(len(events), 22)
+            self.assertEqual(len(events), 25)
+            self.assertEqual([event["event"] for event in events],
+                             ["allocated", "planned", "prepared"]
+                             + ["started", "published", "finished"] * 7 + ["outcome"])
+            self.assertEqual([event["data"]["artifact"]["boundary"] for event in events
+                              if event["event"] == "published"],
+                             list(test_stages.EXPECTED_STAGE_SEQUENCE))
             child = self.watch()
             stdout, stderr = child.communicate(timeout=5)
             self.assertEqual(child.returncode, 0, stderr)

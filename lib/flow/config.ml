@@ -79,7 +79,11 @@ module Librelane = struct
                  settings; their order does not matter, since [validate] rejects a key set
                  twice and the resolved settings are sorted by key;
   *)
-  type t = { overrides : Override.t list } [@@deriving sexp_of]
+  type t =
+    { overrides : Override.t list
+    ; macros : Macro_intent.t list
+    }
+  [@@deriving sexp_of]
 
   (* Check the overrides at declaration time; returns Or_error rather than raising since
      Project.create folds it, through the outer [validate], into one combined declaration
@@ -98,7 +102,7 @@ module Librelane = struct
      are still a duplicate, since LibreLane can only take one of them.
      -> see expect tests (test/test_lifecycle.ml, test/test_resolved_flow.ml)
   *)
-  let validate { overrides } =
+  let validate { overrides; macros } =
 
     let blank s = String.is_empty (String.strip s) in
 
@@ -163,7 +167,10 @@ module Librelane = struct
        that in the same commit;
     *)
     Or_error.combine_errors_unit
-      [ (match invalid with
+      [ (match List.find_a_dup macros ~compare:(fun a b -> Resource.Id.compare a.resource b.resource) with
+         | None -> Ok ()
+         | Some intent -> Or_error.error_s [%message "duplicate macro physical intent" (intent : Macro_intent.t)])
+      ; (match invalid with
          | [] -> Ok ()
          | _ :: _ ->
            Or_error.error_s
@@ -211,8 +218,8 @@ type t =
 
 (* Select the LibreLane adapter for [operation]; no overrides is the usual case, as in
    [librelane Hardening] -> see examples/memory_example.ml; *)
-let librelane ?(overrides = []) operation =
-  { adapter = Librelane { overrides }; operation }
+let librelane ?(overrides = []) ?(macros = []) operation =
+  { adapter = Librelane { overrides; macros }; operation }
 ;;
 
 (* Check the flow at declaration time by handing off to the selected adapter's validator;

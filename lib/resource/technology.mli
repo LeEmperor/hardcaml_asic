@@ -19,10 +19,14 @@ module Collateral : sig
   module Role : sig
     type t =
       | Simulation_model (** Model used to simulate the macro itself. *)
+      | Timed_simulation_model
+      (** Vendor model for timing-check simulation, without [FUNCTIONAL]. The
+          functional source set uses [Simulation_model] with [FUNCTIONAL]. *)
       | Black_box (** Empty module stub standing in for the macro during synthesis. *)
       | Timing_model of { corner : string } (** Timing library for one named corner. *)
       | Physical_abstract (** Abstract view for place and route. *)
       | Physical_layout (** Full layout of the macro. *)
+      | Spice_netlist (** CDL/SPICE view for macro-aware LVS. *)
     [@@deriving compare, equal, sexp_of]
   end
 
@@ -68,8 +72,9 @@ type t = private
     reference technology. *)
 val create_exn : name:string -> resource_mappings:Resource_mapping.t list -> t
 
-(** IHP SG13 CMOS5L standard cells. No resource mappings: no SRAM macro has been
-    established for this technology (see docs/reference/program-memory-contract.md section 8). *)
+(** IHP SG13 CMOS5L standard cells and the stock exact 256x16 latency-one 1RW
+    SRAM mapping. Collateral references are unresolved and no PDK files are read
+    during elaboration. Functional, timed and physical acceptance are distinct. *)
 val ihp_sg13cmos5l : t
 
 (** Standard-cell views and routing limits for the pinned CMOS5L reference. Paths

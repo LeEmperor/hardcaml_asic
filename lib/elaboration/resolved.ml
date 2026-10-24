@@ -17,7 +17,8 @@
    It does NOT emit anything, that is Bundle's job, and it does NOT open or hash the files
    the target references; Bundle only records their pinned hashes. It is TT/LibreLane
    specific on purpose: the wrapper port names, the single "clk" clock and the protected
-   keys all belong to that pair, and macro collateral is not supported yet.
+   keys all belong to that pair. Stock exact SRAM collateral is supported for
+   synthesis; physical macro execution is explicitly gated pending verification.
 *)
 
 open! Core
@@ -95,6 +96,24 @@ module Delay_ns = struct
   [@@deriving sexp_of]
 end
 
+module Macro = struct
+  type t =
+    { resource : Resource.Id.t
+    ; name : string
+    ; instance : string
+    ; collateral : Resource.Technology.Collateral.t list
+    ; intent : Flow.Macro_intent.t option
+    }
+end
+
+let stock_macro = "RM_IHPSG13_1P_256x16_c2_bm_bist"
+let macro_corners =
+  [ "nom_fast_1p32V_m40C", "fast_1p32V_m55C"
+  ; "nom_slow_1p08V_125C", "slow_1p08V_125C"
+  ; "nom_typ_1p20V_25C", "typ_1p20V_25C" ]
+let macro_path directory suffix =
+  "pdk_dir::libs.ref/sg13cmos5l_sram/" ^ directory ^ "/" ^ stock_macro ^ suffix
+
 (* The resolved flow; the elaborated project plus checked and derived flow facts;
 
    elaborated_project : the Implementation elaboration it was resolved from, unchanged;
@@ -122,7 +141,8 @@ type t =
   ; output_delays_ns   : Delay_ns.t list
    ; settings           : Setting.t list
    ; methodology        : Hardcaml_asic_flow_domain.Catalog.resolved option
-   ; effective_parameters : Effective_parameter.t list
+    ; effective_parameters : Effective_parameter.t list
+    ; macros : Macro.t list
   }
 
 (* The name a port is known by at the top level; its first Hardcaml name;
@@ -399,17 +419,16 @@ let required_views operation =
              carries behavioral models, not synthesis RTL;
    views   : every role [required_views] names for the flow's operation has a
              Technology_view in [target.views]; a Floorplan_def never counts;
-   macros  : no resource may be selected as a Macro; this reference adapter does not
-             emit macro collateral (MACROS, EXTRA_LEFS, ...) yet;
+    macros  : only the stock exact SRAM is admitted; resolve_macros checks its
+              complete source inventory and actual emitted instance name;
    sources : every resource carries Generated_synthesis_rtl; skipped for a Simulation
              elaboration, since the mode check already fails and would be followed by
              every resource again;
 
    All four checks run even when another fails, so one call reports every problem.
 
-   A consequence: in Implementation mode only a Macro resource lacks synthesis RTL (see
-   Context.sources_of), so a macro is reported by both [macros] and
-   [sources]. The sources check stays as a guard in case sources_of changes.
+    Unknown macros retain both capability/source diagnostics. The stock macro's
+    generated wrapper and supplied black box are checked separately below.
 
    Taking the target separately rather than resolving it here lets a test hand it a
    target with a view removed -> see expect tests (test/test_resolved_flow.ml);
@@ -435,7 +454,7 @@ let validate_capabilities elaborated_project target =
   let unsupported_macros =
     List.filter resources ~f:(fun resource ->
       match resource.selection.implementation with
-      | Resource.Selection.Implementation.Macro _ -> true
+      | Resource.Selection.Implementation.Macro name -> not (String.equal name stock_macro)
       | Flops -> false)
   in
 
@@ -446,11 +465,12 @@ let validate_capabilities elaborated_project target =
     then []
     else
       List.filter resources ~f:(fun resource ->
-        not
-          (List.mem
+         (match resource.selection.implementation with
+          | Resource.Selection.Implementation.Macro name when String.equal name stock_macro -> false
+          | _ -> not (List.mem
              resource.sources
              Resource.Record.Source.Generated_synthesis_rtl
-             ~equal:Resource.Record.Source.equal))
+              ~equal:Resource.Record.Source.equal)))
   in
 
   (* Checking with the above in a list format, fold any errors into the result; *)
@@ -548,7 +568,14 @@ let protected_keys =
   ; "EXTRA_GDS_FILES"
   ; "EXTRA_LIBS"
   ; "EXTRA_VERILOG_MODELS"
+  ; "EXTRA_SPICE_MODELS"
+  ; "EXTRA_CDLS"
   ; "SYNTH_BLACKBOXES"
+  ; "VERILOG_FILES_BLACKBOX"
+  ; "PDN_MACRO_CONNECTIONS"
+  ; "PDN_CFG"
+  ; "STA_CORNERS"
+  ; "DEFAULT_CORNER"
   ; "FP_PIN_ORDER_CFG"
   ; "SYNTH_DRIVING_CELL"
   ; "SYNTH_CLK_DRIVING_CELL"
@@ -787,11 +814,95 @@ let resolve_effective_parameters ~methodology ~project_assignments =
     let value = match P.assignment_value a with
       | Strategy s -> `String (P.Strategy.to_string s) | Bool b -> `Bool b in
     { Flow.Config.Librelane.Override.key = P.Key.to_string (P.assignment_key a); value; reason }) in
-  let%bind () = Flow.Config.Librelane.validate { overrides } in
+  let%bind () = Flow.Config.Librelane.validate { overrides; macros = [] } in
   let settings = List.map overrides ~f:(fun o ->
     { Setting.key = o.key; value = o.value; owner = Override o.reason }) in
   let%map _, effective = merge_methodology methodology settings in
   effective
+;;
+
+(* Pure checks against the actual Hardcaml-mangled RTL name. Never read a PDK. *)
+let resolve_macros elaborated_project target =
+  let open Or_error.Let_syntax in
+  let resources = Elaborated_project.resources elaborated_project in
+  let flow = Elaborated_project.flow elaborated_project in
+  let intents = match flow.adapter with Librelane s -> s.macros in
+  let circuit = Elaborated_project.circuit elaborated_project in
+  let%bind () = Or_error.combine_errors_unit (List.map intents ~f:(fun intent ->
+    match List.find resources ~f:(fun r -> Resource.Id.equal r.id intent.resource) with
+    | Some { selection = { implementation = Macro _; _ }; _ } -> Ok ()
+    | _ -> Or_error.error_s [%message "macro intent must reference a selected macro resource" (intent : Flow.Macro_intent.t)])) in
+  let%bind macros = List.filter_map resources ~f:(fun resource ->
+    match resource.selection.implementation with
+    | Flops -> None
+    | Macro name -> Some (
+      let%bind () = if String.equal name stock_macro then Ok ()
+        else Or_error.errorf "unsupported macro bundle implementation: %s" name in
+      let%bind () = if Resource.Request.equal resource.request (Resource.Request.single_port_ram ~width:16 ~depth:256 ~read_latency:1)
+        then Ok () else Or_error.error_string "stock SRAM requires the exact 256x16 latency-one request" in
+      let instance = Resource.Id.rtl_instance_name resource.id in
+      let actual = Circuit.instantiations circuit |> List.filter ~f:(fun inst ->
+        String.equal inst.instantiation.circuit_name name
+        && String.equal (Circuit.Name_for_rtl.instantiation_exn circuit inst
+          |> Rtl.Name.legalize ~language:Verilog |> Rtl.Name.For_backend.to_string) instance) in
+      let%bind () = if List.length actual = 1 then Ok () else
+        Or_error.error_s [%message "selected macro must have exactly one matching actual emitted RTL instance" (instance : string) (name : string)] in
+      let collateral = List.filter_map resource.sources ~f:(function
+        | Resource.Record.Source.Collateral c -> Some c | _ -> None) in
+      let open Resource.Technology.Collateral in
+      let required =
+        [ Role.Black_box, "generated:" ^ stock_macro ^ ".blackbox.v"
+        ; Role.Physical_abstract, macro_path "lef" ".lef"
+        ; Role.Physical_layout, macro_path "gds" ".gds"
+        ; Role.Spice_netlist, macro_path "cdl" ".cdl"
+        ] @ List.map macro_corners ~f:(fun (_, suffix) ->
+          let corner = List.hd_exn (String.split suffix ~on:'_') in
+          Role.Timing_model { corner }, macro_path "lib" ("_" ^ suffix ^ ".lib")) in
+      let%bind () = Or_error.combine_errors_unit (List.map required ~f:(fun (role, reference) ->
+        match List.filter collateral ~f:(fun c -> Role.equal c.role role) with
+        | [c] when String.equal c.reference reference -> Ok ()
+        | _ -> Or_error.error_s [%message "missing, ambiguous or unsupported exact SRAM collateral" (role : Role.t) (reference : string)])) in
+      let%bind () = Or_error.combine_errors_unit (List.map [Role.Simulation_model; Role.Timed_simulation_model] ~f:(fun role ->
+        let actual = List.filter_map collateral ~f:(fun c -> if Role.equal c.role role then Some c.reference else None)
+          |> List.sort ~compare:String.compare in
+        let expected = [macro_path "verilog" ".v";
+          "pdk_dir::libs.ref/sg13cmos5l_sram/verilog/RM_IHPSG13_1P_core_behavioral_bm_bist.v"]
+          |> List.sort ~compare:String.compare in
+        if List.equal String.equal actual expected then Ok () else
+          Or_error.error_s [%message "exact SRAM requires both vendor simulation sources" (role : Role.t)])) in
+      let%bind () = if List.length collateral = 11 then Ok () else
+        Or_error.error_string "unexpected exact SRAM collateral roles" in
+      let%bind () = if List.for_all collateral ~f:(fun c ->
+        String.is_prefix c.reference ~prefix:"pdk_dir::libs.ref/"
+        || String.equal c.reference ("generated:" ^ stock_macro ^ ".blackbox.v"))
+        then Ok () else Or_error.error_string "macro collateral must use supported PDK-relative references" in
+      let intent = List.find intents ~f:(fun i -> Resource.Id.equal i.resource resource.id) in
+      let%map () = match intent with
+        | None -> Ok ()
+        | Some i ->
+          let r = target.Platform.Target.Resolved.die_area_um in
+          if Float.(i.x_um -. i.halo_um >= r.x_min && i.y_um -. i.halo_um >= r.y_min
+                    && i.x_um +. 236.8 +. i.halo_um <= r.x_max
+                    && i.y_um +. 118.78 +. i.halo_um <= r.y_max)
+          then Ok () else Or_error.error_string "macro placement and halo exceed target bounds" in
+      { Macro.resource = resource.id; name; instance; collateral; intent }))
+    |> Or_error.combine_errors in
+  let%bind () = if List.length (List.filter (Circuit.instantiations circuit) ~f:(fun i ->
+    String.equal i.instantiation.circuit_name stock_macro)) = List.length macros
+    then Ok () else Or_error.error_string "unregistered stock SRAM RTL instance" in
+  let%bind () = Or_error.combine_errors_unit (List.concat_mapi macros ~f:(fun n a ->
+    List.filter_mapi macros ~f:(fun m b -> if m <= n then None else
+      match a.intent, b.intent with
+      | Some a, Some b -> Some (
+        let gap = a.halo_um +. b.halo_um in
+        if Float.(a.x_um +. 236.8 +. gap <= b.x_um || b.x_um +. 236.8 +. gap <= a.x_um
+                  || a.y_um +. 118.78 +. gap <= b.y_um || b.y_um +. 118.78 +. gap <= a.y_um)
+        then Ok () else Or_error.error_string "macro placements or halos overlap")
+      | _ -> None))) in
+  let%map () = if not (List.is_empty macros) && Flow.Config.Operation.equal flow.operation Hardening
+    then Or_error.error_string "SRAM hardening is unsupported: placement-aware Metal4 power access, real-GDS CMOS5L KLayout policy and CDL-backed LVS execution are not yet verified; use Synthesis"
+    else Ok () in
+  macros
 ;;
 
 let resolve ?inputs ?methodology elaborated_project =
@@ -819,6 +930,7 @@ let resolve ?inputs ?methodology elaborated_project =
       ]
   in
 
+  let%bind.Or_error macros = resolve_macros elaborated_project target in
   (* Step 3 *)
   let%bind.Or_error clock, clock_period_ns, input_delays_ns, output_delays_ns =
     validate_timing elaborated_project
@@ -840,7 +952,8 @@ let resolve ?inputs ?methodology elaborated_project =
   ; output_delays_ns
    ; settings
    ; methodology
-   ; effective_parameters
+    ; effective_parameters
+    ; macros
   }
 ;;
 

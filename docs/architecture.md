@@ -14,7 +14,9 @@ is in the [September architecture](archive/architecture-2026-09.md). The
 Help independent Hardcaml projects declare ASIC intent, emit reproducible inputs,
 execute an implementation flow and inspect traceable results. The supported path
 is Tiny Tapeout 6x4 / IHP CMOS5L / LibreLane, with behavioral and explicitly
-selected flop memory. There is no production SRAM backend and no general
+selected flop memory, plus the exact 256×16 SRAM backend through fresh synthesis.
+Macro hardening/checkpoints and timed-model conformance remain open; see the
+[public SRAM boundary](development/sram-public-bundle.md). There is no general
 multi-target or multi-backend implementation. A successful process is not a
 signoff verdict.
 
@@ -212,6 +214,17 @@ references, not verified physical evidence.
 Retain the behavioral/flop RAM contract and its independent conformance tests.
 Selection is explicit: exact mapping, flops, or an explicitly permitted fallback.
 Never silently change shape, latency or behavior to fit hardware.
+
+User hardware owns architectural registers, memory latency and arbitration.
+Implementation tooling may perform recorded, behavior-preserving combinational
+buffering, sizing, placement and routing; it must not add pipeline stages or
+retime across the SRAM contract to repair violations. Failed electrical closure
+is reported rather than repaired by weakening limits or changing architecture.
+
+The independent `hardcaml_asic_example/memory/` consumer is the ongoing SRAM
+integration/acceptance design. Historical Verilog probes remain bounded diagnostic
+fixtures, not a parallel production path. Resource IDs map to verified emitted
+macro names; arbitrary source nets may still be optimized, merged or renamed.
 
 `Resource.Request.contract` currently uses structural S-expression equality, so
 field order affects matching. It merits a typed/canonical representation before

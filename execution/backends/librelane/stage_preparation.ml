@@ -108,6 +108,8 @@ let prepare ~bundle ~support_tools ~pdk_root ~python ~docker ~git ~resources ~wo
       | Some _ -> ignore (directory workspace));
     let manifest_path = bundle ^ "/manifest.json" in
     let manifest_hash = hash manifest_path and manifest = read manifest_path in
+    if Macro_contract.active manifest then
+      failwith "SRAM segmented checkpoints are unsupported; use run --stage synthesis (fresh coarse synthesis)";
     if get manifest "schema_version" <> codec (J.integer "1") || get manifest "adapter" <> s "LibreLane" then failwith "unsupported bundle schema or adapter";
     let identity = text (get manifest "identity") in
     if String.length identity <> 64 || not (String.for_all (fun c -> c>='0' && c<='9' || c>='a' && c<='f') identity) then failwith "invalid bundle identity";

@@ -63,6 +63,8 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
   let python = checked (Checkpoint.absolute_path python) in
   let manifest_path = bundle ^ "/manifest.json" in
   let manifest = codec (R.read_json manifest_path) in
+  if stage=Execution_plan.Coarse.Full then Macro_contract.require_synthesis manifest;
+  let macro = Macro_contract.active manifest in
   let identity = get manifest "identity" in ignore (text identity);
   let manifest_sha256 = hash manifest_path in
   check_cancel ();
@@ -99,12 +101,16 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
       let path_value = find "PATH" in
       let env = List.filter (fun x -> not (List.exists (fun key -> String.starts_with ~prefix:(key ^ "=") x)
         ["PATH";"PDK";"PDK_ROOT";"_OPENLANE_MAX_CORES";"OPENROAD_THREADS";"OMP_NUM_THREADS"])) env @
-        ["PATH=" ^ Filename.dirname python ^ ":" ^ String.sub path_value 5 (String.length path_value-5);"PDK_ROOT=" ^ pdk_root;"PDK=" ^ technology;
-         "_OPENLANE_MAX_CORES=20";"OPENROAD_THREADS=20";"OMP_NUM_THREADS=20"] in
+         ["PATH=" ^ Filename.dirname python ^ ":" ^ String.sub path_value 5 (String.length path_value-5);"PDK_ROOT=" ^ pdk_root;"PDK=" ^ technology;
+          "_OPENLANE_MAX_CORES=" ^ (if macro then "6" else "20");
+          "OPENROAD_THREADS=" ^ (if macro then "6" else "20");
+          "OMP_NUM_THREADS=" ^ (if macro then "6" else "20")] in
       C.status record C.Running; save (); check_cancel ();
       let arguments = ["-m";"librelane";"--pdk-root";pdk_root;"--pdk";technology;"--manual-pdk";
         "--run-tag";"asic";"--force-run-dir";"runs/asic"] @
-        (if stage=Execution_plan.Coarse.Synthesis then ["--to";"Yosys.Synthesis"] else []) @ ["src/config.json"] in
+        (if stage=Execution_plan.Coarse.Synthesis then ["--to";"Yosys.Synthesis"] else []) @
+        (if macro then ["--jobs";"6";"-c";"OPENROAD_THREADS=6";"-c";"STA_THREADS=1";
+          "-c";"KLAYOUT_DRC_THREADS=6";"-c";"KLAYOUT_XOR_THREADS=6"] else []) @ ["src/config.json"] in
       let log = open_out_gen [Open_wronly;Open_creat;Open_append;Open_binary] 0o600 (a.directory ^ "/execution.log") in
       let result = Fun.protect ~finally:(fun () -> close_out_noerr log) (fun () ->
         let output = Process.Descriptor (Unix.descr_of_out_channel log) in
@@ -136,6 +142,20 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
         | _ -> (match result.cleanup with Some {error=Some e;_} -> failwith ("owned container cleanup failed: " ^ e)
           | _ -> failwith "LibreLane failed; see execution.log and project/runs/asic"));
       if hash (project ^ "/manifest.json") <> manifest_sha256 || hash manifest_path <> manifest_sha256 then failwith "build manifest changed during execution";
+      if macro then (
+        List.iter (fun entry -> check_cancel ();
+          let relative = text (get entry "path") and expected = text (get entry "sha256") in
+          if hash (safe_child bundle relative) <> expected || hash (safe_child project relative) <> expected
+          then failwith ("macro bundle input changed during execution: " ^ relative)) (array (get manifest "files"));
+        List.iter (fun reference -> check_cancel ();
+          let path = text (get reference "path") in
+          if hash path <> text (get reference "sha256") then failwith ("macro/target collateral changed during execution: " ^ path);
+          if String.starts_with ~prefix:"macro:" (text (get reference "role")) then (
+            let declared = text (get reference "reference") in
+            let relative = String.sub declared 9 (String.length declared - 9) in
+            let current = safe_child pdk_root (technology ^ "/" ^ relative) in
+            if current <> path then failwith ("macro collateral alias changed during execution: " ^ declared)))
+          (array (get report "references")));
       C.set record "completed_stage" (s (if stage=Execution_plan.Coarse.Synthesis then "synthesis" else "full"));
       C.Completed,0,None,None
     with e ->

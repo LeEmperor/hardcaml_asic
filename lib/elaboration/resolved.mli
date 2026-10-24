@@ -53,6 +53,17 @@ module Effective_parameter : sig
     }
 end
 
+(** Exact implementation facts checked against registered resources and Hardcaml RTL. *)
+module Macro : sig
+  type t = private
+    { resource : Resource.Id.t
+    ; name : string
+    ; instance : string
+    ; collateral : Resource.Technology.Collateral.t list
+    ; intent : Flow.Macro_intent.t option
+    }
+end
+
 (** A checked delay, converted to nanoseconds. *)
 module Delay_ns : sig
   type t = private
@@ -80,6 +91,8 @@ type t = private
     (** Configurable, explicitly assigned keys in backend-key order. Empty without
         methodology. Inherits checked project values when the catalog is silent.
         Project values are validated even when replaced by catalog assignments. *)
+  ; macros : Macro.t list (** Checked exact SRAM instances. Synthesis supported;
+      macro hardening fails until physical power/check policy is verified. *)
   }
 
 (** Resolve an implementation elaboration; defaults to {!Target.Inputs.reference_cmos5l_6x4}.
@@ -119,6 +132,12 @@ val expected_outputs : (string * int) list
 (** Whether a LibreLane key is reserved for generated facts, including any SDC key. *)
 val protected_key : string -> bool
 
-(** Check implementation mode, required technology views and resource source support.
+(** Check implementation mode, required technology views and initial resource source support.
+    Full stock SRAM collateral and RTL-instance checking occurs during [resolve].
     Useful for capability diagnostics; success does not construct a resolved flow. *)
 val validate_capabilities : Elaborated_project.t -> Platform.Target.Resolved.t -> unit Or_error.t
+
+(** Adapter-owned exact stock collateral, shared with deterministic emission. *)
+val stock_macro : string
+val macro_corners : (string * string) list
+val macro_path : string -> string -> string

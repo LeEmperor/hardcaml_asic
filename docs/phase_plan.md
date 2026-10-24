@@ -8,6 +8,13 @@ owns boundaries; the [memory contract](reference/program-memory-contract.md)
 owns RAM semantics. Detailed designs and evidence belong in `development/`,
 `sram/`, and `evidence/`, linked from the relevant item here.
 
+**Revised direction, 2026-10-24:** ongoing SRAM acceptance belongs in
+`hardcaml_asic_example` through public APIs. The old Verilog probe remains a
+diagnostic/history artifact. Do not add architectural registers or change latency
+implicitly; permit recorded behavior-preserving physical optimization. The
+[example integration plan](development/sram-example-integration.md) records the
+agent assignments and blog-backed KLayout/CDL checking approach.
+
 The previous plan is preserved in the [2026-10-24 archive](archive/phase-plan-2026-10-24.md),
 including completed milestones, open P6 gates, and the former next steps.
 Archiving an open item does not complete it. New work uses **ASIC PT.0–PT.8**
@@ -21,18 +28,20 @@ to avoid renumbering historical ASIC P/S tasks or Protemu's own phases.
 - Protemu's `bin/asic_bundle.ml` registers `program` as 256×16, 1RW, latency one,
   currently with explicit `Flops` policy. Its emitter still uses
   `Bundle.render ~simulation_build`; current ASIC uses `~simulation_project`.
-- Resource policies and decision-chain records already exist. CMOS5L has no
-  production SRAM mapping, and the flow adapter does not yet support macro selections.
+- CMOS5L now has an exact 256×16 SRAM mapping, role-complete collateral and fresh
+  synthesis support. The independent example's actual mapped netlist retains one
+  SRAM and only its original 16 staging flops; gate-functional replay passes.
+  Macro physical hardening/checkpoints and timed-model conformance remain open.
 - SRAM S.1 inventory, S.2a functional-model tests, and qualified S.3 physical
   feasibility have evidence. The [October 23 checkpoint](sram/sram-status.md#2026-10-23-update)
   resolves eligibility and records the support-tools marker fix. Production
-  support and timed-model conformance remain open. Earlier authority-gate wording
+  physical support and timed-model conformance remain open. Earlier authority-gate wording
   in historical records is superseded by that update.
 - Workbench already has flow integration, synthesis cell tables, timing and
   physical inspection. The new work is logical-resource mapping and its connection
   to implementation evidence; see its [current overview](../../hardcaml_workbench/README.md).
 
-No new implementation or physical acceptance is claimed by this plan rewrite.
+Current implementation evidence is in the [example integration record](development/sram-example-integration.md#evidence).
 
 ## Ownership
 
@@ -51,8 +60,8 @@ named owner and does not reuse that repository's phase IDs.
 | Order | Item | Dependencies | State |
 | --- | --- | --- | --- |
 | 1 | PT.0 — Repair and refresh SRAM feasibility evidence | Existing S.3 records | In progress: PT.0a/b complete; electrical/deck residuals open |
-| 2 | PT.1 — Exact production SRAM backend | PT.0 corrected power/corner findings | Pending |
-| 3 | PT.2 — Macro collateral and physical controls | PT.1 mapping/wrapper contract | Pending |
+| 2 | PT.1 — Exact production SRAM backend | PT.0 corrected power/corner findings | PT.1a–c complete; timed-model conformance open |
+| 3 | PT.2 — Macro collateral and physical controls | PT.1 mapping/wrapper contract | PT.2a complete; fresh synthesis verified; physical path next |
 | 4 | PT.3 — Macro-backed Protemu acceptance | PT.1–PT.2; consumer API migration | Pending |
 | 5 | PT.4 — Resource-mapping inspection API | Existing records; PT.1–PT.2 for macro fields | Pending |
 | 6 | PT.5 — Requested-versus-realized resource checks | PT.2, PT.4 | Pending |
@@ -97,12 +106,14 @@ for assignments, the `hardcaml_asic_example` testbed, resource limits and eviden
   remain (fast/slow/typical: 12/25/21), with 12 capacitance violations per corner.
   Retained-GDS Magic reports 29,294 macro-internal findings requiring a deck/model
   disposition. **Next: targeted macro-boundary electrical repair and Magic finding
-  disposition**, then rerun the affected physical checks; no constraints were relaxed.
+  disposition** in the public example path, then rerun the affected checks; no
+  constraints were relaxed. Closing the old probe's particular electrical loads
+  is no longer a prerequisite to PT.1–PT.2. Preserve its unresolved evidence.
 
 The [example's registered-memory specimen](../../hardcaml_asic_example/memory/README.md)
-is ready for PT.1–PT.2 adoption: flop simulation, both emitted RTL roles, stable
-`program` identity and explicit Exact rejection are tested. This is preparation,
-not production macro-backend completion.
+now exercises public Exact selection, actual vendor-functional RTL and the
+technology-mapped netlist. Unsupported shapes still fail explicitly. This is
+synthesis/functional evidence, not macro physical acceptance.
 
 **Exit:** the known probe defects have corrected, reproducible evidence, with
 remaining findings explicitly dispositioned. This supplements S.3's qualified
@@ -114,16 +125,20 @@ the October 23 checkpoint for current authority/pin context.
 
 **Owner: ASIC. Implements the production mapping portion of historical S.4.**
 
-- [ ] **PT.1a — Mapping and wrapper.** Map the existing 256×16 latency-one 1RW
+- [x] **PT.1a — Mapping and wrapper.** Map the existing 256×16 latency-one 1RW
   request exactly to `RM_IHPSG13_1P_256x16_c2_bm_bist`. Implement enables,
   whole-word mask and BIST/test tie-offs, with stable wrapper/instance names.
-- [ ] **PT.1b — Contract conformance.** Run the shared contract suite against the
+- [x] **PT.1b — Contract conformance.** Run the shared contract suite against the
   behavioral, flop and actual macro functional models. Compare only defined
   results; check each backend's own hold behavior after writes and disabled cycles.
   Preserve no reset, no initialization, and simulation-only poison behavior.
-- [ ] **PT.1c — Selection diagnostics.** Exercise `Exact`, explicit `Flops`, and
+- [x] **PT.1c — Selection diagnostics.** Exercise `Exact`, explicit `Flops`, and
   explicitly permitted fallback. Unsupported contracts fail under `Exact`;
   fallback records its reason. No silent dimension rounding or macro composition.
+  PT.1a–c completed 2026-10-24: canonical request, injective resource names,
+  direct macro instantiation without new registers, three-backend contract replay
+  (2,307 edges each), unsupported-shape/fallback diagnostics, independent example
+  RTL and mapped-netlist replay. [Record](development/sram-example-integration.md#evidence).
 - [ ] **PT.1d — Timed-model conformance.** Establish a simulator path that executes
   the macro's delayed timing checks, with positive and intentional-violation
   cases. Keep this evidence separate from functional tests and Liberty STA.
@@ -138,18 +153,27 @@ wording when adopting the backend, without changing its settled semantics.
 
 **Owner: ASIC; project settings supplied by Protemu.**
 
-- [ ] **PT.2a — Collateral lifecycle.** Register, resolve, validate and identify
+- [x] **PT.2a — Collateral lifecycle.** Register, resolve, validate and identify
   synthesis black boxes, functional/timed models, Liberty corners, LEF, GDS and
   CDL/SPICE. Keep simulation and synthesis source roles distinct. Resolve PDK
   files at the appropriate execution/preflight boundary, not ordinary elaboration.
+  Completed 2026-10-24: generated synthesis stub, separate behavioral/functional/
+  timed roles, exact corners and PDK-file identity checked at preflight and after
+  execution. Runtime resource/instance consistency and mutation negatives pass.
 - [ ] **PT.2b — LibreLane integration.** Derive `MACROS`, corner bindings, layout
   assembly and macro-aware LVS inputs from registered resources. Connect
   `VDD!`/`VDDARRAY!` to `VPWR` and ground to `VGND` through the supported target
   integration. Record the accepted target assumptions and actual connectivity.
+  Partial: MACROS/corners/CDL inventory and fresh synthesis are delivered. Physical
+  power construction, actual CDL consumption/extraction scope and real-GDS KLayout
+  acceptance are the **next bounded implementation slice in the example**.
 - [ ] **PT.2c — Placement intent.** Add resource-ID-keyed position, orientation,
   halo/clearance and supported power-grid controls. Validate target bounds,
   overlap, legal orientations and unknown resource references. Support multiple
   explicitly declared instances with distinct identities; start with manual placement.
+  Partial: public `Macro_intent.tt_cmos5l_r0` validates resource IDs, finite R0
+  placement/halo, bounds and overlaps. It records supply intent, not an implemented
+  or verified physical power grid. Unsupported physical execution still rejects.
 - [ ] **PT.2d — Physical acceptance.** Run a normal emitted macro bundle through
   synthesis, physical implementation, required checks and TT precheck using the
   current pinned support tools. Verify actual corner binding, power access,

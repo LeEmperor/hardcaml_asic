@@ -40,3 +40,4 @@ module Technology = Resource.Technology
 module Resolved_flow = Elaboration.Resolved
 module Bundle = Elaboration.Bundle
 module Flow_spec = Flow.Spec
+module Macro_intent = Flow.Macro_intent

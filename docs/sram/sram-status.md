@@ -7,6 +7,14 @@
 
 ## 2026-10-24 implementation update
 
+The subsequent [example-centered implementation](../development/sram-example-integration.md)
+now supports exact 256×16 selection, macro RTL, collateral/preflight and fresh
+synthesis through public APIs. The actual independent example retains one stock
+SRAM and 16 original staging flops; its mapped netlist passes zero-delay functional
+replay. Production physical execution and timed-model conformance remain open.
+The example is the continuing integration testbed; the old probe is retained for
+diagnosis/history rather than further development as a second consumer.
+
 The active [PT.0 queue](../phase_plan.md#pt0--repair-and-refresh-sram-feasibility-evidence)
 now has verified power-access and corner-binding corrections. See the
 [implementation record](../development/pt0-implementation.md) and
@@ -21,8 +29,9 @@ now has verified power-access and corner-binding corrections. See the
 - All nine current TT prechecks pass. The fresh flow still exits 2 on three
   abstract Magic M3.f markers. Slew/capacitance violations remain, and retained-GDS
   Magic exposes 29,294 macro-internal findings requiring a deck/model disposition.
-- The independent example now has a tested registered 256×16 consumer specimen.
-  Exact macro selection still fails honestly: production S.4 remains unimplemented.
+- The initial PT.0 slice prepared a registered 256×16 consumer specimen. The later
+  public-backend slice above supersedes its original Exact-rejection expectation;
+  unsupported shapes still reject. S.4 physical completion remains open.
 
 PT.0a/b are complete; PT.0c remains open. Historical next-task wording below is
 superseded by this update and the active plan. Original archives remain unchanged;

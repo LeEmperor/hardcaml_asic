@@ -65,6 +65,19 @@ end
 include T
 include Comparator.Make (T)
 
+(* Injective encoding of the complete logical identity into a Verilog identifier.
+   Length prefixes distinguish underscores within components from separators:
+   [a_b/c] and [a/b_c] must never name the same flattened macro. Hardcaml may
+   still mangle a collision with a user signal; the flow validates the actual
+   Circuit.Name_for_rtl name before using this label for physical intent. *)
+let rtl_instance_name t =
+  "hc_resource_"
+  ^ String.concat
+      ~sep:"_"
+      (List.map (components t) ~f:(fun component ->
+         Int.to_string (String.length component) ^ "_" ^ component))
+;;
+
 (* Identifier syntax; nonempty, only [A-Za-z0-9_], and not starting with a digit;
 
    Why: a component can then never be empty or contain the '/' separator, which is what

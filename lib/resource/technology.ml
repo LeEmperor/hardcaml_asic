@@ -11,7 +11,7 @@
 
    It does NOT know what the project will accept, that is Policy's job; Selection
    is where the two meet. The pinned CMOS5L standard-cell view/routing description below
-   is separate from resource mappings and has no SRAM capability.
+   is separate from resource mappings.
 *)
 
 open! Core
@@ -29,18 +29,22 @@ module Collateral = struct
   (* What a collateral file is for;
 
      Simulation_model  : model used to simulate the macro itself;
+     Timed_simulation_model : source for timing-check simulation, without FUNCTIONAL;
      Black_box         : empty module stub standing in for the macro during synthesis;
      Timing_model c    : timing library for the named corner [c];
      Physical_abstract : abstract view for place and route;
      Physical_layout   : full layout of the macro;
+     Spice_netlist     : CDL/SPICE view for macro-aware LVS;
   *)
   module Role = struct
     type t =
       | Simulation_model
+      | Timed_simulation_model
       | Black_box
       | Timing_model of { corner : string }
       | Physical_abstract
       | Physical_layout
+      | Spice_netlist
     [@@deriving compare, equal, sexp_of]
   end
 
@@ -117,9 +121,45 @@ let create_exn ~name ~resource_mappings =
   { name; resource_mappings }
 ;;
 
-(* IHP SG13 CMOS5L standard cells; no mappings, so every resource under it is flops or a
-   selection error, depending on policy; *)
-let ihp_sg13cmos5l = { name = "ihp-sg13cmos5l"; resource_mappings = [] }
+(* Stock exact 256x16 capability. References are descriptions only: elaboration
+   does not read the PDK. The bundle backend generates the synthesis stub. *)
+let ihp_sg13cmos5l =
+  let name = "RM_IHPSG13_1P_256x16_c2_bm_bist" in
+  let pdk directory file =
+    "pdk_dir::libs.ref/sg13cmos5l_sram/" ^ directory ^ "/" ^ file
+  in
+  let models role =
+    List.map
+      [ name ^ ".v"; "RM_IHPSG13_1P_core_behavioral_bm_bist.v" ]
+      ~f:(fun file -> { Collateral.role; reference = pdk "verilog" file })
+  in
+  let collateral =
+    [ { Collateral.role = Black_box; reference = "generated:" ^ name ^ ".blackbox.v" } ]
+    @ models Simulation_model
+    @ models Timed_simulation_model
+    @ List.map
+        [ "typ", "typ_1p20V_25C"
+        ; "slow", "slow_1p08V_125C"
+        ; "fast", "fast_1p32V_m55C"
+        ]
+        ~f:(fun (corner, suffix) ->
+          { Collateral.role = Timing_model { corner }
+          ; reference = pdk "lib" (name ^ "_" ^ suffix ^ ".lib")
+          })
+    @ [ { Collateral.role = Physical_abstract; reference = pdk "lef" (name ^ ".lef") }
+      ; { Collateral.role = Physical_layout; reference = pdk "gds" (name ^ ".gds") }
+      ; { Collateral.role = Spice_netlist; reference = pdk "cdl" (name ^ ".cdl") }
+      ]
+  in
+  { name = "ihp-sg13cmos5l"
+  ; resource_mappings =
+      [ { Resource_mapping.request =
+            Request.single_port_ram ~width:16 ~depth:256 ~read_latency:1
+        ; macro = { Macro.name; collateral }
+        }
+      ]
+  }
+;;
 
 (* Pinned CMOS5L standard-cell description. These are references within the PDK,
    not files loaded during elaboration. The PDK configuration is the authority for

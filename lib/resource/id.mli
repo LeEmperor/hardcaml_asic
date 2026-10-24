@@ -37,6 +37,12 @@ val sexp_of_t : t -> Sexp.t
 (** [core/left/buf]; the inverse of {!of_string_exn}. *)
 val to_string : t -> string
 
+(** Injective identifier encoding of the complete resource identity, for flattened
+    macro instance labels. [program] becomes [hc_resource_7_program]. Physical
+    consumers must validate Hardcaml's actual emitted name before using the label,
+    since unrelated user signals can cause RTL name mangling. *)
+val rtl_instance_name : t -> string
+
 (** Identifier syntax: nonempty, [A-Za-z0-9_], not starting with a digit. Selector paths,
     resource kinds and project names are checked with this too. *)
 val is_valid_component : string -> bool

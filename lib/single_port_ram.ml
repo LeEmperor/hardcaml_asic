@@ -9,7 +9,7 @@
    [request] through Elaboration.Context.register_exn, which runs Resource.Policy.lookup
    and Selection.select and stores the Resource.Record. The elaboration mode plus the
    selected implementation then decide which hardware is built: [behavioral] in
-   Simulation, [flops] in Implementation;
+    Simulation, [flops] or the selected supported macro in Implementation;
 
    docs/reference/program-memory-contract.md is normative, and both implementations here are written
    against it rather than against each other. Anything the contract leaves unspecified
@@ -17,10 +17,10 @@
    are meant to agree on; see contract section 9 for how that is verified.
 
    It does NOT own program validity, loading or fetch bounds checking; those belong to the
-   consumer (contract section 10). It does NOT build a hard macro either; a Macro
-   selection in Implementation mode raises, since no usable CMOS5L SRAM macro has been
-   established (contract section 8, phase S in docs/phase_plan.md). Which sources the
-   resource carries is Elaboration.Context.sources_of's job, not this module's.
+   consumer (contract section 10). Implementation can also instantiate the stock
+   exact 256x16 CMOS5L macro, with no extra registers. Unknown macro mappings fail.
+   Which sources the resource carries is Elaboration.Context.sources_of's job,
+   not this module's.
 *)
 
 open! Core
@@ -92,22 +92,13 @@ end
    Careful: it inherits the field order pitfall described on Technology.exact_mapping. A
    mapping written as [((depth 3) (width 8) ...)] never matches this request. Under an
    Exact policy that fails selection loudly; under Exact_or_flop_fallback it builds flops,
-   recorded as Flop_fallback in the Selection.Reason but easy to miss. The mli does not
-   expose this function, so take the request from an elaborated project's resource record, as
-   test/test_single_port_ram.ml does, instead of writing the contract by hand.
+   recorded as Flop_fallback in the Selection.Reason but easy to miss. Use the
+   canonical Resource.Request.single_port_ram builder rather than writing the
+   contract by hand.
 *)
 let request (config : Config.t) =
-  Resource.Request.create_exn
-    ~kind:"single_port_ram"
-    ~contract:
-      [%sexp
-        { width           = (config.width : int)
-        ; depth           = (config.depth : int)
-        ; read_latency    = (config.read_latency : int)
-        ; port            = ("1rw" : string)
-        ; disabled_output = ("hold" : string)
-        ; write_output    = ("unspecified" : string)
-        }]
+  Resource.Request.single_port_ram
+    ~width:config.width ~depth:config.depth ~read_latency:config.read_latency
 ;;
 
 (* The behavioral model's diagnostic value for word [word]; alternating bits, with the
@@ -276,7 +267,8 @@ let flops
    Mode             Implementation   Result
    Simulation     , any           -> behavioral;
    Implementation , Flops         -> flops;
-   Implementation , Macro m       -> error;
+   Implementation , supported Macro -> direct external macro;
+   Implementation , unknown Macro   -> error;
 
    The width checks run before registration, so a RAM with a mis-sized port never enters
    the inventory. Raises rather than returning Or_error since it runs inside
@@ -349,8 +341,39 @@ let create
   | Implementation, Flops ->
     flops config ~clock ~enable ~write_enable ~address ~write_data
 
-  (* A macro was selected but no macro backend exists; refuse rather than quietly
-     building flops the selection did not ask for *)
+  (* The macro's output is already synchronous. Only combinational controls are
+     adapted here: adding a register would silently change the portable latency. *)
+  | Implementation, Macro "RM_IHPSG13_1P_256x16_c2_bm_bist"
+    when config.width = 16 && config.depth = 256 && config.read_latency = 1 ->
+    let open Signal in
+    let inst =
+      Instantiation.create ()
+        ~name:"RM_IHPSG13_1P_256x16_c2_bm_bist"
+        ~instance:(Resource.Id.rtl_instance_name record.id)
+        ~inputs:
+          [ "A_CLK", clock
+          ; "A_MEN", enable
+          ; "A_WEN", enable &: write_enable
+          ; "A_REN", enable &: ~:write_enable
+          ; "A_ADDR", address
+          ; "A_DIN", write_data
+          ; "A_DLY", vdd
+          ; "A_BM", ones 16
+          ; "A_BIST_CLK", gnd
+          ; "A_BIST_EN", gnd
+          ; "A_BIST_MEN", gnd
+          ; "A_BIST_WEN", gnd
+          ; "A_BIST_REN", gnd
+          ; "A_BIST_ADDR", zero 8
+          ; "A_BIST_DIN", zero 16
+          ; "A_BIST_BM", zero 16
+          ]
+        ~outputs:[ "A_DOUT", 16 ]
+    in
+    Instantiation.output inst "A_DOUT"
+
+  (* Refuse arbitrary mappings rather than guessing their pin interface or
+     quietly building flops the selection did not ask for. *)
   | Implementation, Macro macro ->
     raise_s
       [%message

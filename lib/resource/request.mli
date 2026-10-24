@@ -21,3 +21,9 @@ type t = private
 [@@deriving compare, equal, sexp_of]
 
 val create_exn : kind:string -> contract:Sexp.t -> t
+
+(** Canonical portable whole-word 1RW RAM request: disabled output holds and write
+    output is unspecified. Shared by hardware and technology mappings so field
+    order agrees. Describes a request only; shape validation belongs to the RAM
+    configuration constructor. *)
+val single_port_ram : width:int -> depth:int -> read_latency:int -> t

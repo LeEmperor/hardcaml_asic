@@ -203,11 +203,13 @@ class ObservationTest(unittest.TestCase):
         self.assertEqual(observation["final_results"]["acceptance"], "not_evaluated")
         self.assertEqual(before, {p.name: p.read_bytes() for p in self.writer.directory.iterdir()})
 
-    def test_six_stage_physical_completion_does_not_mean_acceptance(self):
+    def test_seven_stage_physical_completion_does_not_mean_acceptance(self):
         self.run_plan("signoff")
         final = obs.inspect(self.writer.directory)["final_results"]
         self.assertEqual(final["physical_completion"], "completed")
-        self.assertEqual(len(final["checkpoint_refs"]), 6)
+        self.assertEqual([ref["boundary"] for ref in final["checkpoint_refs"]],
+                         list(test_stages.EXPECTED_STAGE_SEQUENCE))
+        self.assertEqual(final["acceptance"], "not_evaluated")
         self.assertEqual(final["external_postcheck"], "not_evaluated")
 
     def test_process_failure_and_publication_failure_preserve_unreached(self):

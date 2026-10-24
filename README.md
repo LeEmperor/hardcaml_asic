@@ -28,10 +28,16 @@ The path is deliberately narrow:
 | Harness | Tiny Tapeout `6x4` |
 | Technology | IHP `ihp-sg13cmos5l` (CMOS5L) |
 | Flow | LibreLane Classic, through the pinned container image |
-| Memory | `Single_port_ram` as a behavioral simulation model or explicit synthesizable flops |
+| Memory | Behavioral simulation, explicit flops, or exact IHP 256×16 SRAM through fresh synthesis |
 
-Not provided: an SRAM macro backend, other targets or flows, and commercial tool
-adapters. A completed process is **not** a signoff verdict; acceptance is a
+Macro physical hardening/checkpoint execution and timed-model conformance remain
+open. The [independent memory example](../hardcaml_asic_example/memory/README.md)
+has actual mapped-synthesis and zero-delay gate-functional evidence through the
+public API. See the [SRAM integration record](docs/development/sram-example-integration.md)
+for scope, architecture ownership and the next physical work.
+
+Other targets/flows and commercial adapters are not provided. A completed process
+is **not** a signoff verdict; acceptance is a
 separate, explicit check (see [interpreting results](docs/guides/usage.md#7-interpret-and-preserve-results)).
 
 ## How it fits together

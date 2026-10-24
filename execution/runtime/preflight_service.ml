@@ -86,6 +86,30 @@ let probe_with_cancel ~cancel ~bundle ~support_tools ~pdk_root ~python ~resource
     if observed <> expected then add (label ^ " revision " ^ observed ^ "; requested " ^ expected)))
     [support_tools,"support_tools_revision","support tools";pdk_root,"pdk_revision","PDK"];
   let target = get manifest "target" in
+  attempt (fun () ->
+    if Macro_contract.active manifest || is_file (safe_child bundle "src/config.json") then (
+    let config = codec (R.read_json (safe_child bundle "src/config.json")) in
+    let collateral = Macro_contract.validate manifest config in
+    List.iter (fun (role, reference) ->
+      check_cancel cancel;
+      let relative = String.sub reference 9 (String.length reference - 9) in
+      (* CMOS5L SRAM exposure links to shared SG13G2 collateral. Constrain the
+         resolved file to the pinned checkout, not the technology subdirectory. *)
+      let path = safe_child pdk_root (text (get target "technology") ^ "/" ^ relative) in
+      if not (is_file path) then add ("missing macro " ^ role ^ ": " ^ path)
+      else (
+        let digest = hash path in
+        references := !references @ [obj ["role",s ("macro:" ^ role);"reference",s reference;"path",s path;"sha256",s digest]];
+        (* A modified technology-exposure symlink must not pass merely because
+           its new target happens to be a clean file elsewhere in the checkout. *)
+        let rec links base = function
+          | [] -> []
+          | component::rest ->
+            let next = Filename.concat base component in
+            (if (Unix.lstat next).Unix.st_kind=Unix.S_LNK then [next] else []) @ links next rest in
+        let aliases = links pdk_root (String.split_on_char '/' (text (get target "technology") ^ "/" ^ relative)) in
+        if command "git" (["-C";pdk_root;"status";"--porcelain";"--";path] @ aliases) <> ""
+        then add ("modified macro " ^ role ^ ": " ^ path))) collateral));
   List.iter (fun reference -> attempt (fun () ->
     let repo,root = if get reference "source" = s "Support_tools" then support_tools,support_tools
       else pdk_root,Filename.concat pdk_root (text (get target "technology")) in

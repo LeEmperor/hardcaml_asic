@@ -14,7 +14,12 @@ let elaborate ?(mode = Elaboration.Mode.Implementation) project =
 ;;
 
 let%expect_test "declaration to finalized implementation project" =
-  let elaborated_project = elaborate (Fixture.project ()) |> ok_exn in
+  (* Keep the lifecycle snapshot independent of the stock technology's growing
+     capability manifest; backend tests exercise the real SRAM inventory. *)
+  let technology =
+    Technology.create_exn ~name:"lifecycle-tech" ~resource_mappings:[]
+  in
+  let elaborated_project = elaborate (Fixture.project ~technology ()) |> ok_exn in
   print_s [%sexp (elaborated_project : Elaborated_project.t)];
   [%expect
     {|
@@ -27,8 +32,13 @@ let%expect_test "declaration to finalized implementation project" =
      (mode Implementation)
      (target (
        (harness (Tiny_tapeout (tiles T1x1)))
-       (technology ((name ihp-sg13cmos5l) (resource_mappings ())))))
-     (flow ((adapter (Librelane ((overrides ())))) (operation Hardening)))
+       (technology ((name lifecycle-tech) (resource_mappings ())))))
+     (flow (
+       (adapter (
+         Librelane (
+           (overrides ())
+           (macros    ()))))
+       (operation Hardening)))
      (clocks ((
        (port   clock)
        (period 20ns))))

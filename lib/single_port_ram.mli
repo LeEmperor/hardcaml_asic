@@ -22,16 +22,17 @@
    Failures happen at two points:
    1. declaration: {!Config.create_exn} raises on an unsupported shape;
    2. construction: {!create} raises on a port width mismatch, an invalid or duplicate
-      name, a policy the technology cannot satisfy, or a selected macro in Implementation
-      mode.
+       name, a policy the technology cannot satisfy, or an unsupported selected macro
+       in Implementation mode.
 
    The registered request has kind [single_port_ram] and a contract listing [width],
    [depth], [read_latency], [port], [disabled_output] and [write_output] in that order. A
    technology mapping must match it exactly, including field order (see
    {!Technology.exact_mapping}).
 
-   Not yet present: a hard macro backend, which is blocked until a usable CMOS5L SRAM
-   macro is established (phase S; contract section 8).
+    The stock CMOS5L backend supports exactly 256x16, latency one, with macro
+    [RM_IHPSG13_1P_256x16_c2_bm_bist]. It adapts controls combinationally and
+    returns the macro's synchronous output without adding registers.
 *)
 
 open! Core
@@ -80,7 +81,9 @@ end
       itself, so verify that the consumer never depends on it.
     - Implementation with flops: explicit word registers with no reset and no
       initialization. The selection is recorded even though there is no macro collateral.
-    - Implementation with a macro: raises; there is no macro backend yet.
+    - Implementation with the supported exact macro: one external macro instance,
+      with whole-word mask and test tie-offs; no reset, initialization or added latency.
+      Other macro selections raise rather than silently substituting flops.
 
     Raises:
     - with the instance, port and both widths, if [clock], [enable] or [write_enable] is
@@ -92,7 +95,8 @@ end
     - with the instance and request, if [name] duplicates an instance already registered
       in this scope or the policy cannot be satisfied (see
       {!Elaboration.Context.register_exn});
-    - with the instance and macro, if a macro is selected in Implementation mode. *)
+    - with the instance and macro, if an unsupported macro or incompatible shape is
+      selected in Implementation mode. *)
 val create
   :  Elaboration.Context.t
   -> ?name:string

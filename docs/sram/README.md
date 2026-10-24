@@ -11,9 +11,9 @@ PT.0a/b now have corrected power-access and corner-binding evidence; PT.0c retai
 electrical and Magic deck/model findings. See the [implementation record](../development/pt0-implementation.md).
 On 2026-10-23 the organizers' update email resolved macro eligibility: IHP SRAM
 macros are allowed, several per design, if they fit and pass TT precheck. The
-project support-tools pin now includes the SRAM marker-layer precheck fix. S.4,
-production backend support, is no longer blocked on authority but is still
-unimplemented. Timed-model conformance remains open.
+project support-tools pin now includes the SRAM marker-layer precheck fix. S.4
+now has public exact-macro and fresh-synthesis support demonstrated by the
+independent example; physical integration and timed-model conformance remain open.
 
 | Document | Purpose |
 | --- | --- |

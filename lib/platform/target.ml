@@ -471,8 +471,7 @@ let resolve ?(inputs = Inputs.reference_cmos5l_6x4) ({ harness; technology } : t
 
   (* The one supported pair: TT 6x4 on the reference CMOS5L technology *)
   | Tiny_tapeout { tiles = T6x4 }
-    when String.equal technology.name Resource.Technology.Cmos5l.pdk
-         && List.is_empty technology.resource_mappings ->
+    when String.equal technology.name Resource.Technology.Cmos5l.pdk ->
 
     (* Nothing below is built unless every input check passes *)
     let%map.Or_error () = validate_inputs inputs in

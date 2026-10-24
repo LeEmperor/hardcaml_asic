@@ -20,8 +20,11 @@
       source revision changes;
    3. every declared input's exact bytes are copied under [inputs/], including dirty and
       untracked files, so the source that produced a bundle is retrievable from it;
-   4. synthesis and simulation RTL sit in separate directories and are listed separately
-      in the manifest; they are never meant to be compiled together.
+    4. synthesis and simulation RTL sit in separate directories and are listed separately
+       in the manifest; they are never meant to be compiled together. Exact SRAM
+       synthesis adds a generated empty stub through EXTRA_VERILOG_MODELS. The
+       macro_contract separately inventories vendor functional and timed models;
+       do not use the empty synthesis stub for implementation simulation.
 
    It does NOT validate the design or target; {!Resolved.resolve} already did. It
    does NOT invoke any EDA tool, access the PDK, or link the TT support-tools checkout

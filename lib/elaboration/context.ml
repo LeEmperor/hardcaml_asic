@@ -125,7 +125,11 @@ let sources_of
     let collateral =
       match Resource.Technology.exact_mapping technology request with
       | Some { macro; _ } -> macro.collateral
-      | None -> [] (* can never happen, will exception/error before this for an unmapped macro; *)
+      | None ->
+        raise_s
+          [%message
+            "selected macro has no exact technology mapping; register and select from the same technology"
+              (request : Resource.Request.t)]
       (* TODO (possible optimization): this second lookup could go away; see
          Selection.Implementation *)
     in
