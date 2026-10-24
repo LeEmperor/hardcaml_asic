@@ -178,7 +178,7 @@ OUTPUT/
 `dir::<top>.v`, relative to `src/config.json`. The SDC paths use
 `dir::../constraints/top.sdc`; the floorplan path uses
 `dir::../tt/tech/ihp-sg13cmos5l/def/tt_block_6x4_pgvdd.def`. The pinned TT
-[`project.py` at the pinned TT revision](https://github.com/TinyTapeout/tt-support-tools/blob/da63c9927411e3aca350977d653d24bbf5bca972/project.py)
+[`project.py` at the pinned TT revision](https://github.com/TinyTapeout/tt-support-tools/blob/d66cf179e7bc4d296362ab7e2e3b344dc3c4f665/project.py)
 expects a checkout linked at `OUTPUT/tt` when the physical flow
 runs. That checkout, the PDK, LibreLane and the flow runner are external
 prerequisites for execution; the bundle itself needs none of them. TT's

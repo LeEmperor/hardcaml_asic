@@ -6,6 +6,7 @@ This is not an automatic implementation queue. Reactivate work through the
 | Item | Reactivation condition |
 | --- | --- |
 | ASIC P7.1–P7.6 historical consumer consolidation | The owner chooses to migrate that consumer and its current code can be audited; the absent scaf worktree is not a prerequisite for the new example |
+| [TT GitHub submission inputs (`custom_gds`, `pdk`, `tools-ref`)](tt-github-submission-inputs.md) | A GDS built here is published to a TT GitHub repository for official precheck |
 | [Nix development environment proposal](nix_reproducibility_repo_handoff.md) | Explicit environment-reproducibility project; independent of the already-used Nix postcheck invocation |
 | Typed/canonical resource contract matching | A second resource author or exact macro mapping needs a stable public representation; current structural S-expression equality is field-order-sensitive |
 | Additional targets and flow adapters | A real second target/backend demonstrates where to extract TT/LibreLane-specific code |

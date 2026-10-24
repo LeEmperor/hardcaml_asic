@@ -259,6 +259,10 @@ on 2026-09-17. Crucially, its parent is the project's exact locked revision
 precheck list is **confirmed incompatible** with the candidate GDS marker
 layers. This investigation does not change the pin.
 
+> **2026-10-23:** the project pin moved to `d66cf179…`, which contains `cfa06bae…`,
+> so this blocker no longer applies to the project lock. See
+> [`../reference/target-reference.md`](../reference/target-reference.md).
+
 The fix object is not present in the pinned local checkout's object database;
 its parent and one-line diff were instead reverified from GitHub's immutable
 commit API and patch URL. No local pin or checkout changed.

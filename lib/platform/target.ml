@@ -153,8 +153,10 @@ module Inputs = struct
     }
   [@@deriving sexp_of]
 
-  (* The adopted reference inputs, and the default for [resolve]; taken from the
-     consumer's tinytapeout/toolchain.lock and inspected against the support-tools
+  (* The adopted reference inputs, and the default for [resolve]; first taken from the
+     consumer's tinytapeout/toolchain.lock, then the support-tools revision moved to the
+     ihp-sg13cmos5l head of 2026-10-23 for the SRAM marker-layer precheck fix (the 6x4
+     DEF is byte-identical across that move); inspected against the support-tools
      tile_sizes.yaml and the CMOS5L PDK config at these revisions (sources listed in
      docs/reference/target-reference.md);
 
@@ -162,7 +164,7 @@ module Inputs = struct
      to them, so the same declaration means the same thing on any machine.
   *)
   let reference_cmos5l_6x4 =
-    { support_tools_revision = "da63c9927411e3aca350977d653d24bbf5bca972"
+    { support_tools_revision = "d66cf179e7bc4d296362ab7e2e3b344dc3c4f665"
     ; pdk_revision           = "2bbec755dc67ca3db0261c3d6163e15735d66710"
     ; floorplan_path         = "tech/ihp-sg13cmos5l/def/tt_block_6x4_pgvdd.def"
     ; floorplan_sha256       =

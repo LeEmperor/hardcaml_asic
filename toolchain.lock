@@ -25,12 +25,12 @@
 # on any machine and behind any mirror. Only the fetch needs a URL.
 #
 # The branch is a fetch hint, not a pin. Both revisions are fetched by exact hash and
-# verified after checkout; the branch head has already moved past the support-tools
-# revision, so it is never what gets checked out.
+# verified after checkout; the branch head can move past either revision at any time,
+# so it is never what gets checked out.
 
 support_tools_repository=https://github.com/TinyTapeout/tt-support-tools.git
 support_tools_branch=ihp-sg13cmos5l
-support_tools_revision=da63c9927411e3aca350977d653d24bbf5bca972
+support_tools_revision=d66cf179e7bc4d296362ab7e2e3b344dc3c4f665
 
 pdk=ihp-sg13cmos5l
 pdk_repository=https://github.com/IHP-GmbH/IHP-Open-PDK.git

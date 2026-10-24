@@ -34,7 +34,7 @@ let%expect_test "pinned TT CMOS5L target resolves deterministically" =
        (y_max 710.64)))
      (floorplan (
        (source   Support_tools)
-       (revision da63c9927411e3aca350977d653d24bbf5bca972)
+       (revision d66cf179e7bc4d296362ab7e2e3b344dc3c4f665)
        (role     Floorplan_def)
        (path tech/ihp-sg13cmos5l/def/tt_block_6x4_pgvdd.def)
        (sha256 (b46d9a0ee8352160e48dbc8312f092f985629061df736c7f46d58686535a76f4))

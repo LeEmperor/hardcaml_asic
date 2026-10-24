@@ -5,6 +5,53 @@
 > prerequisites. This separate capability investigation does not block the
 > flop-backed example or Workbench provider work.
 
+## 2026-10-23 update
+
+The competition organizers' update email to registered entrants (in hand by
+2026-10-21; send date not recorded here) answers the main S.2b question:
+
+> Can I use SRAM macros? Yes, you can use the IHP SRAM macros, including more than
+> one, as long as everything fits in your tiles and passes the Tiny Tapeout precheck.
+
+The same email links Ken Pettit's
+[IHP SRAM macro walkthrough](https://kdp1965.github.io/ihp-um-janestreet-prism/ihp_sram_macro.html),
+which documents a working CMOS5L integration of two `RM_IHPSG13_1P_512x32_c2_bm_bist`
+macros. It also says that submission is "a passing GDS/precheck from the Tiny
+Tapeout flow", and that small non-functional fixes after the deadline, such as
+re-hardening for a newer flow, are acceptable. The effect on each open item is
+recorded in [`sram-target-compatibility.md`](sram-target-compatibility.md#2026-10-23-update).
+
+In short:
+
+- **Macro eligibility: resolved.** Every PDK-distributed IHP SRAM macro is
+  allowed, including several. The bar is fitting in the tiles and passing precheck.
+- **`VDD!`/`VDDARRAY!` -> `VPWR` commoning: accepted in practice.** The
+  organizer-linked walkthrough ties both supplies to `VPWR` through
+  `PDN_MACRO_CONNECTIONS`. There is still no IHP electrical statement.
+- **SRAM LVS treatment: not a submission gate.** The submission bar is TT precheck,
+  and the walkthrough runs LVS against the macro CDL (the `MACROS` `spice` view)
+  rather than as a black box. Use that as the target for a production backend.
+- **Final immutable submission pins: still unpublished.** The risk is lower
+  because re-hardening after the deadline is allowed.
+- **Timed-model conformance: still open.** Precheck does not exercise it.
+
+The project's support-tools pin moved from `da63c992…` to `d66cf179…` on
+2026-10-23 (see [`../reference/target-reference.md`](../reference/target-reference.md)).
+That revision contains the marker-layer fix `cfa06bae…`, so the standard
+toolchain's precheck no longer rejects SRAM marker layers. The isolated
+`.toolchain/tt-sram-s3-cfa06bae` checkout is no longer needed for that one fix.
+Nothing was re-run for this update. `.toolchain/tt` must be re-provisioned before
+a flow can preflight against the new pin.
+
+**S.4 is no longer blocked on authority.** What remains is local engineering: the
+library has no CMOS5L macro mapping, and the reference adapter still rejects macro
+selections and protects `MACROS`/`EXTRA_*`. The S.3 probe follow-ups in
+[`sram-s3-disposition.md`](sram-s3-disposition.md#ordered-follow-up-tasks) are also
+still not done. Treat the walkthrough as technical precedent for that work: it is
+written for a different macro and floorplan, and its own numbers must not be copied.
+
+## Checkpoint as of 2026-09-20
+
 Status: ASIC S.1, S.2a, and S.3 complete; bounded S.2b public-source research is
 complete and partially resolved, 2026-09-20. S.3's residual findings were reviewed
 finding-by-finding on 2026-09-20 and its qualified closure was upheld; see
@@ -14,7 +61,7 @@ common-supply mapping, final submission pins, and timed-model evidence. SRAM
 backend support remains unimplemented. This track does not block or reopen
 P-series or M3 closure.
 
-## Gate status
+## Gate status (as of 2026-09-20; see the 2026-10-23 update above)
 
 | Gate | Status | Evidence or outstanding question |
 | --- | --- | --- |
@@ -30,7 +77,7 @@ P-series or M3 closure.
 | Input | Revision/version and observed state |
 | --- | --- |
 | IHP Open PDK | `2bbec755dc67ca3db0261c3d6163e15735d66710`; primary `.toolchain/pdk` clean; `../scaf/tinytapeout/pdk` at the same revision with only untracked generated `ihp-sg13cmos5l/SOURCES` |
-| TT support tools | `da63c9927411e3aca350977d653d24bbf5bca972`; both installed checkouts clean |
+| TT support tools | `da63c9927411e3aca350977d653d24bbf5bca972`; both installed checkouts clean (pin moved to `d66cf179…` on 2026-10-23; see the update above) |
 | LibreLane | locked and installed in the primary repo as `3.1.0.dev3`; no `../scaf/tinytapeout/.venv` installation available |
 | Official layer fix | `cfa06bae536d00282cb2fdb3d0bdeebc562c6365`; GitHub commit metadata confirms parent `da63c992...` and the one-line valid-layer change |
 | Isolated S.3 support checkout | `.toolchain/tt-sram-s3-cfa06bae` at `cfa06bae536d00282cb2fdb3d0bdeebc562c6365`, clean after the official layer fix; used only for the experimental precheck |
@@ -122,6 +169,11 @@ interfaces/tests, phase-plan task state, locks, installed checkouts, and consume
 files affected: none.
 
 ## Next bounded task
+
+> **Superseded 2026-10-23.** The organizers' email answered the clarification
+> below. The next tasks are now S.3 follow-ups 1 and 2 (bridge rectangles, corner
+> map), then S.4 design, with the walkthrough as precedent. The original text is
+> kept for history.
 
 Seek one consolidated authoritative clarification of the exact macro's
 competition eligibility, commoning both 1.2 V macro supplies onto `VPWR`, and

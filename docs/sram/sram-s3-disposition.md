@@ -417,6 +417,13 @@ is independent of all others.
 
 Only these genuinely require an authority. **No one has been contacted.**
 
+> **2026-10-23:** the organizers' update email answers the first question (yes,
+> including multiple macros, subject to fit and TT precheck). It also names TT
+> precheck as the submission bar, which settles the LVS question as a gate. An
+> organizer-linked walkthrough commons both supplies onto `VPWR`. Immutable
+> submission revisions remain unpublished. See
+> [`sram-target-compatibility.md`](sram-target-compatibility.md#2026-10-23-update).
+
 | Question | Owner |
 | --- | --- |
 | Is `RM_IHPSG13_1P_256x16_c2_bm_bist` eligible for the March 2027 6x4 `ihp-sg13cmos5l` target? | Target competition authority — S.2b |

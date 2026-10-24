@@ -1,7 +1,8 @@
 # SRAM target, submission, and power-source investigation
 
-Status: bounded ASIC S.2b public-source research completed 2026-09-20; S.2b is
-**partially resolved**. The exact competition target, its currently prescribed
+Status: bounded ASIC S.2b public-source research completed 2026-09-20. S.2b was
+**partially resolved** then. Since 2026-10-23, **macro eligibility is resolved by
+the organizers**; see the [2026-10-23 update](#2026-10-23-update). The exact competition target, its currently prescribed
 mutable tool branches, the branches' observed revisions, required SRAM marker
 support, and electrical voltage compatibility are established. Public sources do
 not yet establish final submission eligibility for this exact macro, an immutable
@@ -10,6 +11,65 @@ submission tool pin, or authoritative permission to common `VDD!` and
 
 All web sources below were accessed 2026-09-20. No maintainer was contacted. No
 toolchain checkout, lock, consumer file, or physical flow was changed or run.
+
+## 2026-10-23 update
+
+The competition organizers sent registered entrants an update email (in hand by
+2026-10-21; send date not recorded). It answers several of the questions below
+directly, so the decision table and "Outstanding authoritative questions" sections
+are now historical. The relevant statements, quoted:
+
+- "Can I use SRAM macros? Yes, you can use the IHP SRAM macros, including more
+  than one, as long as everything fits in your tiles and passes the Tiny Tapeout
+  precheck. Ken's walkthrough (linked above) uses two of them."
+- "SRAM: Ken Pettit has written a walkthrough on adding an IHP SRAM macro to a
+  CMOS5L tile, covering the RTL, LibreLane config, Metal4 power and sign-off":
+  <https://kdp1965.github.io/ihp-um-janestreet-prism/ihp_sram_macro.html>
+- "What do I submit? A link to your public repository with your RTL, tests and a
+  passing GDS/precheck from the Tiny Tapeout flow."
+- "After the deadline, small non-functional fixes like re-hardening for a newer
+  flow are fine, and we'll work with the winners on those."
+- The submission form will still be added "closer to the January 18th deadline".
+
+| Original question | Status after the email | Basis |
+| --- | --- | --- |
+| 1. Macro eligibility | **Resolved: allowed.** This covers any IHP SRAM macro, several per design, as long as it fits the tiles and passes TT precheck. No allowlist or approval step. | Explicit organizer statement |
+| 2. Supply commoning | **Accepted in practice; IHP-side statement still absent.** The organizer-linked walkthrough ties `VDD!`/`VSS!` and `VDDARRAY!`/`VSS!` of every instance to `VPWR`/`VGND` through `PDN_MACRO_CONNECTIONS`. | Organizer-endorsed precedent; no IHP electrical rule |
+| 3. Final immutable tool pins | **Still unpublished.** Re-hardening on a newer flow after the deadline is explicitly allowed, which lowers the risk of a pin moving before submission. | Explicit organizer statement |
+| 4. LVS/extraction treatment | **Not a stated submission gate.** The bar is TT precheck. The walkthrough runs LVS with the macro CDL supplied as the `MACROS` `spice` view, which is stronger than the black-box LVS in S.3. | Organizer statement plus precedent |
+
+Technical points from the walkthrough that bear on S.3 and S.4. It uses a
+different macro (512x32) and an 8x4 floorplan, so treat its numbers as
+illustrations only:
+
+- Every corner key maps to its own Liberty file (`nom_typ_1p20V_25C`,
+  `nom_fast_1p32V_m40C` -> the `m55C` fast file, `nom_slow_1p08V_125C`). That
+  avoids the S.3 probe defect where every corner was timed at `typ`.
+- It sets `RUN_MAGIC_DRC: 0` and `ERROR_ON_ILLEGAL_OVERLAPS: 0` and relies on the
+  PDK KLayout deck, because the LEF's Metal4 obstruction causes false overlaps.
+  This matches the S.3 disposition of the Magic markers.
+- It adds Metal2-Metal4 `ROUTING_OBSTRUCTIONS` over each macro, a 2 µm
+  `FP_MACRO_HORIZONTAL_HALO`, and macro x positions aligned to the Metal4 PDN pitch.
+  A custom LibreLane step adds stripes onto the macro supply columns.
+- It warns that an unpowered macro can pass DRC and LVS, so check the IR-drop
+  report and the Metal4 view.
+- Its own precheck uses a fork, `kdp1965/tt-support-tools@cmos-8x4`, branched from
+  `da63c992…`. The fork carries its own copy of the marker-layer fix, an 8x4 DEF
+  byte-identical to the official one, and KLayout 0.30.7 from nix-eda in place of
+  the official precheck's nixpkgs 0.30.4. It hardens locally and publishes through
+  `tt-gds-action/custom_gds`. Those are precedent, not the official chain.
+
+Official chain observed 2026-10-23:
+
+- Template `cmos5l` is at `231f26a…`. The changes since `b86a2a…` are CI and
+  test-only, including adding `sg13cmos5l_udp.v` to gate-level simulation.
+- Action `ihp-cmos5l` is unchanged at `341265…`. It still installs PDK `2bbec755…`
+  and LibreLane `3.1.0.dev3`.
+- Support tools `ihp-sg13cmos5l` is at `d66cf179…`: the marker fix, a CI commit,
+  then the 8x4 tile.
+
+The project lock now pins `d66cf179…`. Revisions observed on 2026-09-20 remain
+recorded below.
 
 ## Verdict and decision table
 

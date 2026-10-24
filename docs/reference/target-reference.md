@@ -14,17 +14,29 @@ local sources are [`lib/platform/target.ml`](../../lib/platform/target.ml) and
 
 | Input | Adopted value |
 | --- | --- |
-| Support tools | `da63c9927411e3aca350977d653d24bbf5bca972` |
+| Support tools | `d66cf179e7bc4d296362ab7e2e3b344dc3c4f665` |
 | IHP Open PDK | `2bbec755dc67ca3db0261c3d6163e15735d66710` |
 | Floorplan | `tech/ihp-sg13cmos5l/def/tt_block_6x4_pgvdd.def` |
 | DEF SHA-256 | `b46d9a0ee8352160e48dbc8312f092f985629061df736c7f46d58686535a76f4` |
 | Die bounds | `(0, 0)` to `(1289.28, 710.64)` µm |
 
+The support-tools pin moved on 2026-10-23 from the consumer-adopted
+`da63c9927411e3aca350977d653d24bbf5bca972` to `d66cf179…`, the observed
+`ihp-sg13cmos5l` head that day. The three intervening commits add the SRAM
+marker layers to the precheck layer list
+([`cfa06bae`](https://github.com/TinyTapeout/tt-support-tools/commit/cfa06bae536d00282cb2fdb3d0bdeebc562c6365)),
+change TT's own CI, and add the 8x4 tile DEF and `tile_sizes.yaml` entry. The
+6x4 DEF hash above is unchanged across them, as are `project.py`, `tech.py`,
+`precheck/default.nix`, `precheck/tool-versions.json` and both requirements files,
+so flop-only 6x4 bundles are unaffected. Consumers that copied the old revision
+still name `da63c992…` until they move themselves. The 8x4 tile is present at
+this revision but is not a resolvable target.
+
 The dimensions agree with the pinned support tools'
-[`tile_sizes.yaml`](https://github.com/TinyTapeout/tt-support-tools/blob/da63c9927411e3aca350977d653d24bbf5bca972/tech/ihp-sg13cmos5l/tile_sizes.yaml).
-The [pinned `project.py`](https://github.com/TinyTapeout/tt-support-tools/blob/da63c9927411e3aca350977d653d24bbf5bca972/project.py)
+[`tile_sizes.yaml`](https://github.com/TinyTapeout/tt-support-tools/blob/d66cf179e7bc4d296362ab7e2e3b344dc3c4f665/tech/ihp-sg13cmos5l/tile_sizes.yaml).
+The [pinned `project.py`](https://github.com/TinyTapeout/tt-support-tools/blob/d66cf179e7bc4d296362ab7e2e3b344dc3c4f665/project.py)
 derives the DEF path, `VPWR`/`VGND`, and the project top routing layer. The
-[pinned `tech.py`](https://github.com/TinyTapeout/tt-support-tools/blob/da63c9927411e3aca350977d653d24bbf5bca972/tech.py)
+[pinned `tech.py`](https://github.com/TinyTapeout/tt-support-tools/blob/d66cf179e7bc4d296362ab7e2e3b344dc3c4f665/tech.py)
 sets that layer to `Metal4` and the nominal corner to
 `nom_typ_1p20V_25C`. The [PDK LibreLane configuration](https://github.com/IHP-GmbH/IHP-Open-PDK/blob/2bbec755dc67ca3db0261c3d6163e15735d66710/ihp-sg13cmos5l/libs.tech/librelane/config.tcl)
 identifies the standard-cell LEF, GDS, and Verilog paths, the `VDD`/`VSS`
