@@ -55,9 +55,11 @@ proc pdngen {args} {
 
     # Placement is (42,81) um. These bridges abut the lower VDD/VSS pin
     # edges and the upper VDDARRAY pin edge without crossing signal layers.
+    # VPWR keeps 0.28 um clearance to the VGND grid at x=115.93 um;
+    # x=115.80 left only 0.13 um (power-01 M4.b/M4.e). Pin contact is 1.95 um.
     set vpwr_swire [odb::dbSWire_create [$block findNet VPWR] ROUTED]
-    odb::dbSBox_create $vpwr_swire $metal4 111830 79520 113930 81000 STRIPE
-    odb::dbSBox_create $vpwr_swire $metal4 111830 197660 113930 201310 STRIPE
+    odb::dbSBox_create $vpwr_swire $metal4 113700 79520 115650 81000 STRIPE
+    odb::dbSBox_create $vpwr_swire $metal4 113700 197660 115650 201310 STRIPE
 
     set vgnd_swire [odb::dbSWire_create [$block findNet VGND] ROUTED]
     odb::dbSBox_create $vgnd_swire $metal4 64400 79520 68030 81000 STRIPE

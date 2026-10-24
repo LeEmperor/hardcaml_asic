@@ -1,10 +1,14 @@
 # SRAM capability investigation
 
-This track is independent of the flop-backed development example and provider
-observation work. It does not reopen ASIC M3 or block ASIC P6 by default.
+This directory retains SRAM investigation detail and evidence. Production SRAM
+support is now a priority in the [active ASIC PT.0–PT.2 queue](../phase_plan.md#active-queue),
+followed by Protemu acceptance and resource inspection. The earlier feasibility
+records retain their qualifications; this does not reopen completed ASIC M3 work.
 
 **Start with [the checkpoint](sram-status.md).** ASIC S.1 inventory and S.2a
 functional-model checks are complete. S.3 established qualified local feasibility.
+PT.0a/b now have corrected power-access and corner-binding evidence; PT.0c retains
+electrical and Magic deck/model findings. See the [implementation record](../development/pt0-implementation.md).
 On 2026-10-23 the organizers' update email resolved macro eligibility: IHP SRAM
 macros are allowed, several per design, if they fit and pass TT precheck. The
 project support-tools pin now includes the SRAM marker-layer precheck fix. S.4,

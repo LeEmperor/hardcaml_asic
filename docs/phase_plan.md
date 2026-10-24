@@ -1,345 +1,352 @@
 # hardcaml_asic phase plan
 
-This is the **only active queue**: current status, next work and open gates.
-[Architecture](architecture.md) owns boundaries; feature design and evidence
-records under `development/` own the detail and link back here.
+**Current queue, adopted 2026-10-24: make the ASIC flow usable for
+`hardcaml_protemu`'s SRAM-backed implementation and resource studies.**
 
-Status as of **2026-10-15**. The full text of this plan before it was condensed,
-with every dated closeout, command and identity, is preserved in the
-[2026-10-15 snapshot](archive/phase-plan-2026-10-15.md). P0–P5 and the original
-P6/P7/S/T definitions are in the [earlier archive](archive/phase-plan-through-p6.4b.md).
+This is the only active implementation queue. [Architecture](architecture.md)
+owns boundaries; the [memory contract](reference/program-memory-contract.md)
+owns RAM semantics. Detailed designs and evidence belong in `development/`,
+`sram/`, and `evidence/`, linked from the relevant item here.
 
-## Current status
+The previous plan is preserved in the [2026-10-24 archive](archive/phase-plan-2026-10-24.md),
+including completed milestones, open P6 gates, and the former next steps.
+Archiving an open item does not complete it. New work uses **ASIC PT.0–PT.8**
+to avoid renumbering historical ASIC P/S tasks or Protemu's own phases.
 
-| Capability | State | Evidence / detail |
-| --- | --- | --- |
-| Lifecycle, resources, bundle emission (ASIC P0–P5, M1–M3) | Complete | [Original records](archive/phase-plan-through-p6.4b.md) |
-| Operation-aware acceptance, input-preserving archives, shared CLI, packaging (P6.1–P6.3, P6.4a/b) | Complete | [P6 below](#asic-p6--shared-tooling-distribution), [P6 details](development/p6-implementation-plan.md) |
-| Source identity, waivers, provisioning authority, independent installation (P6.4 parent, P6.5, P6.6) | **Open** | [P6 below](#asic-p6--shared-tooling-distribution) |
-| Native OCaml CLI and execution services | Delivered 2026-10-14 | [OCaml-first infrastructure](#ocaml-first-flow-infrastructure) |
-| Explicit stages, checkpoints, journals, live watch, finalization | Delivered 2026-10-13 | [Explicit-stage closeout](#explicit-stage-refactor-closeout), [journal closeout](#default-flow-journal-closeout) |
-| Named flows and parameter profiles | Delivered 2026-10-15 | [Named flows](guides/named-flows.md), [implementation record](development/project-flow-catalog-progress.md) |
-| Default result stores, CLI contract 4, human/`--json` output | Delivered 2026-10-13 | [Result-store closeout](#default-result-store-and-cli-2-closeout), [flow guide](guides/flow.md#default-result-store-and-cli-contract-4) |
-| Managed Python/Tcl, runtime policy, thin bootstrap | Delivered 2026-10-12; P6.5c partly addressed | [Tool environment](#tool-environment-closeout-acceptance), [runtime policy](#hostcontainer-runtime-policy-closeout) |
-| Project-centered entry point and FIFO specimen | Delivered | [Entry point](#project-centered-entrypoint-acceptance), [specimen](#controlled-fifo-development-specimen-evidence) |
-| Consumer refresh/activation | Delivered; committed pin not yet adopted | [Refresh closeout](#consumer-refresh-and-real-checkout-emitter-closeout) |
-| Hardcaml Workbench integration | **Next** | [Active queue](#active-queue) |
-| SRAM (ASIC S.1–S.4) | S.1/S.3 complete; S.2 open; S.4 gated | [SRAM index](sram/README.md) |
-| Consumer migration (ASIC P7, M4) | Deferred | [Other tracks](#asic-p7-s-and-t--retained-independent-tracks) |
+## Current baseline
 
-Latest physical evidence: a fresh installed consumer completed all six physical
-stages in 1,617.5 s, then external finalization in 677.3 s. DRC/LVS/antenna, TT
-precheck and the 11,429-row gate replay passed
-([record](../evidence/librelane-observation/native-final-integration.json)).
-Named-flow synthesis passed for `balanced` (AREA 0, 673 cells) and
-`synth_delay` (DELAY 1, 685 cells)
-([record](../evidence/namedflow/20261015-real-synthesis.json)). Neither is a
-timing-improvement claim or a named full-flow acceptance.
+- Project/resource declaration, behavioral and flop RAM implementations, immutable
+  bundles, execution/reporting/acceptance, explicit stages, and named flow profiles
+  are delivered. Their evidence remains in the archives.
+- Protemu's `bin/asic_bundle.ml` registers `program` as 256×16, 1RW, latency one,
+  currently with explicit `Flops` policy. Its emitter still uses
+  `Bundle.render ~simulation_build`; current ASIC uses `~simulation_project`.
+- Resource policies and decision-chain records already exist. CMOS5L has no
+  production SRAM mapping, and the flow adapter does not yet support macro selections.
+- SRAM S.1 inventory, S.2a functional-model tests, and qualified S.3 physical
+  feasibility have evidence. The [October 23 checkpoint](sram/sram-status.md#2026-10-23-update)
+  resolves eligibility and records the support-tools marker fix. Production
+  support and timed-model conformance remain open. Earlier authority-gate wording
+  in historical records is superseded by that update.
+- Workbench already has flow integration, synthesis cell tables, timing and
+  physical inspection. The new work is logical-resource mapping and its connection
+  to implementation evidence; see its [current overview](../../hardcaml_workbench/README.md).
+
+No new implementation or physical acceptance is claimed by this plan rewrite.
+
+## Ownership
+
+| Owner | Responsibility |
+| --- | --- |
+| `hardcaml_asic` | Resource contracts and selection, macro wrappers/collateral, physical and timing intent validation, backend rendering, mapping evidence, public inspection interfaces |
+| `hardcaml_protemu` | Hardware parameters, program packing, loading/fetch validity, synchronization architecture, project policy/placement/constraints, workloads and whole-system verification |
+| `hardcaml_workbench` | Discovery and presentation of ASIC-owned data; resource browsing, comparison and user controls through public provider interfaces |
+
+ASIC must remain usable headlessly and must not depend on Workbench. Cross-repo
+items below are coordination deliverables; their implementation lives with the
+named owner and does not reuse that repository's phase IDs.
 
 ## Active queue
 
-In dependency order. Run one bounded implementation owner per dependent slice;
-independent read-only review may run alongside it. Serialize Dune builds with
-`-j 20` and keep external-tool resource limits within the same budget.
+| Order | Item | Dependencies | State |
+| --- | --- | --- | --- |
+| 1 | PT.0 — Repair and refresh SRAM feasibility evidence | Existing S.3 records | In progress: PT.0a/b complete; electrical/deck residuals open |
+| 2 | PT.1 — Exact production SRAM backend | PT.0 corrected power/corner findings | Pending |
+| 3 | PT.2 — Macro collateral and physical controls | PT.1 mapping/wrapper contract | Pending |
+| 4 | PT.3 — Macro-backed Protemu acceptance | PT.1–PT.2; consumer API migration | Pending |
+| 5 | PT.4 — Resource-mapping inspection API | Existing records; PT.1–PT.2 for macro fields | Pending |
+| 6 | PT.5 — Requested-versus-realized resource checks | PT.2, PT.4 | Pending |
+| 7 | PT.6 — Workbench resource inspector | PT.4; PT.5 for realized evidence | Pending |
+| 8 | PT.7 — Synchronizer/reset-aware timing declarations | Endpoint reference design and Protemu timing review | Pending |
+| 9 | PT.8 — Reproducible design-variant comparisons | PT.3–PT.5; PT.7 for final physical selection | Pending |
 
-1. **Workbench active-flow integration.** Integrate Workbench's project-scoped
-   active-flow selection as a client of the delivered public
-   catalog/preview/execution interfaces. The provider must not depend on
-   Workbench. Expand typed parameters only with explicit backend contracts.
-2. **Per-operation backend invocation**, when needed. Start with the validated
-   placement sequence; prove physical equivalence and the required checks.
-   Independent step checkpoints need separate evidence.
-3. **Configuration-changing checkpoint reuse**, with explicit dependency rules and
-   lineage-aware finalization. This is separate from fresh profile runs.
-4. **Source organization.** Hardware/project/resource directory organization
-   was delivered 2026-10-15 (uncommitted at the time of writing; see the
-   [`lib/` namespace reorganization](development/lib-namespace-reorganization.md)).
-   The manual `test/check_methodology_legacy.py` broke with the new layout and
-   was fixed 2026-10-15: it now builds its baseline from the last pre-reorganization
-   tree (`--environment-ref`, `0ed1b3d`). Cleaning up retained Python reference sources is optional. Cosmetic
-   reorganization is not a Workbench gate.
+This is the preferred execution order, not a requirement to serialize design
+work. PT.4 can begin against existing flop records; PT.7 can begin independently.
+PT.3 can establish functional integration before PT.7, but final Protemu physical
+selection requires reviewed timing constraints. Workbench is optional for all
+headless acceptance. Serialize Dune builds with `-j 20` and keep external-tool
+resource use within the same shared budget.
 
-In parallel, not blocked by the above:
+## PT.0 — Repair and refresh SRAM feasibility evidence
 
-- **ASIC P6.5/P6.6** identity and installation gates ([below](#asic-p6--shared-tooling-distribution)).
-- **Committed-pin adoption.** The example's recorded provider pin
-  (`1714764…`) predates the current `Project` API, so recorded refresh is refused
-  and development refresh is used. The owner must commit and adopt a compatible
-  candidate.
-- **`hardcaml_protemu` migration.** It still uses `Build` and `simulation_build`
-  and needs a source migration before adopting this provider
-  ([rename notes](#public-api-rename-migration-and-evidence)).
+**Owner: ASIC. First bounded task: correct the S.3 power bridges and corner map.**
 
-## OCaml-first flow infrastructure
+Implementation started 2026-10-24; see the [agent-sized implementation plan](development/pt0-implementation.md)
+for assignments, the `hardcaml_asic_example` testbed, resource limits and evidence.
 
-Authorized 2026-10-13. The [design](flow-infrastructure-refactor.md) gives the
-destination and the [implementation record](development/flow-infrastructure-progress.md)
-holds APIs, commands, review findings and verification.
+- [x] **PT.0a — Power access.** Correct the two misplaced VPWR bridge rectangles;
+  re-extract and verify adequate contact to both positive supply pins and ground.
+  Completed 2026-10-24: emitted GDS/DEF show 1.95 µm positive-pin contact and
+  0.28 µm adjacent-ground clearance; zero extraction overlap and correct extracted
+  supplies. The first proposed shift exposed a real spacing defect, corrected by
+  narrowing both bridges. [Evidence](../evidence/sram-pt0/README.md).
+- [x] **PT.0b — Corner binding.** Replace ambiguous corner globs with validated
+  mappings. Record the actual macro Liberty loaded in every STA corner, including
+  the standard-cell/macro fast-corner temperature difference; rerun affected STA.
+  Completed 2026-10-24: exact single-match libraries confirmed in corner-only and
+  fresh physical STA; setup/hold pass in every corner. Fast −40/−55 °C model
+  difference remains explicit. [Evidence](../evidence/sram-pt0/README.md#corners-and-timing).
+- [ ] **PT.0c — Residuals and retained evidence.** Reassess macro-boundary slew/cap
+  violations with correct corners and buffer/resize as necessary. Recheck the
+  LEF-obstruction DRC finding against real GDS. Preserve routed DEF, P&R netlist,
+  extracted SPICE, reports, exact inputs and restoration instructions in a new
+  evidence set; retain the original archive and digest unchanged.
+  Partial 2026-10-24: a verified/restored 8.38 MB evidence archive now retains the
+  required physical views and attribution runs; all nine current TT prechecks
+  pass. Fresh flow exits 2 on three abstract Magic M3.f markers. Slew violations
+  remain (fast/slow/typical: 12/25/21), with 12 capacitance violations per corner.
+  Retained-GDS Magic reports 29,294 macro-internal findings requiring a deck/model
+  disposition. **Next: targeted macro-boundary electrical repair and Magic finding
+  disposition**, then rerun the affected physical checks; no constraints were relaxed.
 
-**Delivered:**
+The [example's registered-memory specimen](../../hardcaml_asic_example/memory/README.md)
+is ready for PT.1–PT.2 adoption: flop simulation, both emitted RTL roles, stable
+`program` identity and explicit Exact rejection are tested. This is preparation,
+not production macro-backend completion.
 
-- Separate installed `hardcaml_asic.flow_domain` and `hardcaml_asic.execution`
-  libraries; the hardware library takes on no execution dependencies.
-- Six-stage domain modules, shared analysis contracts and a checked LibreLane
-  mapping covering all 80 Classic occurrences.
-- Native OCaml typed plans, identity JSON, versioned backend protocol, process
-  supervision, Docker transport, runtime policy, atomic records, checkpoints and the
-  explicit-stage runner.
-- Native public `hardcaml-asic-flow` parsing, routing and every service: preflight,
-  coarse run/execute, collect, report/acceptance, postcheck orchestration,
-  finalization, archive, observation and watch. LibreLane and TT tools remain
-  external and unchanged.
-- Reduced installation: nine Python backend/probe/bootstrap modules and four data
-  files. Sixteen retired Python service modules remain only as source references,
-  and their installed imports are a deliberate Python API break; CLI contract 4 is
-  unchanged.
-- Named fixed-recipe flows and typed profiles (2026-10-15): project-owned
-  catalogs, discover/describe/preview/run, pre-bundle effective settings and
-  provenance, expected-identity enforcement, frozen historical methodology and a
-  standalone headless client. See the [design record](development/project-flow-catalog.md).
-- Source layout (2026-10-15): `flow_domain/` and `execution/` moved to the repo
-  root, and `lib/` became the qualified `Resource`, `Flow`, `Platform` and
-  `Elaboration` groups behind a curated `lib/hardcaml_asic.ml`. Consumer-facing
-  names are unchanged. See the
-  [reorganization record](development/lib-namespace-reorganization.md).
+**Exit:** the known probe defects have corrected, reproducible evidence, with
+remaining findings explicitly dispositioned. This supplements S.3's qualified
+closure; it does not relabel that historical probe as production acceptance.
+Use the [S.3 disposition](sram/sram-s3-disposition.md) for technical detail and
+the October 23 checkpoint for current authority/pin context.
 
-**Not delivered:** arbitrary operation sequences, configuration-changing
-checkpoint branches and a general DAG scheduler. Those are queue items 2–3 above.
+## PT.1 — Exact production SRAM backend
 
-Verification at delivery: forced `dune runtest -j 20` and 57 installed-prefix
-tests passed; the physical and reduced-install evidence is listed in
-[Current status](#current-status). The original detailed delivery text is in the
-[snapshot](archive/phase-plan-2026-10-15.md#ocaml-first-flow-infrastructure).
+**Owner: ASIC. Implements the production mapping portion of historical S.4.**
 
-## ASIC P6 — Shared tooling distribution
+- [ ] **PT.1a — Mapping and wrapper.** Map the existing 256×16 latency-one 1RW
+  request exactly to `RM_IHPSG13_1P_256x16_c2_bm_bist`. Implement enables,
+  whole-word mask and BIST/test tie-offs, with stable wrapper/instance names.
+- [ ] **PT.1b — Contract conformance.** Run the shared contract suite against the
+  behavioral, flop and actual macro functional models. Compare only defined
+  results; check each backend's own hold behavior after writes and disabled cycles.
+  Preserve no reset, no initialization, and simulation-only poison behavior.
+- [ ] **PT.1c — Selection diagnostics.** Exercise `Exact`, explicit `Flops`, and
+  explicitly permitted fallback. Unsupported contracts fail under `Exact`;
+  fallback records its reason. No silent dimension rounding or macro composition.
+- [ ] **PT.1d — Timed-model conformance.** Establish a simulator path that executes
+  the macro's delayed timing checks, with positive and intentional-violation
+  cases. Keep this evidence separate from functional tests and Liberty STA.
 
-Keep existing IDs. The detailed acceptance matrix and original commands are in
-[development/P6](development/p6-implementation-plan.md#7-ordered-bounded-implementation-units).
+**Exit:** supported exact requests elaborate to the production wrapper and pass
+backend conformance, including the timed-model obligation. Functional-only support
+may be recorded as partial progress, not completion. PT.2 engineering can proceed
+while PT.1d remains open. Update the memory reference's stale capability/status
+wording when adopting the backend, without changing its settled semantics.
 
-- [x] **P6.1** — Operation-aware reporting. Synthesis and full-flow policies remain
-  distinct; missing/contradictory evidence cannot become a pass.
-- [x] **P6.2** — Complete immutable-input archives with integrity and restoration.
-- [x] **P6.3** — Shared installed-command contract and fixed execute semantics.
-- [ ] **P6.4** — Installed CLI/runtime assets; **P6.4a/b delivered**, parent waits
-  for P6.6a's filesystem source-denial check. Do not redo packaging.
-- [ ] **P6.5a — Source-artifact identity.** One deterministic validated source stamp
-  embedded in OCaml and Python, Git-free source builds and additive bundle
-  `generator_identity`. Test clean/dirty/untracked/unknown inputs, actual opam
-  source/export behavior, tampered inventory, determinism, library/CLI equality
-  and manifest coverage. No runtime Git guessing or version-as-revision shortcut.
-- [ ] **P6.5b — Dependency and waiver records.** After P6.5a: explicit expectations,
-  generator/executor comparison, recorded exceptions and historical-read behavior.
-  Old analysis does not require matching the current executor's identity. Preserve
-  existing records through archive/restoration.
-- [ ] **P6.5c — Provisioning/data authority.** Strict requested Python behavior,
-  installed lock authority, explicit Docker/native scope and read-only/check/offline
-  semantics. PDK-free stub tests prove no implicit network or writes in check mode;
-  no baseline pin change is implied. *Partly addressed* by managed Python/Tcl,
-  lexical interpreter paths, bounded readiness and thin bootstrap
-  ([acceptance](#tool-environment-closeout-acceptance)).
-- [ ] **P6.6a — Independent installation acceptance.** After P6.4b and P6.5a/b/c:
-  fresh prefix, unrelated consumer, source access denied, positive/negative
-  validation/report/archive/restoration and exact artifact identity. PDK-free.
-- [ ] **P6.6b — Documentation and recorded candidate.** After P6.6a: align operating
-  commands, run applicable build/test/package checks and record the deliberately
-  published candidate. Commit/publication/pin changes remain explicit owner actions.
+## PT.2 — Macro collateral and physical controls
 
-**P6 exit:** one identified source artifact installs library and generic flow
-tooling, works independently of the checkout and preserves P6.1/P6.2 guarantees.
+**Owner: ASIC; project settings supplied by Protemu.**
 
-P6.5a does not block observation or Workbench work. P6.5b needs P6.5a's identity;
-P6.5c can progress independently. Until P6.5, `--version` reports no source
-revision and does not verify that the linked library matches the command.
+- [ ] **PT.2a — Collateral lifecycle.** Register, resolve, validate and identify
+  synthesis black boxes, functional/timed models, Liberty corners, LEF, GDS and
+  CDL/SPICE. Keep simulation and synthesis source roles distinct. Resolve PDK
+  files at the appropriate execution/preflight boundary, not ordinary elaboration.
+- [ ] **PT.2b — LibreLane integration.** Derive `MACROS`, corner bindings, layout
+  assembly and macro-aware LVS inputs from registered resources. Connect
+  `VDD!`/`VDDARRAY!` to `VPWR` and ground to `VGND` through the supported target
+  integration. Record the accepted target assumptions and actual connectivity.
+- [ ] **PT.2c — Placement intent.** Add resource-ID-keyed position, orientation,
+  halo/clearance and supported power-grid controls. Validate target bounds,
+  overlap, legal orientations and unknown resource references. Support multiple
+  explicitly declared instances with distinct identities; start with manual placement.
+- [ ] **PT.2d — Physical acceptance.** Run a normal emitted macro bundle through
+  synthesis, physical implementation, required checks and TT precheck using the
+  current pinned support tools. Verify actual corner binding, power access,
+  macro-boundary electrical limits and CDL-backed LVS. Preserve complete evidence.
 
-## Known open scope
+**Exit:** the normal library/CLI path implements the exact macro reproducibly
+without hand-editing emitted bundles or borrowing experimental configuration.
+Missing collateral, ambiguous corners and invalid placement produce actionable errors.
 
-Recorded limits of delivered work. None is in the active queue unless promoted there.
+## PT.3 — Macro-backed Protemu acceptance
 
-- **Observation:** no store-wide catalog, idempotency or fencing; no fsync or
-  power-loss guarantee; no crashed-writer reconciliation or execution
-  takeover/recovery; no backend-step progress. Journals assume a trusted local
-  filesystem with advisory locks; retention and cursors are caller-owned.
-- **Workbench:** cancellation, daemon-crash process survival and live application
-  acceptance are proposed
-  ([execution boundary](development/workbench-execution-boundary.md)).
-- **Execution:** no segmented artifact archive/GC; no resumed-attempt or standalone
-  signoff finalization; one tested container image; no native/macro/other-image
-  relocation.
-- **Evidence:** six disconnected pins and one max-fanout violation in the physical
-  run remain raw evidence outside the existing acceptance gates.
-- **Failed-run diagnostics** need an export contract separate from completed-run
-  archives.
+**Owners: Protemu for adoption/system checks; ASIC for backend defects and evidence.**
 
-## ASIC P7, S and T — retained independent tracks
+- [ ] **PT.3a — Consumer adoption.** Migrate Protemu's emitter to the current public
+  API and deliberately adopt a compatible dependency/toolchain revision. Preserve
+  an explicit flop configuration and add an exact-SRAM configuration for `program`.
+- [ ] **PT.3b — Real system regression.** Exercise the loader/core/program-store
+  path: load, readback, fetch, stalls, reset/disable, image validity, rejected host
+  accesses during execution, and independence from unspecified memory outputs.
+  Verify both emitted source roles with the applicable models.
+- [ ] **PT.3c — Implemented-design replay.** Run the actual macro-backed system
+  through the adopted flow and replay its final netlist with the macro model.
+  Record timing/check outcomes and any provisional constraint assumptions;
+  an RTL-only fixture is not final-netlist evidence.
 
-**P7.1–P7.6:** retain their original migration goals and M4 relationship in the
-[historical definitions](archive/phase-plan-through-p6.4b.md#12-p7--consumer-migration-and-legacy-retirement).
-P7.1 installs the consumer's recorded revision; P7.2 replaces vendored operations;
-P7.3 migrates coverage before deletion; P7.4 makes adopted checks routine; P7.5
-validates synthesis/full/restoration; P7.6 closes migration documentation.
-They are deferred for that consumer, not renamed as the new example's tasks.
+**Exit:** the actual Protemu system works with the selected SRAM and has linked
+consumer/backend/run evidence. Final physical selection additionally requires
+PT.7's reviewed constraints and PT.8's configuration decision. Historical small
+observable-top and flop-memory measurements do not substitute for this gate.
 
-**S.1–S.4:** capability inventory, behavioral/target compatibility, bounded flow
-feasibility, then a conditional exact backend. The [SRAM area](sram/README.md)
-retains detailed gate status and all investigations. S.3's acceptance allows a
-qualified feasibility or evidence-backed deferral decision; it is not signoff.
+## PT.4 — Resource-mapping inspection API
 
-**T.1:** correct the upstream ABC driving-cell constraint boundary (cell name vs
-OpenSTA-style cell/pin), with a focused regression, explicit corrected revision
-and mapped-synthesis comparison. Historical area results retain their stated
-qualification. It blocks only measurements demonstrably dependent on that defect;
-no shared venv patch or silent baseline pin advance.
+**Owner: ASIC. Extend existing records rather than introduce another selector.**
 
-Deferred scope with reactivation conditions is in the [backlog](backlog/README.md).
+- [ ] **PT.4a — Pre-run inventory.** Expose a versioned, machine-readable
+  CLI/provider view available without EDA: resource ID, requested contract,
+  matched policy, selected implementation, fallback/rejection explanation,
+  and actual elaboration role (behavioral versus selected implementation).
+- [ ] **PT.4b — Physical linkage.** Include generated wrapper/macro instance
+  identities, required collateral and corners, placement and supply intent.
+  Distinguish unresolved references from validated files and measured facts.
+- [ ] **PT.4c — Stable provenance.** Bind inspection to exact project/bundle
+  identities; support deterministic output and historical inspection. Verify
+  flop, macro, fallback and unsupported-selection cases headlessly.
 
-## Delivered milestones
+**Exit:** a client can answer “what will `program` become, and why?” without
+parsing RTL or running synthesis. Simulation inventory cannot be mistaken for
+the implementation selected for fabrication.
 
-One entry per closeout. Each **full record** link goes to the original text in
-the 2026-10-15 snapshot, which keeps the exact commands, test counts, generations
-and identities. Later entries supersede earlier qualifications only where they
-say so.
+## PT.5 — Requested-versus-realized resource checks
 
-### Default flow journal closeout
+**Owner: ASIC; Workbench consumes the results.**
 
-2026-10-13. CLI `stages` journals by default, with early allocation and flushed
-allocation/terminal JSONL (contract 4). Foreground watch validates incremental
-updates, and readers can stop and reconnect without controlling execution. The
-example's `project run --endpoint` route requires contract 4. Journal schema 2
-later added producer UTC and monotonic timestamps
-([event timing](development/journal-event-timing.md)).
-[Feature record](development/flow-journal.md) ·
-[full record](archive/phase-plan-2026-10-15.md#default-flow-journal-closeout)
+- [ ] **PT.5a — Reconciliation.** Check expected macro type/count/identity against
+  synthesis and final physical instances. Report missing, unexpected, unresolved
+  and optimized-away instances distinctly, retaining stage and producer identity.
+- [ ] **PT.5b — Resource evidence.** Report macro versus standard-cell area,
+  utilization and links to macro-boundary timing paths. Attribute flop-resource
+  costs only where the mapping survives synthesis; otherwise report unavailable.
+- [ ] **PT.5c — Acceptance integration.** Make required-macro mismatches fail the
+  relevant implementation checks, with negative fixtures and actual-run evidence.
 
-### Explicit-stage refactor closeout
+**Exit:** selected mapping and verified implementation are separate inspectable
+facts. A declaration alone cannot establish that a run retained its SRAM.
 
-2026-10-13. Shared coarse/explicit runner; six sequential physical boundaries;
-schema-3 OCaml/Python recipes; exact-runtime, path-bound checkpoint publication
-and restarts; observation; separate finalization using the existing acceptance
-policy. Actual evidence:
+## PT.6 — Workbench resource inspector
 
-| Record | Proven scope |
-| --- | --- |
-| [Blocked local probe](../evidence/librelane-observation/blocked-local.json) | Historical missing Tcl/Tk; zero of eleven authored cases in that attempt |
-| [Slice 2](../evidence/librelane-observation/slice2-real.json) | 12 official-API cases; real synthesis → fresh physical handoff and bounded cancellation |
-| [Slice 3](../evidence/librelane-observation/slice3-production.json) | Production checkpoint publication/runtime closure and synthesis resume |
-| [Slice 4](../evidence/librelane-observation/slice4-physical.json) | Full six-stage physical execution |
-| [Slice 5](../evidence/librelane-observation/slice5-observed.json) | Real observed synthesis/floorplan with independent cursor audit |
-| [Slice 6](../evidence/librelane-observation/slice6-finalization.json) | Accepted finalization: nine TT checks and 11,429-edge replay |
+**Owner: Workbench; ASIC owns and tests the public data contract.**
 
-[Refactor record](development/explicit-stage-refactor.md) ·
-[full record](archive/phase-plan-2026-10-15.md#explicit-stage-refactor-closeout)
+- [ ] **PT.6a — Resource table.** Display resource identity, shape/contract, policy,
+  implementation and selection reason, distinguishing explicit flops from fallback.
+- [ ] **PT.6b — Drilldown.** Link a logical resource to its hierarchy, collateral,
+  placement and realized-mapping/timing evidence; show unavailable or pending data.
+- [ ] **PT.6c — Controls and comparison.** Compare two configurations/runs and
+  expose project-supported selection controls through public preview/new-build
+  interfaces. Do not mutate immutable bundles or duplicate selection logic in UI.
 
-### Default result store and CLI 2 closeout
+**Exit:** selecting `program` shows its contract, selected macro and whether the
+chosen run actually retained it. The same facts remain available headlessly.
 
-2026-10-13. Default `_flow_results/{bundles,runs,operations}` with verified
-immutable publication/reuse, human-default output, explicit `--json`, and project
-`describe|emit|preflight|run`. Contract 2 was later superseded by 3 (human
-output for all commands) and 4 (default journals).
-[Command/storage matrix](guides/flow.md#default-result-store-and-cli-contract-4) ·
-[full record](archive/phase-plan-2026-10-15.md#default-result-store-and-cli-2-closeout)
+## PT.7 — Synchronizer/reset-aware timing declarations
 
-### Host/container runtime-policy closeout
+**Owners: ASIC for validation/rendering; Protemu for circuit intent and review.**
 
-2026-10-12. Role-specific host/container runtime policy, shared readiness checks,
-and observed image/engine launch binding. Bundles emitted under older semantics
-must be emitted again, never edited.
-[Runtime policy guide](guides/flow.md#runtime-policy-and-launch-binding) ·
-[full record](archive/phase-plan-2026-10-15.md#hostcontainer-runtime-policy-closeout)
+- [ ] **PT.7a — Endpoint references.** Define stable port/register-pin references
+  and verify their resolution after synthesis. Diagnose empty or ambiguous matches.
+- [ ] **PT.7b — Narrow timing intent.** Support reasoned asynchronous-capture and
+  reset exceptions plus supported synchronizer preservation attributes. Keep
+  downstream synchronizer stages timed normally; no blanket chain false paths.
+- [ ] **PT.7c — Reviewable evidence.** Emit the resolved exceptions and unconstrained
+  path coverage. Review Protemu's protocol inputs, sampled host link, reset and
+  board/pad I/O assumptions, then rerun affected physical checks.
 
-### Tool-environment closeout acceptance
+**Exit:** Protemu's final implementation uses reviewed, traceable constraints,
+not just the provisional blanket min/max I/O delays. Digital phase-sweep tests
+and STA do not by themselves establish analog metastability reliability.
 
-2026-10-12. Managed CPython 3.11.17 / Tcl 9.0.4 by default, bounded read-only
-readiness checks, `provision --python BASE`, and the example's thin bootstrap
-with no copied pins or source fallback.
-[Managed-runtime evidence](../evidence/managed-python/actual-runtime.json) ·
-[bootstrap guide](guides/bootstrap.md) ·
-[full record](archive/phase-plan-2026-10-15.md#tool-environment-closeout-acceptance)
+## PT.8 — Reproducible design-variant comparisons
 
-### Tool-environment ownership: first slice
+**Owners: Protemu for variants/workloads; ASIC for identities/results;
+Workbench for optional launch and comparison views.**
 
-2026-10-12. Settled tool-root ownership (the consumer owns `_flow_tools/`) and
-lexical interpreter paths, so explicit venv selections are no longer resolved
-away to the system Python.
-[Ownership and commands](guides/bootstrap.md#tool-directory-ownership) ·
-[full record](archive/phase-plan-2026-10-15.md#tool-environment-ownership-first-slice)
+- [ ] **PT.8a — Variant declarations.** Parameterize supported memory shapes,
+  packing/encoding, FIFO depths, engine configuration and clocks in Protemu.
+  Record hardware parameters separately from resource policy and flow profiles.
+  Reject unsupported exact mappings; larger/multiple-macro mappings require their
+  own explicit capability and conformance work.
+- [ ] **PT.8b — Comparable results.** Link firmware size, fetch counts, latency and
+  throughput to the exact variant, bundle, flow profile and run. Compare mapped
+  and physical area, slack, utilization and acceptance with consistent workloads;
+  keep estimates, synthesis evidence and physical evidence distinct.
+- [ ] **PT.8c — Selection gate.** Run promising candidates with PT.7 constraints,
+  record resource/timing margin and choose the Protemu configuration. Rerun
+  affected regressions and preserve reproducible inputs/results for that choice.
 
-### Project-centered entrypoint acceptance
+**Exit:** Protemu's P5 studies can compare explicit flops and supported SRAM
+configurations without ad hoc edits or ambiguous provenance. Existing named-flow
+profiles are reused rather than rebuilt as a second experiment system.
 
-2026-10-12. `Project.create ?source_inputs`, declaration-only `Project.describe`,
-and shared `Project.emit_bundle`. The FIFO consumer owns `Fifo_asic.project ()`
-and its `bin/project.exe` CLI.
-[Bundle guide](guides/bundle-emission.md#project-centered-entry-point) ·
-[full record](archive/phase-plan-2026-10-15.md#project-centered-entrypoint-acceptance)
+## Milestones
 
-### Consumer refresh and real-checkout emitter closeout
+1. **Usable macro path:** PT.0–PT.3 complete; real Protemu requests and implements
+   an exact SRAM through the ordinary flow, with backend/system acceptance.
+2. **Inspectable mappings:** PT.4–PT.6 complete; Workbench and headless clients
+   show requested, selected and realized resources with provenance.
+3. **Physical selection ready:** PT.7–PT.8 complete; reviewed constraints and
+   comparable workload/physical evidence support the selected configuration.
 
-2026-10-12. `scripts/asic_dependency.py` in the example installs the library and
-CLI into isolated, atomically selected generations in recorded or development
-mode. Real-checkout emission was accepted.
-[Commands](development/consumer-dependency-workflow.md#implemented-commands) ·
-[full record](archive/phase-plan-2026-10-15.md#consumer-refresh-and-real-checkout-emitter-closeout)
+Automatic banking/shape adaptation, automatic floorplan optimization, SRAM-backed
+tiny FIFOs/register files, new targets and general flow scheduling are outside this
+queue unless a concrete consumer requirement promotes them.
 
-### Public API rename: migration and evidence
+## Previous work and retained obligations
 
-2026-10-12. Source-breaking, with **no compatibility aliases**:
+The [archived queue](archive/phase-plan-2026-10-24.md#active-queue) retains
+per-operation invocation, configuration-changing checkpoint reuse, consumer pin
+adoption and source cleanup. These are deferred, not completion claims. Promote
+only a concrete dependency of the PT work; record that decision here.
 
-| Previous OCaml API | Current OCaml API |
-| --- | --- |
-| `Build` | `Elaborated_project` |
-| `Resolved_build` | `Resolved_flow` |
-| Resolved record field `build` | `elaborated_project` |
-| `Bundle.render ?simulation_build` | `Bundle.render ?simulation_project` |
+<a id="asic-p6--shared-tooling-distribution"></a>
 
-`Project.elaborate`, `Project.elaborate_for_flow` and `Target.Resolved` keep
-their names. Persisted identities, schemas and hashing are unchanged. Old and new
-emitters produced byte-identical bundles. The current external checker is
-`python3 test/check_resolved_flow_api.py --baseline-emitter PATH`.
-`hardcaml_protemu` still needs its own migration.
-[Full record](archive/phase-plan-2026-10-15.md#public-api-rename-migration-and-evidence)
+**ASIC P6:** source-artifact identity, waiver/provisioning authority and independent
+installation gates remain open at their [recorded status](archive/phase-plan-2026-10-24.md#asic-p6--shared-tooling-distribution).
+Keep P6 IDs when resuming them. Packaging already delivered is not new PT work.
 
-### Controlled-FIFO development-specimen evidence
+**ASIC P7/S/T:** [historical definitions and disposition](archive/phase-plan-2026-10-24.md#asic-p7-s-and-t--retained-independent-tracks)
+remain available. PT.0 supplements S.3; PT.1–PT.2 deliver S.4's production work
+without claiming the remaining S.2 timed-model gate passed. Reassess the ABC issue
+only for measurements affected by it. See also the [backlog](backlog/README.md).
 
-2026-10-12. The sibling example delivered the 16×8 controlled-FIFO contract/core,
-an independent scoreboard, the TT wrapper/declaration and PDK-free generated-RTL
-acceptance. Its early unpinned and manual-override qualifications were superseded
-by the refresh closeout.
-[Consumer README](../../hardcaml_asic_example/README.md) ·
-[full record](archive/phase-plan-2026-10-15.md#controlled-fifo-development-specimen-evidence)
+### Historical evidence links
 
-### Resolved-build boundary-hardening evidence
+Stable anchors below preserve incoming links from guides and sibling repositories;
+each routes to the archived record rather than a second active queue.
 
-2026-10-12. Resolved results became private records that only resolution can
-construct. Before/after emitters produced byte-identical bundles. The record
-uses the pre-rename names.
-[Full record](archive/phase-plan-2026-10-15.md#resolved-build-boundary-hardening-evidence)
+<a id="ocaml-first-flow-infrastructure"></a>
+<a id="explicit-stage-refactor-closeout"></a>
+<a id="default-flow-journal-closeout"></a>
+<a id="default-result-store-and-cli-2-closeout"></a>
 
-### Provider observation fixture acceptance
+- [Native execution and stage delivery](archive/phase-plan-2026-10-24.md#ocaml-first-flow-infrastructure),
+  [stage closeout](archive/phase-plan-2026-10-24.md#explicit-stage-refactor-closeout),
+  [journals](archive/phase-plan-2026-10-24.md#default-flow-journal-closeout),
+  [result stores](archive/phase-plan-2026-10-24.md#default-result-store-and-cli-2-closeout).
 
-2026-10-12. A provisional, test-only synthetic observation contract and
-validator/replayer (50 tests). It adds no installed capability; live
-per-attempt observation came later with explicit stages.
-[Fixtures](../test/fixtures/provider_observation/v1/README.md) ·
-[full record](archive/phase-plan-2026-10-15.md#provider-observation-fixture-acceptance)
+<a id="hostcontainer-runtime-policy-closeout"></a>
+<a id="tool-environment-closeout-acceptance"></a>
+<a id="tool-environment-ownership-first-slice"></a>
 
-### LibreLane feasibility probe review
+- [Runtime policy](archive/phase-plan-2026-10-24.md#hostcontainer-runtime-policy-closeout),
+  [tool environment](archive/phase-plan-2026-10-24.md#tool-environment-closeout-acceptance),
+  [tool ownership](archive/phase-plan-2026-10-24.md#tool-environment-ownership-first-slice).
 
-2026-10-12. The first official-API probe was **BLOCKED** by missing Tcl/Tk in
-local Python 3.12.3, so zero cases ran. That record is kept unchanged; later
-managed runtimes and selected-image official cases succeeded.
-[Experiment](../experiments/librelane_observation/README.md) ·
-[full record](archive/phase-plan-2026-10-15.md#librelane-feasibility-probe-review)
+<a id="project-centered-entrypoint-acceptance"></a>
+<a id="consumer-refresh-and-real-checkout-emitter-closeout"></a>
+<a id="public-api-rename-migration-and-evidence"></a>
+<a id="controlled-fifo-development-specimen-evidence"></a>
 
-## Recording future work
+- [Project entry point](archive/phase-plan-2026-10-24.md#project-centered-entrypoint-acceptance),
+  [consumer refresh](archive/phase-plan-2026-10-24.md#consumer-refresh-and-real-checkout-emitter-closeout),
+  [API migration](archive/phase-plan-2026-10-24.md#public-api-rename-migration-and-evidence),
+  [FIFO specimen](archive/phase-plan-2026-10-24.md#controlled-fifo-development-specimen-evidence).
 
-- Update this plan when work lands or priorities change. Do not create another
-  status, handoff or `immediate_future` document.
-- Keep completed task IDs and evidence links stable. Put detailed evidence (exact
-  commands, counts, generations, identities) in the feature's `development/`
-  record or `evidence/`. Add a short entry under
-  [Delivered milestones](#delivered-milestones) that links to it.
-- Ordinary tests stay PDK-free. Physical acceptance is explicit and recorded
-  separately.
-- When this plan is condensed again, archive the previous full text first, as
-  with the [2026-10-15 snapshot](archive/phase-plan-2026-10-15.md).
-- Workbench numbers its phases independently. Write **ASIC P6** or
-  **Workbench P6** when referring across repositories.
+<a id="resolved-build-boundary-hardening-evidence"></a>
+<a id="provider-observation-fixture-acceptance"></a>
+<a id="librelane-feasibility-probe-review"></a>
+
+- [Resolved-build boundary](archive/phase-plan-2026-10-24.md#resolved-build-boundary-hardening-evidence),
+  [observation fixture](archive/phase-plan-2026-10-24.md#provider-observation-fixture-acceptance),
+  [initial LibreLane probe](archive/phase-plan-2026-10-24.md#librelane-feasibility-probe-review).
+
+## Recording progress
+
+- Mark an item complete only with its stated evidence; distinguish partial
+  implementation, functional verification, physical execution and acceptance.
+- Add dated evidence links beside completed PT items. Keep detailed commands,
+  tool/source identities and findings in the relevant feature record.
+- Keep ordinary tests PDK-free; run physical/model-tool acceptance explicitly.
+- Preserve historical IDs and archived evidence. Update this queue when priorities
+  change, and archive it before the next substantial replacement.

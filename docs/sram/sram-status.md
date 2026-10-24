@@ -5,6 +5,29 @@
 > prerequisites. This separate capability investigation does not block the
 > flop-backed example or Workbench provider work.
 
+## 2026-10-24 implementation update
+
+The active [PT.0 queue](../phase_plan.md#pt0--repair-and-refresh-sram-feasibility-evidence)
+now has verified power-access and corner-binding corrections. See the
+[implementation record](../development/pt0-implementation.md) and
+[new retained evidence](../../evidence/sram-pt0/README.md).
+
+- Both positive bridges have 1.95 µm macro-pin contact and 0.28 µm clearance to
+  adjacent ground metal in emitted GDS/DEF; extraction overlap is zero and both
+  supplies reach VPWR. The initial proposed shift introduced a spacing defect;
+  the final narrowed geometry fixes it.
+- Exactly one intended macro Liberty is loaded per analysis corner. Setup/hold
+  pass; the fast standard-cell −40 °C / SRAM −55 °C difference remains explicit.
+- All nine current TT prechecks pass. The fresh flow still exits 2 on three
+  abstract Magic M3.f markers. Slew/capacitance violations remain, and retained-GDS
+  Magic exposes 29,294 macro-internal findings requiring a deck/model disposition.
+- The independent example now has a tested registered 256×16 consumer specimen.
+  Exact macro selection still fails honestly: production S.4 remains unimplemented.
+
+PT.0a/b are complete; PT.0c remains open. Historical next-task wording below is
+superseded by this update and the active plan. Original archives remain unchanged;
+the new evidence set preserves physical views needed to reproduce this analysis.
+
 ## 2026-10-23 update
 
 The competition organizers' update email to registered entrants (in hand by

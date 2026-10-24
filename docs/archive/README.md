@@ -8,6 +8,7 @@ text, revisions, outcomes and source identities retain their original meaning.
 
 | Record | Why retained |
 | --- | --- |
+| [Phase plan snapshot, 2026-10-24](phase-plan-2026-10-24.md) | Previous active queue before the Protemu-focused PT plan; completed milestones and still-open P6/P7/S/T obligations |
 | [Phase plan through P6.4b](phase-plan-through-p6.4b.md) | Full P0–P5 completion records; original P6/P7/S/T definitions and evidence |
 | [Phase plan snapshot, 2026-10-15](phase-plan-2026-10-15.md) | Full plan text before condensing: dated October closeouts, acceptance commands, counts, generations and identities |
 | [September architecture](architecture-2026-09.md) | Original accepted boundary decisions and first-milestone scope |

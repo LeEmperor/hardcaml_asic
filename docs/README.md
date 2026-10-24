@@ -5,7 +5,8 @@ quick start, see the [repository README](../README.md).
 
 ## Start here
 
-1. **[Phase plan](phase_plan.md)**: current status, the next work, dependencies,
+1. **[Phase plan](phase_plan.md)**: Protemu-focused SRAM, resource inspection,
+   timing and configuration-study work (ASIC PT.0–PT.8), dependencies,
    and links to completion evidence. It is the **only** active implementation
    queue; other documents link back to it rather than tracking status
    themselves.
@@ -67,6 +68,8 @@ to the phase plan for current status.
 
 **Consumers, packaging and Workbench**
 
+- [PT.0 implementation](development/pt0-implementation.md): agent-sized SRAM
+  correction/testbed work, actual checks and remaining physical findings.
 - [Consumer dependency workflow](development/consumer-dependency-workflow.md):
   how `hardcaml_asic_example` refreshes and activates a provider revision.
 - [ASIC P6 implementation plan](development/p6-implementation-plan.md): the
@@ -89,7 +92,7 @@ to the phase plan for current status.
 
 | Area | Purpose |
 | --- | --- |
-| [SRAM investigation](sram/README.md) | SRAM macro capability work and how to read its evidence. Independent of the flop-backed path. |
+| [SRAM investigation](sram/README.md) | Capability evidence and known probe findings; production work is now in the active PT.0–PT.2 queue. |
 | [Backlog](backlog/README.md) | Explicitly deferred scope and what would reactivate it |
 | [Archive](archive/README.md) | Superseded plans, handoffs, original proposals and completion history |
 

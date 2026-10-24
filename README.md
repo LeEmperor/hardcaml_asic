@@ -164,7 +164,7 @@ workflow; see [consumer dependency workflow](docs/development/consumer-dependenc
 
 ## Status
 
-As of 2026-10-15:
+As of 2026-10-24:
 
 - **Delivered:** project declaration through bundle emission; native OCaml CLI
   and execution services (coarse runs, explicit stages with checkpoints,
@@ -175,11 +175,15 @@ As of 2026-10-15:
   plus external acceptance (DRC/LVS/antenna, TT precheck, gate-level replay);
   the `balanced` and `synth_delay` profiles each passed real synthesis. See
   [`evidence/`](evidence/) and the [phase plan](docs/phase_plan.md).
-- **Next:** Hardcaml Workbench integration as a client of the public
-  catalog/preview/run interfaces, then finer per-operation backend execution.
+- **Next:** Protemu-focused ASIC PT.0–PT.8: correct SRAM probe defects, deliver
+  the exact SRAM backend and macro physical integration, validate the real
+  consumer, expose selected/realized resource mappings to Workbench, then extend
+  timing declarations and reproducible configuration studies. See the
+  [active queue](docs/phase_plan.md#active-queue).
 - **Open:** source-artifact stamping and independent-installation gates (ASIC
   P6.5/P6.6), committed-pin adoption by the example, and configuration-changing
-  checkpoint reuse.
+  checkpoint reuse. These retain their historical status in the
+  [previous plan](docs/archive/phase-plan-2026-10-24.md); they are not the current queue.
 
 The public lifecycle was renamed to `Elaborated_project`/`Resolved_flow` with no
 aliases; see the [migration notes](docs/phase_plan.md#public-api-rename-migration-and-evidence).
