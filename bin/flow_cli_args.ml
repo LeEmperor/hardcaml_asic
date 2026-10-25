@@ -4,7 +4,7 @@ type t = { command : string; query : string; values : (string,string) Hashtbl.t;
 exception Usage of string
 let error s = raise (Usage s)
 let commands = ["provision";"preflight";"run";"postcheck";"collect";"report";"archive";
-  "execute";"stages";"finalize";"finalization-inspect";"checkpoint-inspect";"observation";"inspect"]
+  "execute";"stages";"finalize";"finalization-inspect";"checkpoint-inspect";"observation";"inspect";"preparation-inspect"]
 let tools = ["toolchain";"support-tools";"pdk-root"]
 let identity = ["dependency-lock";"waiver"]
 let grammar command query = match command with
@@ -20,6 +20,7 @@ let grammar command query = match command with
   | "stages" -> ["support-tools";"pdk-root";"python";"workspace";"checkpoint-store";"endpoint";"plan";"methodology-plan";"expected-plan-identity";"checkpoint";"timeout";"observation-store"], ["no-observation"], "bundle"
   | "finalize" -> ["operation-store";"support-tools";"precheck-python";"testbench";"replay-trace";"testbench-top"], ["accept"], "execution"
   | "finalization-inspect" -> [], [], "attempt"
+  | "preparation-inspect" -> ["current-identity"], [], "attempt"
   | "checkpoint-inspect" -> ["compatibility";"restart-to"], [], "checkpoint"
   | "observation" -> (match query with
     | "describe" -> [], [], ""
@@ -47,7 +48,8 @@ let help command query =
   else (let values,flags,pos = grammar command query in
     if pos<>"" then Printf.printf "required argument: %s\n" (if command="report" then "TARGET" else pos);
     if command="report" then print_endline "TARGET: coarse run, stage checkpoint, stage workspace, or explicit execution JSON";
-    if command="inspect" then print_endline "Read-only retained evidence: --domain timing|clocks|physical|routing --stage synthesis|floorplan|placement|cts|routing|timing|signoff. --expected-digest alone pins a timing_analysis1 source; with --row-id it pins the index for detail. JSON contract: hardcaml-asic.inspection schema 1.";
+     if command="inspect" then print_endline "Read-only retained evidence: --domain timing|clocks|physical|routing --stage synthesis|floorplan|placement|cts|routing|timing|signoff. --expected-digest alone pins a timing_analysis1 source; with --row-id it pins the index for detail. JSON contract: hardcaml-asic.inspection schema 1.";
+     if command="preparation-inspect" then print_endline "Read-only retained Elaborate & Resolve Resources preparation. --current-identity compares an explicit preparation identity; absent comparison does not reconstruct current sources. JSON contract: hardcaml-asic.preparation-inspection schema 1.";
     List.iter (fun k -> Printf.printf "  --%s VALUE\n" k) values;
     List.iter (fun k -> Printf.printf "  --%s\n" k) flags);
   print_endline "-h, --help  show help\n--json  machine-readable payload (default: human summary)\n--verbose  expanded diagnostics on stderr";

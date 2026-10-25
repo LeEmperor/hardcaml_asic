@@ -212,6 +212,20 @@ references, not verified physical evidence.
 
 ## 5. Resources and policies
 
+Resource preparation is a first-class **overall-workflow preparation operation**,
+not a member of the LibreLane physical-stage sequence. A project-owned executable
+constructs its project and invokes `Project.prepare_resources`; the execution
+service records its lifecycle and immutable successful snapshot. The generic CLI
+inspects retained attempts without project code, current source files or tools.
+See the [preparation contract](development/resource-preparation.md) and
+[CLI guide](guides/resource-preparation.md).
+
+Preparation covers source/configuration/actual-circuit/resource identities and
+explicit selection explanations. Collateral and physical intent remain declared
+references, not readiness or measured implementation evidence. A source observation
+is not a compiled-source stamp. Preparation creates no bundle identity; comparison
+with an explicit current preparation identity leaves old results unchanged.
+
 Retain the behavioral/flop RAM contract and its independent conformance tests.
 Selection is explicit: exact mapping, flops, or an explicitly permitted fallback.
 Never silently change shape, latency or behavior to fit hardware.

@@ -27,6 +27,9 @@ end
 (** {1 Consumer entry points} *)
 
 module Project = Project
+module Resource_preparation = Resource_preparation
+module Resource_snapshot = Elaboration.Resource_snapshot
+module Source_snapshot = Elaboration.Source_snapshot
 module Methodology_plan = Methodology_plan
 module Single_port_ram = Single_port_ram
 module Elaborated_project = Elaboration.Elaborated_project

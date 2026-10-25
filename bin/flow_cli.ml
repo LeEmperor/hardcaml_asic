@@ -9,6 +9,10 @@ let exclusive a keys required =
 let choice a k choices = Option.iter (fun v -> if not (List.mem v choices) then error ("invalid --"^k^": "^v)) (get a k)
 let validate a =
   let c=a.command in
+  if c="preparation-inspect" then (
+    if String.trim (value a "attempt")="" then error "expected a nonempty attempt path";
+    Option.iter (fun id -> if String.length id<>64 || not (String.for_all (function '0'..'9'|'a'..'f' -> true | _ -> false) id)
+      then error "current identity must be a lowercase SHA-256 preparation identity") (get a "current-identity"));
   let endpoints=["synthesis";"floorplan";"placement";"cts";"routing";"timing";"signoff"] in
   if c="inspect" then (require a ["domain";"stage"];
     choice a "domain" ["timing";"clocks";"physical";"routing"]; choice a "stage" endpoints;
@@ -123,6 +127,7 @@ let route a request =
       fields ["stream-id";"after";"interval"] @ (if a.query="watch" then (if flag a "json" then ["--json"] else [])
        else ["--public-cli4"] @ switches ["json";"verbose"])
     | "finalization-inspect" -> "finalization",["--public-cli4";"--inspect";"--directory";value a "attempt"] @ presentation
+    | "preparation-inspect" -> c,[value a "attempt"] @ fields ["current-identity"] @ presentation
     | "finalize" -> "finalization",["--public-cli4";"--execution";value a "execution";"--store";value a "operation-store"] @
       fields ["support-tools";"precheck-python";"testbench";"replay-trace";"testbench-top"] @ switches ["accept"] @ presentation
     | "stages" ->

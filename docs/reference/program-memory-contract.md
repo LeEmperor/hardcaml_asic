@@ -274,7 +274,7 @@ the flow adapter validates and renders the views needed for its operation.
 | --- | --- | --- |
 | Behavioural model | implemented, P1 | Diagnostic poison per section 5.1; reference for defined behavior |
 | Generic flop implementation | implemented, P1 | Synthesizable, no macro; explicitly selected or explicitly allowed as fallback |
-| IHP CMOS5L macro | **exact 256×16 backend and fresh synthesis/full implemented** | PT.1a–c/PT.2 have public-example evidence; timed-model conformance remains open |
+| IHP CMOS5L macro | **exact 256×16 backend and fresh synthesis/full implemented** | PT.1a–c/PT.2 have public-example evidence; PT.1d timed-model qualification is optional/deferred |
 
 As of 2026-10-25, the public backend directly instantiates the stock macro without
 adding registers or altering this contract. The independent example has vendor-
@@ -285,6 +285,11 @@ functional RTL and zero-delay mapped-netlist evidence. See the
 for the exact stock R0 profile. Macro checkpoints remain unsupported. LVS is
 explicitly abstract macro-boundary/interconnect with schematic CDL, not internal-device
 verification; zero-delay replay is not timed-model conformance.
+
+The owner made PT.1d optional/deferred on 2026-10-25. It does not block the
+supported backend or consumer adoption. Functional conformance, correct timing
+libraries/constraints, STA and electrical/physical acceptance remain required;
+no timed-model result is claimed. See the phase plan for reactivation criteria.
 
 The [S.1 investigation](../sram/sram-candidate-investigation.md) found and inventoried the
 exact-shape `RM_IHPSG13_1P_256x16_c2_bm_bist`. Later functional checks and qualified

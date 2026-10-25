@@ -112,7 +112,7 @@ let describe t =
 ;;
 
 (* Runs the user's design once, and returns the Elaborated_project.t object *)
-let elaborate t ~mode =
+let elaborate_with_phases t ~mode ~on_phase =
   (* Unpack our first class design module *)
   let (module D) = t.design in
 
@@ -125,6 +125,7 @@ let elaborate t ~mode =
   in
 
   (* Overall Circuit.t scope *)
+  on_phase Resource_preparation.Phase.Construction;
   let scope = Scope.create ~flatten_design:true () in
 
   (* Context creation; This is only lived as long as a given elaboration run, and that is the
@@ -150,12 +151,18 @@ let elaborate t ~mode =
   | Error _ as error ->
     Elaboration.Context.Private.fail context;
     tag "design construction failed" error
+    |> Result.map_error ~f:(fun e -> Resource_preparation.Phase.Construction, e)
 
   (* Ok circuit generation; validates on the resouces first; *)
   | Ok circuit ->
-    let%map.Or_error resources =
+    (try on_phase Resource_preparation.Phase.Finalization with exn ->
+       let backtrace = Backtrace.Exn.most_recent () in
+       Elaboration.Context.Private.fail context;
+       Exn.raise_with_original_backtrace exn backtrace);
+    let%map.Result resources =
       (* Good! -> Finalize; This closes the context and returns the resource records. *)
       Elaboration.Context.Private.finalize context |> tag "elaboration validation failed"
+      |> Result.map_error ~f:(fun e -> Resource_preparation.Phase.Finalization, e)
     in
 
     (* Only runs if the above resources validate runs based on the context;
@@ -175,6 +182,56 @@ let elaborate t ~mode =
   (* Elaborated_project.Private.create and Elaboration.Context.Private are exposed
      conventional internal APIs intended for Project.elaborate. This naming convention
      is distinct from the compiler-enforced private records in Elaboration.Resolved. *)
+;;
+
+let elaborate t ~mode =
+  elaborate_with_phases t ~mode ~on_phase:ignore
+  |> Result.map_error ~f:snd
+;;
+
+let prepare_resources ?(inputs = Platform.Target.Inputs.reference_cmos5l_6x4)
+    ?methodology ?(catalog_inputs = []) ?(on_phase = ignore) t ~source_root =
+  let module P = Resource_preparation in
+  let step phase code message f =
+    on_phase phase;
+    Or_error.try_with f |> Or_error.join
+    |> Result.map_error ~f:(P.Failure.create ~phase ~code ~message)
+  in
+  let open Result.Let_syntax in
+  let input_paths = t.source_inputs @ catalog_inputs in
+  let%bind before = step Source_before "source_observation_failed"
+    "Could not observe declared source inputs" (fun () ->
+      Elaboration.Source_snapshot.observe ~source_root ~input_paths) in
+  (* Callback exceptions must escape to the durable operation owner. Construction
+     itself already catches design errors; callback invocation is outside it. *)
+  let%bind elaborated = elaborate_with_phases t ~mode:Implementation ~on_phase
+    |> Result.map_error ~f:(fun (phase, error) ->
+      P.Failure.create ~phase
+        ~code:(match phase with Construction -> "design_construction_failed" | _ -> "elaboration_finalization_failed")
+        ~message:"Implementation elaboration failed" error) in
+  let%bind resolution = step Resolution "flow_resolution_failed"
+    "Implementation flow resolution failed" (fun () ->
+      Elaboration.Resolved.resolve ~inputs ?methodology elaborated) in
+  let%bind rtl = step Circuit "circuit_render_failed"
+    "Could not encode the actual implementation circuit" (fun () ->
+      Ok (Rtl.create Verilog [Elaboration.Elaborated_project.circuit elaborated]
+          |> Rtl.full_hierarchy |> Rope.to_string)) in
+  let%bind prepared = step Snapshot "snapshot_failed" "Could not encode resource preparation" (fun () ->
+    let declaration = [%sexp { project = (describe t : Sexp.t);
+      catalog_inputs = (List.dedup_and_sort catalog_inputs ~compare:String.compare : string list) }] in
+    P.Private.create ~source:before ~declaration ~inputs ~resolution ~rtl) in
+  let%bind after = step Source_after "source_observation_failed"
+    "Could not re-observe declared source inputs" (fun () ->
+      Elaboration.Source_snapshot.observe ~source_root ~input_paths) in
+  let%bind () =
+    if String.equal (Elaboration.Source_snapshot.identity before)
+        (Elaboration.Source_snapshot.identity after) then Ok ()
+    else Error (P.Failure.create ~phase:Source_after ~code:"source_changed"
+      ~message:"Declared sources changed during resource preparation"
+      (Error.create_s [%message "before and after source identities differ"
+        ~before_identity:(Elaboration.Source_snapshot.identity before : string)
+        ~after_identity:(Elaboration.Source_snapshot.identity after : string)])) in
+  Ok prepared
 ;;
 
 let elaborate_for_flow ?inputs ?methodology t =

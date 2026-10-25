@@ -107,4 +107,11 @@
  (modules experimental_inspect)
  (public_name hardcaml-asic-experimental-inspect)
  (package hardcaml_asic)
+  (libraries hardcaml_asic.execution))
+
+(executable
+ (name experimental_preparation_inspect)
+ (modules experimental_preparation_inspect)
+ (public_name hardcaml-asic-experimental-preparation-inspect)
+ (package hardcaml_asic)
  (libraries hardcaml_asic.execution))

@@ -96,6 +96,21 @@ val describe : t -> Sexp.t
     Returns an elaborated Hardcaml circuit, not a synthesis result. *)
 val elaborate : t -> mode:Elaboration.Mode.t -> Elaboration.Elaborated_project.t Or_error.t
 
+(** First-class preparation, independent of bundle publication and physical stages.
+    Observes declared sources before and after, elaborates Implementation exactly
+    once, resolves once, and hashes actual RTL in memory. No Simulation elaboration,
+    Bundle.render, EDA, or PDK reads. Source changes reject success. These declared
+    file observations do not prove compiled-source consistency or a P6 stamp.
+    [on_phase] runs before each phase; its exceptions propagate to the caller. *)
+val prepare_resources
+  :  ?inputs:Platform.Target.Inputs.t
+  -> ?methodology:Hardcaml_asic_flow_domain.Catalog.resolved
+  -> ?catalog_inputs:string list
+  -> ?on_phase:(Resource_preparation.Phase.t -> unit)
+  -> t
+  -> source_root:string
+  -> (Resource_preparation.t, Resource_preparation.Failure.t) Result.t
+
 (** Elaborate the selected implementation and validate the TT/LibreLane target,
     wrapper, timing, metadata, and configuration before emission. *)
 (** [methodology] applies only checked configurable assignments, after project

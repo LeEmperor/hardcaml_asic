@@ -63,10 +63,10 @@ named owner and does not reuse that repository's phase IDs.
 | Order | Item | Dependencies | State |
 | --- | --- | --- | --- |
 | 1 | PT.0 — Repair and refresh SRAM feasibility evidence | Existing S.3 records | Complete in revised example-centered scope; historical probe qualifications retained |
-| 2 | PT.1 — Exact production SRAM backend | PT.0 corrected power/corner findings | PT.1a–c complete; timed-model conformance open |
+| 2 | PT.1 — Exact production SRAM backend | PT.0 corrected power/corner findings | Required scope complete; PT.1d optional/deferred |
 | 3 | PT.2 — Macro collateral and physical controls | PT.1 mapping/wrapper contract | Complete for stock 256×16/R0 fresh full profile; example acceptance passed |
-| 4 | PT.3 — Macro-backed Protemu acceptance | PT.1–PT.2; consumer API migration | Pending |
-| 5 | PT.4 — Resource-mapping inspection API | Existing records; PT.1–PT.2 for macro fields | Pending |
+| 4 | PT.3 — Macro-backed Protemu acceptance | Required PT.1 scope and PT.2; consumer API migration | Pending; independent consumer-adoption track |
+| 5 | PT.4 — Resource-mapping inspection API | Existing records; PT.1–PT.2 for macro fields | Complete: CLI/library preparation and independent-example acceptance |
 | 6 | PT.5 — Requested-versus-realized resource checks | PT.2, PT.4 | Pending |
 | 7 | PT.6 — Workbench resource inspector | PT.4; PT.5 for realized evidence | Pending |
 | 8 | PT.7 — Synchronizer/reset-aware timing declarations | Endpoint reference design and Protemu timing review | Pending |
@@ -143,15 +143,22 @@ the October 23 checkpoint for current authority/pin context.
   direct macro instantiation without new registers, three-backend contract replay
   (2,307 edges each), unsupported-shape/fallback diagnostics, independent example
   RTL and mapped-netlist replay. [Record](development/sram-example-integration.md#evidence).
-- [ ] **PT.1d — Timed-model conformance.** Establish a simulator path that executes
+- [ ] **PT.1d — Timed-model conformance (optional, deferred).** Establish a simulator path that executes
   the macro's delayed timing checks, with positive and intentional-violation
   cases. Keep this evidence separate from functional tests and Liberty STA.
+  Owner decision, 2026-10-25: this is not a completion gate for the supported
+  backend, PT.2 or Protemu adoption. No competition/vendor requirement for it has
+  been established. Reactivate for a specific timing-sensitive verification gap,
+  an explicit external requirement, or a deliberate decision to qualify/rely on
+  the vendor timed model. Questa is the intended candidate when available;
+  installation and whole-chip SDF simulation are not current prerequisites.
 
 **Exit:** supported exact requests elaborate to the production wrapper and pass
-backend conformance, including the timed-model obligation. Functional-only support
-may be recorded as partial progress, not completion. PT.2 engineering can proceed
-while PT.1d remains open. Update the memory reference's stale capability/status
-wording when adopting the backend, without changing its settled semantics.
+functional backend conformance and selection diagnostics (PT.1a–c). **Required
+scope is complete.** PT.1d remains unperformed optional work, not a claimed pass.
+Correct Liberty/corner/constraint handling, STA/electrical checks and physical
+acceptance remain required for implementation; making timed simulation optional
+does not weaken those checks.
 
 ## PT.2 — Macro collateral and physical controls
 
@@ -195,6 +202,12 @@ Missing collateral, ambiguous corners and invalid placement produce actionable e
 
 **Owners: Protemu for adoption/system checks; ASIC for backend defects and evidence.**
 
+**Next bounded step: PT.3a.** Audit the current Protemu emitter and dependency
+record, migrate to the supported public API, and emit explicit flop and exact-SRAM
+variants with the same logical memory contract. Verify deterministic source sets,
+resource identity and selection before running expensive physical work. Use the
+accepted example as the integration reference; no Questa installation is needed.
+
 - [ ] **PT.3a — Consumer adoption.** Migrate Protemu's emitter to the current public
   API and deliberately adopt a compatible dependency/toolchain revision. Preserve
   an explicit flop configuration and add an exact-SRAM configuration for `program`.
@@ -216,16 +229,31 @@ observable-top and flop-memory measurements do not substitute for this gate.
 
 **Owner: ASIC. Extend existing records rather than introduce another selector.**
 
-- [ ] **PT.4a — Pre-run inventory.** Expose a versioned, machine-readable
+Completed 2026-10-25: [preparation operation contract, agent slices and evidence](development/resource-preparation.md).
+This is a first-class overall-workflow preparation operation, not another LibreLane
+physical stage. CLI/library and independent-example testing come first; Workbench
+integration is outside this implementation slice. PT.3 adoption is not a prerequisite.
+
+- [x] **PT.4a — Pre-run inventory.** Expose a versioned, machine-readable
   CLI/provider view available without EDA: resource ID, requested contract,
   matched policy, selected implementation, fallback/rejection explanation,
   and actual elaboration role (behavioral versus selected implementation).
-- [ ] **PT.4b — Physical linkage.** Include generated wrapper/macro instance
+- [x] **PT.4b — Physical linkage.** Include generated wrapper/macro instance
   identities, required collateral and corners, placement and supply intent.
   Distinguish unresolved references from validated files and measured facts.
-- [ ] **PT.4c — Stable provenance.** Bind inspection to exact project/bundle
-  identities; support deterministic output and historical inspection. Verify
+- [x] **PT.4c — Stable provenance.** Bind inspection to exact source/configuration/
+  circuit/preparation identities; support deterministic output and historical inspection. Verify
   flop, macro, fallback and unsupported-selection cases headlessly.
+  Preparation occurs before bundle emission: no bundle identity is fabricated.
+  Linking a separately emitted bundle requires explicit future verification.
+
+Delivered `Project.prepare_resources`, structured pure resource snapshots, durable
+attempt lifecycle, `preparation1` capability and the installed `preparation-inspect`
+reader. Example `prepare`/`preview`/`resources` cover memory and resource-free FIFO.
+All **89 installed-consumer checks** and both repositories' full test suites pass
+with their documented historical/opt-in fixture limits. Original v1 attempts remain
+readable; current workflow descriptor v2 reports actual phases. No Workbench changes.
+See the [operating guide](guides/resource-preparation.md).
 
 **Exit:** a client can answer “what will `program` become, and why?” without
 parsing RTL or running synthesis. Simulation inventory cannot be mistaken for

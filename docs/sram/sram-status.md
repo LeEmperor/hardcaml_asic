@@ -5,6 +5,17 @@
 > prerequisites. This separate capability investigation does not block the
 > flop-backed example or Workbench provider work.
 
+## 2026-10-25 timed-model scope decision
+
+The owner made PT.1d **optional/deferred**, not a gate on supported backend
+completion or Protemu adoption. PT.1's required scope (a–c) is complete. No new
+timed-model evidence is claimed; previous simulator limitations remain factual.
+Questa qualification can be revisited for a concrete verification need or external
+requirement. Functional conformance, STA and electrical/physical checks remain
+required. The [active plan](../phase_plan.md#pt1--exact-production-sram-backend)
+owns the updated scope; older references to a mandatory timed-model gate are
+superseded by this decision. PT.3a is next.
+
 ## 2026-10-25 physical acceptance update
 
 The independent example's public full run `be961b2c95f74c81ad6af81ca4d2b269`

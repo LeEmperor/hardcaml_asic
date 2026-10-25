@@ -1,6 +1,21 @@
 ; P0 lifecycle, registration and selection tests.
 
 (executable
+ (name preparation_consumer)
+ (modules preparation_consumer)
+ (libraries core hardcaml hardcaml_asic.execution unix)
+ (preprocess (pps ppx_jane ppx_hardcaml)))
+
+(rule
+ (alias preparation)
+ (deps check_preparation.py ../bin/experimental_preparation_inspect.exe)
+ (action (run python3 -B %{dep:check_preparation.py}
+   --consumer %{exe:preparation_consumer.exe}
+   --public %{exe:../bin/flow_cli.exe})))
+
+(alias (name runtest) (deps (alias preparation)))
+
+(executable
  (name inspection_parser_tests)
  (modules inspection_parser_tests)
  (libraries hardcaml_asic.execution))
@@ -315,7 +330,7 @@
 
 (library
  (name hardcaml_asic_test)
-     (modules (:standard \ inspection_parser_tests named_observation_race stage_report_consumer coarse_execution_consumer archive_consumer archive_encoding_consumer finalization_consumer postcheck_consumer report_consumer collect_consumer coarse_run_consumer preflight_consumer stage_domain_consumer project_api_consumer stage_recipe_contract execution_identity_driver execution_plan_consumer backend_protocol_driver process_supervisor_consumer execution_transport_consumer runtime_contract_consumer result_store_consumer checkpoint_consumer checkpoint_publisher_consumer runner_consumer segment_service_consumer stage_preparation_consumer observation_consumer observation_writer_consumer))
+     (modules (:standard \ preparation_consumer inspection_parser_tests named_observation_race stage_report_consumer coarse_execution_consumer archive_consumer archive_encoding_consumer finalization_consumer postcheck_consumer report_consumer collect_consumer coarse_run_consumer preflight_consumer stage_domain_consumer project_api_consumer stage_recipe_contract execution_identity_driver execution_plan_consumer backend_protocol_driver process_supervisor_consumer execution_transport_consumer runtime_contract_consumer result_store_consumer checkpoint_consumer checkpoint_publisher_consumer runner_consumer segment_service_consumer stage_preparation_consumer observation_consumer observation_writer_consumer))
  ; The trailing -source-tree-root wins over the one dune passes (%{workspace_root},
  ; .. from here). Works around a ppx_expect v0.18~preview bug: it drops the directory
  ; from the test file's path when registering a test, then rebuilds the path at exit

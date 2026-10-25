@@ -34,7 +34,8 @@ The [independent memory example](../hardcaml_asic_example/memory/PHYSICAL.md)
 passes physical/electrical checks, TT precheck and final-netlist zero-delay replay
 through the public API. The supported physical profile is stock 256×16, R0,
 checked Metal4 power access and real-GDS CMOS5L KLayout, with explicit abstract
-macro-boundary LVS scope. Macro checkpoints and timed-model conformance remain open.
+macro-boundary LVS scope. Macro checkpoints remain open; timed-model conformance
+is optional/deferred and does not block adoption.
 See the [physical closeout](docs/development/sram-example-physical.md) for evidence
 and limits, including the narrowly dispositioned raw Magic findings.
 
@@ -43,6 +44,13 @@ is **not** a signoff verdict; acceptance is a
 separate, explicit check (see [interpreting results](docs/guides/usage.md#7-interpret-and-preserve-results)).
 
 ## How it fits together
+
+**Inspect before EDA:** a project CLI can call `Project.prepare_resources` through
+the durable preparation service, then use `hardcaml-asic-flow preparation-inspect`
+to browse the saved resource decisions. This is a preparation operation, separate
+from physical stages, with no bundle emission or PDK requirement. See
+[resource preparation](docs/guides/resource-preparation.md) and the
+[independent example commands](../hardcaml_asic_example/docs/resource_preparation.md).
 
 ```text
 Project.create  ──►  Elaborated_project  ──►  Resolved_flow  ──►  bundle  ──►  execution  ──►  results / archive
@@ -180,6 +188,9 @@ As of 2026-10-25:
   finalization, archives); default result stores; managed Python/Tcl
   provisioning; named flows/profiles with plan-identity enforcement; and exact
   256×16 SRAM fresh synthesis/full execution with the checked physical profile.
+- **Resource preparation:** PT.4 provides structured pre-run inventory, durable
+  Elaborate & Resolve attempts, historical inspection and explicit identity
+  comparison. CLI/library acceptance is complete independently of Workbench.
 - **Evidence:** a fresh installed consumer completed all six physical stages
   plus external acceptance (DRC/LVS/antenna, TT precheck, gate-level replay);
   the `balanced` and `synth_delay` profiles each passed real synthesis. See
@@ -187,7 +198,7 @@ As of 2026-10-25:
 - **SRAM evidence:** the independent example passes physical/electrical checks,
   TT precheck and routed-netlist functional replay. PT.0c and PT.2 are closed
   for the supported profile; see the [physical closeout](docs/development/sram-example-physical.md).
-- **Next:** complete timed-model conformance, adopt the backend in Protemu,
+- **Next:** adopt the backend in Protemu (PT.3a), then verify its real system;
   expose selected/realized resource mappings to Workbench, then extend
   timing declarations and reproducible configuration studies. See the
   [active queue](docs/phase_plan.md#active-queue).
