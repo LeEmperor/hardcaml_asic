@@ -2,14 +2,15 @@ open Hardcaml_asic_execution
 let () =
   let values=Hashtbl.create 12 and json=ref false and public=ref false and verbose=ref false in
   let specs=List.map (fun name -> "--"^name,Arg.String (fun x -> Hashtbl.replace values name x),name)
-    ["run-dir";"support-tools";"pdk-root";"precheck-python";"testbench";"testbench-top";"context";"replay-trace";"timeout"] @
+     ["run-dir";"support-tools";"pdk-root";"precheck-python";"testbench";"testbench-top";"context";"replay-trace";"timeout";"resources"] @
     ["--json",Arg.Set json,"JSON outcome";"--public-cli4",Arg.Set public,"public presentation";"--verbose",Arg.Set verbose,"diagnostics"] in
   try
     Arg.parse specs (fun _ -> raise (Arg.Bad "unexpected argument")) "External postcheck";
     let v=Hashtbl.find values in
     let o=Postcheck_service.run ~run_dir:(v "run-dir") ~support_tools:(v "support-tools") ~pdk_root:(v "pdk-root")
       ~precheck_python:(v "precheck-python") ~testbench:(v "testbench") ~testbench_top:(v "testbench-top")
-      ~environment:(Array.to_list (Unix.environment ()))
+       ~environment:(Array.to_list (Unix.environment ()))
+       ?resources:(Hashtbl.find_opt values "resources")
       ?context:(Option.map (fun p -> Evidence_json.value (Evidence_json.read p)) (Hashtbl.find_opt values "context"))
       ?replay_trace:(Hashtbl.find_opt values "replay-trace") ?timeout:(Option.map float_of_string (Hashtbl.find_opt values "timeout")) () in
     if !json || not !public then print_string (Result_store.record_bytes (Postcheck_service.outcome_json o))

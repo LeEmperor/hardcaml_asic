@@ -274,14 +274,17 @@ the flow adapter validates and renders the views needed for its operation.
 | --- | --- | --- |
 | Behavioural model | implemented, P1 | Diagnostic poison per section 5.1; reference for defined behavior |
 | Generic flop implementation | implemented, P1 | Synthesizable, no macro; explicitly selected or explicitly allowed as fallback |
-| IHP CMOS5L macro | **exact 256×16 backend and fresh synthesis implemented** | PT.1a–c/PT.2a have public-example evidence; physical execution and timed-model conformance remain open |
+| IHP CMOS5L macro | **exact 256×16 backend and fresh synthesis/full implemented** | PT.1a–c/PT.2 have public-example evidence; timed-model conformance remains open |
 
-As of 2026-10-24, the public backend directly instantiates the stock macro without
+As of 2026-10-25, the public backend directly instantiates the stock macro without
 adding registers or altering this contract. The independent example has vendor-
 functional RTL and zero-delay mapped-netlist evidence. See the
 [integration record](../development/sram-example-integration.md) and
-[current phase plan](../phase_plan.md). Physical Hardening/checkpoints are explicitly
-unsupported until power, KLayout/CDL and electrical acceptance are verified.
+[current phase plan](../phase_plan.md). Fresh Hardening now has
+[power, KLayout/CDL and electrical acceptance](../development/sram-example-physical.md)
+for the exact stock R0 profile. Macro checkpoints remain unsupported. LVS is
+explicitly abstract macro-boundary/interconnect with schematic CDL, not internal-device
+verification; zero-delay replay is not timed-model conformance.
 
 The [S.1 investigation](../sram/sram-candidate-investigation.md) found and inventoried the
 exact-shape `RM_IHPSG13_1P_256x16_c2_bm_bist`. Later functional checks and qualified

@@ -41,9 +41,10 @@ val owned_name : unit -> string
 val docker_command
   :  docker -> project:string -> pdk_root:string -> name:string
   -> ?workdir:string -> ?entrypoint:string -> ?pdk:string
-   -> ?extra_mounts:string list -> uid:int -> gid:int -> unit -> string list
+    -> ?extra_mounts:string list -> ?workers:int -> uid:int -> gid:int -> unit -> string list
 (** Prefix only; image ID is authoritative, declared_ref is evidence only.
-    Mount syntax rejects colon paths rather than silently mounting another path. *)
+     Mount syntax rejects colon paths rather than silently mounting another path.
+     [workers] bounds container quota and thread environment (1..20, default 20). *)
 
 type invocation
 val process_specification : invocation -> Process.t
@@ -53,7 +54,7 @@ val native_invocation
   -> stdout:Process.output -> stderr:Process.output -> invocation
 val docker_invocation
   :  docker -> project:string -> pdk_root:string -> ?workdir:string -> ?pdk:string
-   -> ?extra_mounts:string list -> ?entrypoint:string -> interpreter:bool -> arguments:string list
+    -> ?extra_mounts:string list -> ?workers:int -> ?entrypoint:string -> interpreter:bool -> arguments:string list
   -> cwd:string -> environment:string list -> stdout:Process.output
   -> stderr:Process.output -> unit -> invocation
 (** Fresh owned name per invocation. [interpreter=true] prepends the bound flags
@@ -63,7 +64,7 @@ val docker_invocation
     Invocations are single-use, including after a failed launch. *)
 
 type removal = { result : Process_supervisor.result; diagnostic : string }
-val metadata_invocation : docker -> arguments:string list -> environment:string list
+val metadata_invocation : ?workers:int -> docker -> arguments:string list -> environment:string list
   -> stdout:Process.output -> stderr:Process.output -> invocation
 (* Mount-free, read-only, network-disabled metadata probe, with owned cleanup. *)
 type cleanup = { attempts : removal list; error : string option }

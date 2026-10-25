@@ -63,13 +63,15 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
   let python = checked (Checkpoint.absolute_path python) in
   let manifest_path = bundle ^ "/manifest.json" in
   let manifest = codec (R.read_json manifest_path) in
-  if stage=Execution_plan.Coarse.Full then Macro_contract.require_synthesis manifest;
+   if stage=Execution_plan.Coarse.Full then Macro_contract.require_full manifest;
   let macro = Macro_contract.active manifest in
   let identity = get manifest "identity" in ignore (text identity);
   let manifest_sha256 = hash manifest_path in
   check_cancel ();
   let a = R.allocate runs in
-  let record = C.create a ~bundle ~build_identity:identity ~manifest_sha256 ~stage in
+   let record = C.create a ~bundle ~build_identity:identity ~manifest_sha256 ~stage in
+   if macro then C.set record "resource_limits" (obj ["tool_workers",codec (J.integer "6");
+     "container_cpus",codec (J.integer "6");"sta_workers",codec (J.integer "1")]);
   let path = a.directory ^ "/run.json" and preflight_path = a.directory ^ "/preflight.json" in
   let save () = R.save_json path (C.to_json record) in
   save ();
@@ -95,7 +97,13 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
         (array (get (get manifest "target") "external_references"));
       mkdir (project ^ "/runs/asic");
       if hash (project ^ "/manifest.json") <> manifest_sha256 then failwith "staged manifest differs from original bundle";
-      let technology = text (get (get manifest "target") "technology") in
+       let technology = text (get (get manifest "target") "technology") in
+       let physical_full=Macro_contract.physical manifest && stage=Execution_plan.Coarse.Full in
+       if physical_full then (
+         copy (resources ^ "/physical_runtime.py") (project ^ "/physical-runtime.py");
+         copy (resources ^ "/macro_flow.py") (project ^ "/macro-flow.py");
+         C.set record "physical_checker_sha256" (s (hash (project ^ "/physical-runtime.py")));
+         C.set record "macro_flow_sha256" (s (hash (project ^ "/macro-flow.py"))));
       let env = T.clean_environment environment in
       let find key = Option.value (List.find_opt (String.starts_with ~prefix:(key ^ "=")) env) ~default:(key ^ "=") in
       let path_value = find "PATH" in
@@ -106,11 +114,14 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
           "OPENROAD_THREADS=" ^ (if macro then "6" else "20");
           "OMP_NUM_THREADS=" ^ (if macro then "6" else "20")] in
       C.status record C.Running; save (); check_cancel ();
-      let arguments = ["-m";"librelane";"--pdk-root";pdk_root;"--pdk";technology;"--manual-pdk";
+       let arguments = (if physical_full then [project ^ "/macro-flow.py"] else ["-m";"librelane"]) @
+         ["--pdk-root";pdk_root;"--pdk";technology;"--manual-pdk";
         "--run-tag";"asic";"--force-run-dir";"runs/asic"] @
         (if stage=Execution_plan.Coarse.Synthesis then ["--to";"Yosys.Synthesis"] else []) @
-        (if macro then ["--jobs";"6";"-c";"OPENROAD_THREADS=6";"-c";"STA_THREADS=1";
-          "-c";"KLAYOUT_DRC_THREADS=6";"-c";"KLAYOUT_XOR_THREADS=6"] else []) @ ["src/config.json"] in
+         (if macro then ["--jobs";"6";"-c";"OPENROAD_THREADS=6";"-c";"STA_THREADS=1";
+           "-c";"KLAYOUT_DRC_THREADS=6";"-c";"KLAYOUT_XOR_THREADS=6"] else []) @
+         (if Macro_contract.physical manifest then ["-c";"MAX_SLEW_VIOLATION_CORNERS=*";
+           "-c";"MAX_CAP_VIOLATION_CORNERS=*";"-c";"ERROR_ON_MAGIC_DRC=false"] else []) @ ["src/config.json"] in
       let log = open_out_gen [Open_wronly;Open_creat;Open_append;Open_binary] 0o600 (a.directory ^ "/execution.log") in
       let result = Fun.protect ~finally:(fun () -> close_out_noerr log) (fun () ->
         let output = Process.Descriptor (Unix.descr_of_out_channel log) in
@@ -121,7 +132,7 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
             let probe = Runtime_probe.create_cancellable ~cancel ~directory ~environment ~timeout:20. in
             checked (Runtime_probe.verify probe binding);
             C.set record "execution_engine" (get (T.to_json binding) "engine_identity");
-            T.docker_invocation d ~project ~pdk_root ~pdk:technology ~interpreter:true ~arguments ~cwd:project ~environment:env ~stdout:output ~stderr:output () in
+             T.docker_invocation d ~project ~pdk_root ~pdk:technology ~workers:(if macro then 6 else 20) ~interpreter:true ~arguments ~cwd:project ~environment:env ~stdout:output ~stderr:output () in
         Option.iter (fun (_,name) -> C.set record "container_name" (s name)) (T.container invocation);
         C.set record "execution_mode" (s (if native then "native" else "dockerized"));
         let spec = T.process_specification invocation in C.command record spec.argv; save ();
@@ -136,11 +147,26 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
       Option.iter (fun (cleanup : T.cleanup) -> List.iter (fun (attempt : T.removal) ->
         match attempt.result.outcome with Process_supervisor.Cancelled n -> if !signal=None then signal := Some n | _ -> ()) cleanup.attempts) result.cleanup;
       check_cancel ();
-      if not (T.succeeded result) then (
+       if not (T.succeeded result) then (
         match result.process.outcome with
         | Process_supervisor.Failed error -> failwith error
         | _ -> (match result.cleanup with Some {error=Some e;_} -> failwith ("owned container cleanup failed: " ^ e)
-          | _ -> failwith "LibreLane failed; see execution.log and project/runs/asic"));
+           | _ -> failwith "LibreLane failed; see execution.log and project/runs/asic"));
+       if Macro_contract.physical manifest && stage=Execution_plan.Coarse.Full then (
+          let helper=project ^ "/physical-runtime.py" in
+          if get (C.to_json record) "physical_checker_sha256"<>s (hash helper) ||
+             get (C.to_json record) "macro_flow_sha256"<>s (hash (project ^ "/macro-flow.py"))
+          then failwith "physical runtime adapter changed during execution";
+         let output=Process.File (a.directory ^ "/physical-checks.log") in
+         let arguments=[helper;"check";project;pdk_root] in
+         let invocation=match binding with
+           | T.Docker d -> T.docker_invocation d ~project ~pdk_root ~workers:6 ~interpreter:true
+               ~arguments ~cwd:project ~environment:env ~stdout:output ~stderr:output ()
+           | T.Native _ -> failwith "native full execution unsupported" in
+         C.command record (T.process_specification invocation).argv; save ();
+         if not (T.succeeded (T.run ~cancel invocation)) then failwith "physical evidence validation failed; see physical-checks.log";
+         copy (project ^ "/runs/asic/physical-checks.json") (a.directory ^ "/physical-checks.json");
+         C.set record "physical_checks_sha256" (s (hash (a.directory ^ "/physical-checks.json"))));
       if hash (project ^ "/manifest.json") <> manifest_sha256 || hash manifest_path <> manifest_sha256 then failwith "build manifest changed during execution";
       if macro then (
         List.iter (fun entry -> check_cancel ();

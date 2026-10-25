@@ -77,7 +77,11 @@ let probe_with_cancel ~cancel ~bundle ~support_tools ~pdk_root ~python ~resource
   List.iter (fun entry -> attempt (fun () -> let relative = text (get entry "path") in
     let path = safe_child bundle relative in
     if not (is_file path) || hash path <> text (get entry "sha256") then add ("missing or changed bundle file: " ^ relative))) (array (get manifest "files"));
-  let environment = List.filter (fun x -> not (String.starts_with ~prefix:"GIT_OPTIONAL_LOCKS=" x)) environment @ ["GIT_OPTIONAL_LOCKS=0"] in
+   let environment = List.filter (fun x -> not (String.starts_with ~prefix:"GIT_OPTIONAL_LOCKS=" x)) environment @ ["GIT_OPTIONAL_LOCKS=0"] in
+   let environment = if Macro_contract.active manifest then
+     List.filter (fun x -> not (List.exists (fun key -> String.starts_with ~prefix:(key ^ "=") x)
+       ["OMP_NUM_THREADS";"OPENROAD_THREADS";"_OPENLANE_MAX_CORES"])) environment @
+     ["OMP_NUM_THREADS=6";"OPENROAD_THREADS=6";"_OPENLANE_MAX_CORES=6"] else environment in
   let probe = P.create_cancellable ~cancel ~directory ~environment ~timeout:20. in
   let command name arguments = P.command probe ~prog:(P.find_executable ~environment name) ~arguments in
   List.iter (fun (root,key,label) -> attempt (fun () ->
@@ -110,7 +114,33 @@ let probe_with_cancel ~cancel ~bundle ~support_tools ~pdk_root ~python ~resource
         let aliases = links pdk_root (String.split_on_char '/' (text (get target "technology") ^ "/" ^ relative)) in
         if command "git" (["-C";pdk_root;"status";"--porcelain";"--";path] @ aliases) <> ""
         then add ("modified macro " ^ role ^ ": " ^ path))) collateral));
-  List.iter (fun reference -> attempt (fun () ->
+   if Macro_contract.physical manifest then attempt (fun () ->
+     let plan = get (get manifest "macro_contract") "physical_plan" in
+     if codec (R.read_json (safe_child bundle "physical/macro-plan.json")) <> plan
+     then failwith "physical plan file differs from manifest";
+     List.iter (fun (relative,contents) ->
+       if hash (safe_child bundle relative)<>Identity_json.sha256_bytes contents
+       then failwith ("physical input differs from canonical generation: " ^ relative)) (Macro_contract.physical_files manifest);
+     (* Include transitive deck includes and sibling default JSON. All resolved
+        paths remain inside the selected pinned PDK checkout. *)
+     let rec tree ancestors path =
+       check_cancel cancel;
+       let path=resolve path in
+       if not (String.starts_with ~prefix:(resolve pdk_root ^ "/") path) then failwith "checking collateral escapes pinned PDK";
+       if List.mem path ancestors then failwith "checking collateral symlink cycle";
+       if (Unix.stat path).Unix.st_kind=Unix.S_DIR then
+         Array.to_list (Sys.readdir path) |> List.sort String.compare |> List.concat_map (fun name -> tree (path::ancestors) (path ^ "/" ^ name))
+       else if is_file path then [path] else failwith "unsupported checking collateral" in
+     let paths=List.concat_map (fun relative -> tree [] (safe_child pdk_root relative))
+       ["ihp-sg13cmos5l/libs.tech/klayout";"ihp-sg13g2/libs.tech/klayout/tech/drc";
+        "ihp-sg13cmos5l/libs.tech/magic";"ihp-sg13cmos5l/libs.tech/netgen"] |> List.sort_uniq String.compare in
+     let paths=List.sort_uniq String.compare (paths @ List.map (safe_child pdk_root)
+       ["ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v";
+        "ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_udp.v"]) in
+     if command "git" (["-C";pdk_root;"status";"--porcelain";"--"] @ paths) <> ""
+     then failwith "modified pinned checking collateral";
+     List.iter (fun path -> references := !references @ [obj ["role",s "physical:checking_collateral";"path",s path;"sha256",s (hash path)]]) paths);
+   List.iter (fun reference -> attempt (fun () ->
     let repo,root = if get reference "source" = s "Support_tools" then support_tools,support_tools
       else pdk_root,Filename.concat pdk_root (text (get target "technology")) in
     let path = safe_child root (text (get reference "path")) and role = text (get reference "role") in
@@ -124,7 +154,7 @@ let probe_with_cancel ~cancel ~bundle ~support_tools ~pdk_root ~python ~resource
   attempt (fun () -> host := P.observe_host probe ~python ~payload;
     actual := ["python",get !host "python_version";"librelane",get !host "librelane_version"]);
   if not native then attempt (fun () ->
-    container := P.observe_container probe ~docker:(P.find_executable ~environment "docker") ~payload policy;
+     container := P.observe_container ~workers:(if Macro_contract.active manifest then 6 else 20) probe ~docker:(P.find_executable ~environment "docker") ~payload policy;
     actual := !actual @ ["docker_server",get (get !container "engine_identity") "server_version";
       "librelane_image",get (get !container "image_identity") "image_id";
       "container_python",get !container "python_version";"container_librelane",get !container "librelane_version";

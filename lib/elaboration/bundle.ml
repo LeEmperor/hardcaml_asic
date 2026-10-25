@@ -391,12 +391,12 @@ let generated_settings (resolved : Resolved.t) source_name =
   [ "VERILOG_FILES", `List [ `String ("dir::" ^ source_name) ]
   ; "PNR_SDC_FILE", `String "dir::../constraints/top.sdc"
   ; "SIGNOFF_SDC_FILE", `String "dir::../constraints/top.sdc"
-  ] @ if List.is_empty resolved.macros then [] else
+    ] @ (if List.is_empty resolved.macros then [] else
     [ "MACROS", macro_configuration resolved
     ; "EXTRA_VERILOG_MODELS", `List [string ("dir::../" ^ macro_stub_path)]
     ; "STA_CORNERS", list (fun (corner, _) -> string corner) Resolved.macro_corners
     ; "DEFAULT_CORNER", string "nom_typ_1p20V_25C"
-    ]
+    ]) @ Option.value_map resolved.physical_plan ~default:[] ~f:Macro_physical_plan.settings
 ;;
 
 let config (resolved : Resolved.t) source_name =
@@ -464,7 +464,7 @@ let setting_json (setting : Resolved.Setting.t) =
     ]
 ;;
 
-let macro_json (m : Resolved.Macro.t) =
+let macro_json ~physical (m : Resolved.Macro.t) =
   assoc
     [ "resource", string (Resource.Id.to_string m.resource)
     ; "module", string m.name
@@ -476,7 +476,7 @@ let macro_json (m : Resolved.Macro.t) =
         assoc [ "location_um", `List [`Float i.x_um; `Float i.y_um]
               ; "orientation", string "R0"; "halo_um", `Float i.halo_um
               ; "power", assoc ["VDD!", string "VPWR"; "VDDARRAY!", string "VPWR"; "VSS!", string "VGND"]
-              ; "execution", string "unsupported_pending_verified_power_geometry" ])
+              ; "execution", string (if physical then "fresh_full" else "unsupported_pending_verified_power_geometry") ])
     ]
 ;;
 
@@ -618,7 +618,8 @@ let render
     ; "constraints/top.sdc", sdc resolved
      ; "info.yaml", info_yaml resolved source_name
      ]
-     @ (if List.is_empty resolved.macros then [] else [macro_stub_path, macro_stub])
+      @ (if List.is_empty resolved.macros then [] else [macro_stub_path, macro_stub])
+     @ Option.value_map resolved.physical_plan ~default:[] ~f:Macro_physical_plan.files
     @ Option.value_map simulation_rtl ~default:[] ~f:(fun rtl ->
       [ "simulation/" ^ source_name, rtl ])
   in
@@ -683,9 +684,9 @@ let render
              list resource_json (Elaborated_project.resources simulation)) )
        ] @ (if List.is_empty resolved.macros then [] else
        [ "macro_contract", assoc
-           [ "schema_version", `Int 1
-           ; "execution", string "synthesis_only"
-           ; "macros", list macro_json resolved.macros
+            ([ "schema_version", `Int (if Option.is_some resolved.physical_plan then 2 else 1)
+            ; "execution", string (if Option.is_some resolved.physical_plan then "fresh_full" else "synthesis_only")
+            ; "macros", list (macro_json ~physical:(Option.is_some resolved.physical_plan)) resolved.macros
            ; "blackbox_sources", `List [string macro_stub_path]
            ; "implementation_simulation", assoc
                [ "defines", `List [string "FUNCTIONAL"]
@@ -700,8 +701,9 @@ let render
                ; "magic_findings", string "retain_and_disposition_no_blanket_waiver"
                ; "electrical", string "preserve_liberty_limits_no_architectural_registers"
                ]
-           ; "fast_temperature_difference", string "standard_cells_m40C_macro_m55C"
-           ]
+            ; "fast_temperature_difference", string "standard_cells_m40C_macro_m55C"
+            ] @ Option.value_map resolved.physical_plan ~default:[] ~f:(fun plan ->
+                ["physical_plan", Macro_physical_plan.to_json plan]))
        ]) @ [
          ( "target"
         , assoc

@@ -14,9 +14,10 @@ is in the [September architecture](archive/architecture-2026-09.md). The
 Help independent Hardcaml projects declare ASIC intent, emit reproducible inputs,
 execute an implementation flow and inspect traceable results. The supported path
 is Tiny Tapeout 6x4 / IHP CMOS5L / LibreLane, with behavioral and explicitly
-selected flop memory, plus the exact 256×16 SRAM backend through fresh synthesis.
-Macro hardening/checkpoints and timed-model conformance remain open; see the
-[public SRAM boundary](development/sram-public-bundle.md). There is no general
+selected flop memory, plus the exact 256×16 SRAM backend through fresh synthesis
+and full implementation with the checked stock R0 physical profile. Macro
+checkpoints and timed-model conformance remain open; see the
+[physical SRAM boundary](development/sram-example-physical.md). There is no general
 multi-target or multi-backend implementation. A successful process is not a
 signoff verdict.
 
@@ -44,7 +45,7 @@ Workbench application integration, and source-artifact stamping (ASIC P6.5a).
 | Hardware library `hardcaml_asic` (`lib/`) | Resource semantics, project declarations, validated design intent and input emission. Qualified groups `Resource`, `Flow`, `Platform` and `Elaboration`; `lib/hardcaml_asic.ml` is the curated public surface (see the [namespace reorganization record](development/lib-namespace-reorganization.md)) |
 | Flow domain `hardcaml_asic.flow_domain` (`flow_domain/`) | Stage/operation contracts, standard compositions, checked LibreLane mapping, catalogs, methodologies, profiles and parameters |
 | Execution library `hardcaml_asic.execution` (`execution/`) and native commands (`bin/`) | Public CLI parsing, defaults, identity, routing and rendering; all computation services, supervision, publication, records, observation and watch |
-| Installed Python runtime (`flow/hardcaml_asic_flow/`) | Exactly nine modules (`__init__`, `backend_protocol`, `librelane_bridge`, `stage_metadata_probe`, `probe`, `runtime_observation`, `runtime_contract`, `managed_python`, `paths`) plus four data files. Calls the official LibreLane API, probes runtimes and provisions |
+| Installed Python runtime (`flow/hardcaml_asic_flow/`) | Exactly eleven modules (`__init__`, `backend_protocol`, `librelane_bridge`, `stage_metadata_probe`, `probe`, `runtime_observation`, `runtime_contract`, `managed_python`, `paths`, `macro_flow`, `physical_runtime`) plus four data files. Calls the official LibreLane API, probes runtimes, provisions, and implements checked physical-macro adaptations |
 | Retired Python sources | Sixteen former service modules kept in the checkout only as references and test oracles. Their installed imports are a deliberate Python API break |
 | Hardware project (e.g. the example) | Design and wrapper semantics, testbenches, declaration, flow catalog, dependency pin and chosen evidence stores |
 | Workbench ASIC adapter | Consumes the project's public provider interface and translates it into feature data |

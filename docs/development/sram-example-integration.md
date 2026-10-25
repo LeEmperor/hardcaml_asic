@@ -1,5 +1,9 @@
 # SRAM integration through the independent example
 
+> Follow-on: the [2026-10-25 physical closeout](sram-example-physical.md) delivers
+> the physical slice described as next work below. Timed-model conformance and
+> macro checkpoint support remain open. This record retains the synthesis milestone.
+
 Status: public synthesis/functional slice verified 2026-10-24; physical integration
 and timed-model conformance remain open. This is the agent-sized implementation
 record for the revised direction accepted by the owner. The [phase plan](../phase_plan.md)

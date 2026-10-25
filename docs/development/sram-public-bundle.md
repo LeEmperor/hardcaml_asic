@@ -1,5 +1,10 @@
 # Exact SRAM public bundle and synthesis slice
 
+> This records the initial synthesis slice. The 2026-10-25
+> [physical closeout](sram-example-physical.md) supersedes the Hardening/full
+> rejection and unverified-power/checking statements below for schema-2 stock R0
+> bundles. Schema-1 synthesis compatibility and macro checkpoint rejection remain.
+
 Assignment B, 2026-10-24. This slice supplies public declaration, resolution,
 bundle emission, preflight and **fresh coarse synthesis launch** for the stock
 `RM_IHPSG13_1P_256x16_c2_bm_bist`. The coordinator subsequently ran the installed

@@ -73,7 +73,13 @@ let evaluate ~context:r t =
   let synthesis=get t "synthesis_checks" in
   if not (object_ synthesis) then add "synthesis_checks missing or malformed";
   List.iter (fun n -> check synthesis n true true) ["unmapped_instances";"synthesis_errors";"inferred_latches"];
-  if scope=Full then (
+   if scope=Full then (
+     if get t "physical_profile"=`String "cmos5l_real_gds_v1" || get r "physical_checks_sha256"<>`Null then (
+       if get t "physical_profile"<>`String "cmos5l_real_gds_v1" then add "physical checking profile missing";
+       let evidence=get t "physical_evidence" in
+       if field evidence "status"<>`String "pass" || field evidence "lvs_scope"<>`String "abstract_macro_boundary_with_schematic_cdl"
+       then add "required physical profile evidence missing or failed";
+       List.iter (fun name -> if field (field (get t "checks") name) "status"<>`String "pass" then add (name ^ " electrical check failed or missing")) ["max_slew";"max_cap"]);
     let goal=get t "timing_goal" in if not (is goal "pass") then add ("timing goal "^str goal);
     (match get t "timing_unconstrained_modes" with
       | `List xs when List.for_all (function `String _ -> true | _ -> false) xs ->

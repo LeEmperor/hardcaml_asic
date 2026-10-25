@@ -5,6 +5,30 @@
 > prerequisites. This separate capability investigation does not block the
 > flop-backed example or Workbench provider work.
 
+## 2026-10-25 physical acceptance update
+
+The independent example's public full run `be961b2c95f74c81ad6af81ca4d2b269`
+and external postcheck `0553f6d19c8f42d28c057fc65ed23510` pass. See the
+[physical closeout](../development/sram-example-physical.md) and
+[retained consumer evidence](../../../hardcaml_asic_example/acceptance/sram/README.md).
+
+- The normal library/installed CLI supports exact 256×16/R0 fresh Hardening with
+  geometry-derived supply connections, native behavior-preserving wire buffering,
+  real-GDS KLayout and verified schematic CDL consumption.
+- Setup/hold/slew/cap/fanout checks pass in all three corners. The original 16
+  staging flops and one unchanged stock SRAM remain; no architectural pipeline was added.
+- Routing/KLayout DRC, overlaps, LVS, PDN and antenna counts are zero. Raw Magic=3
+  is preserved with exact stock/single-layer/combined diagnostic controls proving
+  the abstract obstruction cause. Altered diagnostic LEFs never enter fabrication inputs.
+- All nine TT prechecks and 1,280 final-gate functional word checks pass; a negative
+  replay fails as intended. The evidence archive was restored and replayed independently.
+- **PT.2 is complete for this profile; PT.0c closes in the revised example scope.**
+  The old probe's counts and qualifications remain historical, not retroactively clean.
+
+Timed-model/SDF conformance, internal-device SRAM LVS, IR/EM adequacy, macro
+checkpoint execution and Protemu adoption remain separate work. Later updates
+supersede earlier status wording below without changing historical evidence.
+
 ## 2026-10-24 implementation update
 
 The subsequent [example-centered implementation](../development/sram-example-integration.md)

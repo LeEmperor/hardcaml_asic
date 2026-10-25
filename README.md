@@ -28,13 +28,15 @@ The path is deliberately narrow:
 | Harness | Tiny Tapeout `6x4` |
 | Technology | IHP `ihp-sg13cmos5l` (CMOS5L) |
 | Flow | LibreLane Classic, through the pinned container image |
-| Memory | Behavioral simulation, explicit flops, or exact IHP 256×16 SRAM through fresh synthesis |
+| Memory | Behavioral simulation, explicit flops, or exact IHP 256×16 SRAM through fresh synthesis/full implementation |
 
-Macro physical hardening/checkpoint execution and timed-model conformance remain
-open. The [independent memory example](../hardcaml_asic_example/memory/README.md)
-has actual mapped-synthesis and zero-delay gate-functional evidence through the
-public API. See the [SRAM integration record](docs/development/sram-example-integration.md)
-for scope, architecture ownership and the next physical work.
+The [independent memory example](../hardcaml_asic_example/memory/PHYSICAL.md)
+passes physical/electrical checks, TT precheck and final-netlist zero-delay replay
+through the public API. The supported physical profile is stock 256×16, R0,
+checked Metal4 power access and real-GDS CMOS5L KLayout, with explicit abstract
+macro-boundary LVS scope. Macro checkpoints and timed-model conformance remain open.
+See the [physical closeout](docs/development/sram-example-physical.md) for evidence
+and limits, including the narrowly dispositioned raw Magic findings.
 
 Other targets/flows and commercial adapters are not provided. A completed process
 is **not** a signoff verdict; acceptance is a
@@ -170,20 +172,23 @@ workflow; see [consumer dependency workflow](docs/development/consumer-dependenc
 
 ## Status
 
-As of 2026-10-24:
+As of 2026-10-25:
 
 - **Delivered:** project declaration through bundle emission; native OCaml CLI
   and execution services (coarse runs, explicit stages with checkpoints,
   default journals and live watch, collection, reporting, postcheck,
   finalization, archives); default result stores; managed Python/Tcl
-  provisioning; and named flows/profiles with plan-identity enforcement.
+  provisioning; named flows/profiles with plan-identity enforcement; and exact
+  256×16 SRAM fresh synthesis/full execution with the checked physical profile.
 - **Evidence:** a fresh installed consumer completed all six physical stages
   plus external acceptance (DRC/LVS/antenna, TT precheck, gate-level replay);
   the `balanced` and `synth_delay` profiles each passed real synthesis. See
   [`evidence/`](evidence/) and the [phase plan](docs/phase_plan.md).
-- **Next:** Protemu-focused ASIC PT.0–PT.8: correct SRAM probe defects, deliver
-  the exact SRAM backend and macro physical integration, validate the real
-  consumer, expose selected/realized resource mappings to Workbench, then extend
+- **SRAM evidence:** the independent example passes physical/electrical checks,
+  TT precheck and routed-netlist functional replay. PT.0c and PT.2 are closed
+  for the supported profile; see the [physical closeout](docs/development/sram-example-physical.md).
+- **Next:** complete timed-model conformance, adopt the backend in Protemu,
+  expose selected/realized resource mappings to Workbench, then extend
   timing declarations and reproducible configuration studies. See the
   [active queue](docs/phase_plan.md#active-queue).
 - **Open:** source-artifact stamping and independent-installation gates (ASIC

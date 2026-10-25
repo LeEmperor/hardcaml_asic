@@ -113,7 +113,7 @@ let route a request =
     | "run"|"execute" -> c,resources @ fields (["bundle";"support-tools";"pdk-root";"python";"runs";"stage"] @
       if c="execute" then ["precheck-python";"testbench";"testbench-top";"archive"] else []) @
       (if c="run" then ["--public-cli4"] else []) @ switches ["native";"force"] @ presentation
-    | "postcheck" -> c,["--public-cli4"] @ fields ["run-dir";"support-tools";"pdk-root";"precheck-python";"testbench";"testbench-top";"replay-trace";"timeout"] @ presentation
+     | "postcheck" -> c,["--public-cli4"] @ resources @ fields ["run-dir";"support-tools";"pdk-root";"precheck-python";"testbench";"testbench-top";"replay-trace";"timeout"] @ presentation
     | "collect" -> c,fields ["run-dir"] @ (if flag a "stdout" then ["--stdout"] else fields ["output"]) @ presentation
     | "report" -> c,fields ["target"] @ presentation
     | "inspect" -> c,fields ["execution";"domain";"stage";"row-id";"expected-digest"] @ presentation

@@ -5,7 +5,7 @@
 
 (rule
  (alias runtest)
- (deps check_sram_bundle.py ../check_preflight.py (source_tree ../../flow))
+  (deps check_sram_bundle.py ../check_preflight.py ../check_postcheck.py (source_tree ../../flow))
  (action (run python3 -B %{dep:check_sram_bundle.py}
    %{exe:sram_bundle_consumer.exe}
    %{dep:../../flow/hardcaml_asic_flow/librelane_bridge.py})))

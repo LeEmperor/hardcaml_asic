@@ -117,6 +117,8 @@ def closure(config, project, pdk_root):
         if ref["source"] == "Support_tools":
             tree(project / "tt" / ref["path"])
     tree(pdk_root / manifest["target"]["technology"])
+    if manifest.get("macro_contract", {}).get("execution") == "fresh_full":
+        tree(pdk_root / "ihp-sg13g2/libs.tech/klayout/tech/drc")
     return {p: record(p) for p in sorted(paths)}
 
 
@@ -140,8 +142,9 @@ def validate_macro_bundle(project):
     corners = {"nom_fast_1p32V_m40C": "fast_1p32V_m55C",
                "nom_slow_1p08V_125C": "slow_1p08V_125C",
                "nom_typ_1p20V_25C": "typ_1p20V_25C"}
-    if (contract.get("schema_version") != 1 or contract.get("execution") != "synthesis_only"
-            or manifest.get("operation") != "Synthesis"
+    physical = contract.get("schema_version") == 2 and contract.get("execution") == "fresh_full"
+    if ((not physical and (contract.get("schema_version") != 1 or contract.get("execution") != "synthesis_only"))
+            or manifest.get("operation") != ("Hardening" if physical else "Synthesis")
             or raw != manifest.get("flow_configuration")
             or raw.get("PDK") != "ihp-sg13cmos5l"
             or raw.get("STA_CORNERS") != list(corners)
@@ -252,6 +255,36 @@ def validate_macro_bundle(project):
             placements[m["instance"]] = {"location": location, "orientation": "R0"}
     if macro.get("instances") != placements:
         raise ValueError("configuration placements differ from declared macro intent inventory")
+    if physical:
+        plan = contract.get("physical_plan", {})
+        expected = {"schema_version": 1, "strategy": "cmos5l_m4_edge_access_v1",
+                    "plan_file": "physical/macro-plan.json", "pdn_tcl": "physical/pdn.tcl",
+                    "checking_profile": "cmos5l_real_gds_v1",
+                    "lvs_scope": "abstract_macro_boundary_with_schematic_cdl",
+                    "macros": [{"resource": m["resource"], "instance": m["instance"], "module": m["module"],
+                                "location_um": m["physical_intent"]["location_um"], "orientation": "R0",
+                                "halo_um": m["physical_intent"]["halo_um"], "supplies": m["physical_intent"]["power"]}
+                               for m in entries if m.get("physical_intent") is not None]}
+        if len(placements) != len(entries) or plan != expected:
+            raise ValueError("physical plan differs from complete macro intent")
+        if json.loads((project / plan["plan_file"]).read_text()) != plan:
+            raise ValueError("physical plan file differs from manifest")
+        for filename in (plan["plan_file"], plan["pdn_tcl"]):
+            if filename not in {f["path"] for f in manifest["files"]}:
+                raise ValueError("missing physical input: " + filename)
+        opts = {k: "false" for k in ("no_feol", "no_beol", "no_offgrid", "no_angle", "no_pin", "no_forbidden", "no_recommended", "precheck_drc")}
+        opts.update(log="drc-klayout.log", threads=6)
+        checks = {"PDN_CFG": "dir::../physical/pdn.tcl", "PRIMARY_GDSII_STREAMOUT_TOOL": "klayout",
+                  "KLAYOUT_DRC_RUNSET": "pdk_dir::libs.tech/klayout/tech/drc/ihp-sg13cmos5l.drc",
+                  "KLAYOUT_DRC_OPTIONS": opts, "EXTRA_SPICE_MODELS": [path("cdl", ".cdl")],
+                  "MAGIC_EXT_ABSTRACT_CELLS": [name], "MAGIC_DRC_USE_GDS": False}
+        checks.update({k: True for k in ("RUN_KLAYOUT_DRC", "RUN_MAGIC_DRC", "ERROR_ON_ILLEGAL_OVERLAPS")})
+        for key, value in checks.items():
+            if raw.get(key) != value:
+                raise ValueError("unsupported physical checking setting: " + key)
+        for key in ("ERROR_ON_KLAYOUT_DRC", "ERROR_ON_LVS_ERROR", "ERROR_ON_PDN_VIOLATIONS", "ERROR_ON_DISCONNECTED_PINS", "ERROR_ON_TR_DRC"):
+            if key in raw and raw[key] is not True:
+                raise ValueError("physical checker cannot be disabled: " + key)
     for m in entries:
         for c in m["collateral"]:
             ref = c["reference"]

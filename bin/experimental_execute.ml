@@ -33,7 +33,7 @@ let () =
         ~environment ~runs:(value "runs") ~plan ~native:!native ());
       postcheck=(fun o -> Postcheck_service.run ~run_dir:o.run_dir ~support_tools:(value "support-tools")
         ~pdk_root:(value "pdk-root") ~precheck_python:(value "precheck-python")
-        ~testbench:(value "testbench") ~testbench_top:(value "testbench-top") ~environment ());
+         ~testbench:(value "testbench") ~testbench_top:(value "testbench-top") ~resources:(value "resources") ~environment ());
       collect=(fun o -> try let r=Collect_service.collect o.run_dir in
         Collect_service.save (o.run_dir^"/results.json") r;
         if !verbose then (match Collect_service.to_json r with `Assoc xs -> List.iter (fun (k,v) ->

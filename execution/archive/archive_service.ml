@@ -112,7 +112,14 @@ let verify run record checks =
         if `String (hash p)<>expected then fail (relative run p^" does not match "^field^" in "^relative run (d^"/postcheck.json")^"; the run directory was modified after the checks ran");
         verified := (field,expected)::List.remove_assoc field !verified))
       ["gds_sha256",flow^"/final/gds/"^top^".gds"; "netlist_sha256",flow^"/final/nl/"^top^".nl.v";
-       "testbench_sha256",d^"/testbench.v"]) checks;
+        "testbench_sha256",d^"/testbench.v"];
+     (match optional c "artifacts" with
+       | `Null -> ()
+       | `Assoc artifacts -> List.iter (fun (name,digest) ->
+           if not (Filename.is_relative name) || Filename.basename name<>name then fail "unsafe postcheck artifact";
+           let path=d ^ "/" ^ name in regular path "postcheck artifact is missing or a symlink";
+           if `String (hash path)<>digest then fail ("postcheck artifact changed: " ^ name)) artifacts
+       | _ -> fail "malformed postcheck artifact inventory")) checks;
   `Assoc !verified
 type inspection = { run_dir:string; reports:Evidence_tar.source list; omitted:string list;
   report_bytes:int64; bundle_source:string; bundle_root:string; bundle_files:Evidence_tar.source list }
@@ -127,10 +134,29 @@ let acquire ~verb ~include_records ~run_dir =
   let checks=checks run_dir in
   let verified=verify run_dir record checks in
   let bundle_source,bundle_root,manifest,bundle_files=bundle_source run_dir record in
-  let flow=text (get (get record "outputs") "flow") in
-  let candidates=List.map (join run_dir) (["execution.log";"project/src/config.json"] @
+   let flow=text (get (get record "outputs") "flow") in
+   let physical=match optional manifest "macro_contract" with `Assoc xs -> List.assoc_opt "execution" xs=Some (`String "fresh_full") | _ -> false in
+   let physical_files=if physical then (
+     let evidence=read (run_dir ^ "/physical-checks.json") in
+     if `String (hash (run_dir ^ "/physical-checks.json"))<>get record "physical_checks_sha256" then fail "physical checker record changed";
+     let artifacts=match get evidence "artifacts" with `Assoc xs -> xs | _ -> fail "physical artifacts missing" in
+     List.map (fun (path,digest) ->
+       if not (Filename.is_relative path) || List.mem ".." (String.split_on_char '/' path) then fail "unsafe physical artifact";
+       let path=join run_dir (join flow path) in
+       regular path "physical artifact is missing or a symlink";
+       if `String (hash path)<>digest then fail "physical artifact changed";
+       path) artifacts @ [run_dir ^ "/physical-checks.json";run_dir ^ "/physical-checks.log";run_dir ^ "/project/physical-runtime.py"] @
+       (if optional record "macro_flow_sha256"=`Null then [] else (
+         if optional record "macro_flow_sha256"<>`String (hash (run_dir ^ "/project/macro-flow.py")) then fail "macro reader adapter changed";
+         [run_dir ^ "/project/macro-flow.py"])))
+     else [] in
+   let candidates=List.map (join run_dir) (["execution.log";"project/src/config.json"] @
     List.map (fun p -> join flow p) ["final/metrics.csv";"final/metrics.json";"final/sdc";"final/gds";"final/nl";"06-yosys-synthesis";"55-openroad-stapostpnr"])
-    @ List.concat_map (fun d -> List.map (Filename.concat d) ["postcheck.log";"testbench.v";"tt/precheck/reports"]) (check_dirs run_dir) in
+     @ physical_files
+     @ List.concat_map (fun d -> List.map (Filename.concat d) (["postcheck.log";"testbench.v";"tt/precheck/reports"] @
+       if physical then List.filter (fun name -> String.starts_with ~prefix:"model-" name || List.mem name
+         ["stdcell-functional.v";"stdcell-vendor.v";"replay-models.json";"physical-runtime.py";"tt-adaptation.json";"replay-trace.txt"])
+         (children d) else [])) (check_dirs run_dir) in
   let source path name = {Evidence_tar.path;name;sha256=Some (hash path)} in
   let rec walk path = no_links path "archive selection contains a symlink";
     match stat path with
@@ -141,7 +167,9 @@ let acquire ~verb ~include_records ~run_dir =
   let reports,omitted=List.fold_left (fun (selected,omitted) p ->
     let name=relative run_dir p in let files=walk p |> List.sort String.compare in
     selected @ List.map (fun p -> source p (relative run_dir p)) files,
-    omitted @ if files=[] then [name] else []) ([],[]) candidates in
+     omitted @ if files=[] then [name] else []) ([],[]) candidates in
+   let reports=if physical then List.fold_left (fun selected (source:Evidence_tar.source) ->
+     if List.exists (fun (prior:Evidence_tar.source) -> prior.name=source.name) selected then selected else selected@[source]) [] reports else reports in
   let record_omissions=ref [] in
   let records=if not include_records then [] else List.filter_map (fun name -> let p=run_dir^"/"^name in
     if file p then (regular p "archive record is a symlink"; Some (source p name))

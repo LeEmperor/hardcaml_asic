@@ -53,15 +53,31 @@ let registered_macros manifest =
       Some (id, canonical)
     | _ -> fail "invalid registered resource implementation") resources
 
+let generated_physical manifest =
+  let module P = Hardcaml_asic.Elaboration.Macro_physical_plan in
+  let macros = array (get (get manifest "macro_contract") "macros") |> List.map (fun m ->
+    let intent=get m "physical_intent" in
+    let number = function J.Float x when Float.is_finite x -> x | _ -> fail "invalid physical coordinate" in
+    let x,y=match array (get intent "location_um") with [x;y] -> number x,number y | _ -> fail "physical location" in
+    let resource=Hardcaml_asic.Resource.Id.of_string_exn (text (get m "resource")) in
+    P.{resource;instance=text (get m "instance");name=text (get m "module");
+       intent=Hardcaml_asic.Macro_intent.tt_cmos5l_r0 ~resource ~x_um:x ~y_um:y
+         ~halo_um:(number (get intent "halo_um")) ()}) in
+  Core.Or_error.ok_exn (P.create macros)
+
+let physical_files manifest =
+  Hardcaml_asic.Elaboration.Macro_physical_plan.files (generated_physical manifest)
+
 let validate manifest config =
   let macros = get config "MACROS" in
   if not (active manifest) then (
     check (macros=J.null || macros=obj []) "MACROS require a public macro contract";
     []) else (
     let contract = get manifest "macro_contract" in
-    check (get contract "schema_version" = (match J.integer "1" with Ok j -> j | Error _ -> assert false)) "unsupported contract schema";
-    check (get contract "execution" = s "synthesis_only" && get manifest "operation" = s "Synthesis")
-      "only synthesis is supported; physical power/KLayout/CDL gates are unverified";
+    let version n = match J.integer n with Ok j -> j | Error _ -> assert false in
+    let physical = get contract "schema_version"=version "2" && get contract "execution"=s "fresh_full" in
+    check (physical || (get contract "schema_version"=version "1" && get contract "execution"=s "synthesis_only")) "unsupported contract schema/execution";
+    check (get manifest "operation"=s (if physical then "Hardening" else "Synthesis")) "operation differs from macro capability";
     check (get manifest "flow_configuration" = config) "configuration differs from manifest";
     check (get config "PDK" = s "ihp-sg13cmos5l") "unsupported PDK";
     check (get config "STA_CORNERS" = strings (List.map fst corners)) "exact STA corner set required";
@@ -121,7 +137,57 @@ let validate manifest config =
     let sim = get contract "implementation_simulation" in
     check (get sim "defines"=strings ["FUNCTIONAL"] && get sim "models"=strings models)
       "functional implementation model set required";
+    if physical then (
+      let module P = Hardcaml_asic.Elaboration.Macro_physical_plan in
+      let generated=generated_physical manifest in
+      let convert value=match J.parse (Yojson.Safe.to_string value) with Ok j -> j | Error _ -> fail "generated physical JSON" in
+      let plan = get contract "physical_plan" in
+      check (plan=convert (P.to_json generated)) "physical plan differs from canonical generation";
+      List.iter (fun (key,value) -> check (get config key=convert value) ("physical setting differs from canonical generation: " ^ key)) (P.settings generated);
+      check (get plan "schema_version"=version "1") "unsupported physical plan schema";
+      List.iter (fun (key,value) -> check (get plan key=s value) ("unsupported physical plan " ^ key))
+        ["strategy","cmos5l_m4_edge_access_v1";"plan_file","physical/macro-plan.json";
+         "pdn_tcl","physical/pdn.tcl";"checking_profile","cmos5l_real_gds_v1";
+         "lvs_scope","abstract_macro_boundary_with_schematic_cdl"];
+      check (List.length placements=List.length entries) "full execution requires every macro placement";
+      List.iter (fun key -> check (List.exists (fun f -> get f "path"=s key) (array (get manifest "files"))) ("missing physical input " ^ key))
+        ["physical/macro-plan.json";"physical/pdn.tcl"];
+      List.iter (fun key -> check (get config key=J.bool true) ("physical checker must remain enabled: " ^ key))
+        ["RUN_KLAYOUT_DRC";"RUN_MAGIC_DRC";"ERROR_ON_ILLEGAL_OVERLAPS"];
+      List.iter (fun key -> check (get config key=J.null || get config key=J.bool true) ("physical checker cannot be disabled: " ^ key))
+        ["ERROR_ON_KLAYOUT_DRC";"ERROR_ON_LVS_ERROR";"ERROR_ON_PDN_VIOLATIONS";"ERROR_ON_DISCONNECTED_PINS";"ERROR_ON_TR_DRC"];
+      check (get config "PRIMARY_GDSII_STREAMOUT_TOOL"=s "klayout") "real GDS must use KLayout streamout";
+      check (get config "EXTRA_SPICE_MODELS"=strings [path "cdl" ".cdl"]) "schematic CDL consumption required";
+      check (get config "PDN_CFG"=s "dir::../physical/pdn.tcl") "physical PDN input required";
+      check (get config "KLAYOUT_DRC_RUNSET"=s "pdk_dir::libs.tech/klayout/tech/drc/ihp-sg13cmos5l.drc") "pinned real-GDS deck required";
+      let options = obj ((List.map (fun key -> key,s "false")
+        ["no_feol";"no_beol";"no_offgrid";"no_angle";"no_pin";"no_forbidden";"no_recommended";"precheck_drc"])
+        @ ["log",s "drc-klayout.log";"threads",version "6"]) in
+      check (get config "KLAYOUT_DRC_OPTIONS"=options) "exact textual deck options and six threads required";
+      let expected = List.map (fun m ->
+        let intent=get m "physical_intent" in
+        let number = function J.Float x when Float.is_finite x -> x | _ -> fail "invalid physical coordinate/halo" in
+        let halo=number (get intent "halo_um") in
+        let aligned x = abs_float (x *. 200. -. Float.round (x *. 200.)) < 1e-7 in
+        check (halo>=2. && aligned halo) "invalid physical halo";
+        List.iter (fun coordinate -> let x=number coordinate in check (x>=0. && aligned x) "off-grid physical placement") (array (get intent "location_um"));
+        check (get intent "power"=obj ["VDD!",s "VPWR";"VDDARRAY!",s "VPWR";"VSS!",s "VGND"]) "unsupported macro supply mapping";
+        obj ["resource",get m "resource";"instance",get m "instance";"module",get m "module";
+          "location_um",get intent "location_um";"orientation",get intent "orientation";
+          "halo_um",get intent "halo_um";"supplies",get intent "power"]) entries in
+      check (get plan "macros"=J.array expected) "physical plan differs from macro inventory";
+      let halos=List.map (fun m -> get (get m "physical_intent") "halo_um") entries |> List.sort_uniq compare in
+      check (List.length halos=1) "common physical halo required";
+      check (get config "MAGIC_EXT_ABSTRACT_CELLS"=strings [stock]) "explicit abstract macro LVS scope required";
+      check (get config "MAGIC_DRC_USE_GDS"=J.bool false) "abstract Magic diagnostic scope required");
     List.sort_uniq compare references)
+
+let physical manifest = active manifest && get (get manifest "macro_contract") "execution"=s "fresh_full"
+
+let require_full manifest =
+  if active manifest then (
+    check (physical manifest) "physical execution is unsupported for synthesis-only bundles";
+    ignore (validate manifest (get manifest "flow_configuration")))
 
 let require_synthesis manifest =
   if active manifest then fail "physical execution and checkpoint continuation are unsupported; only fresh synthesis is supported"

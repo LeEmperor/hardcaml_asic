@@ -7,13 +7,15 @@ records retain their qualifications; this does not reopen completed ASIC M3 work
 
 **Start with [the checkpoint](sram-status.md).** ASIC S.1 inventory and S.2a
 functional-model checks are complete. S.3 established qualified local feasibility.
-PT.0a/b now have corrected power-access and corner-binding evidence; PT.0c retains
-electrical and Magic deck/model findings. See the [implementation record](../development/pt0-implementation.md).
+PT.0a/b have corrected power-access and corner-binding evidence. PT.0c is now
+dispositioned through the accepted public example physical path; the original
+probe's qualifications remain historical. See the [physical closeout](../development/sram-example-physical.md).
 On 2026-10-23 the organizers' update email resolved macro eligibility: IHP SRAM
 macros are allowed, several per design, if they fit and pass TT precheck. The
 project support-tools pin now includes the SRAM marker-layer precheck fix. S.4
-now has public exact-macro and fresh-synthesis support demonstrated by the
-independent example; physical integration and timed-model conformance remain open.
+now has public exact-macro and fresh synthesis/full support demonstrated by the
+independent example. Timed-model conformance remains open; physical acceptance
+uses the explicit real-GDS/abstract-macro-boundary checking scope in the closeout.
 
 | Document | Purpose |
 | --- | --- |

@@ -16,7 +16,7 @@
 ; $PREFIX/lib/hardcaml_asic/ root. Only the provisioner needs the execute bit,
 ; and even that is belt and braces -- the CLI invokes it as "bash <path>".
 
-; The public bin is owned by bin/flow_cli.exe. Only the nine runtime modules
+; The public bin is owned by bin/flow_cli.exe. Only the runtime modules
 ; ship here; retired Python APIs remain SOURCE-only differential references.
 
 (install
@@ -28,6 +28,8 @@
   (hardcaml_asic_flow/librelane_bridge.py as flow/hardcaml_asic_flow/librelane_bridge.py)
   (hardcaml_asic_flow/managed_python.py as flow/hardcaml_asic_flow/managed_python.py)
   (hardcaml_asic_flow/paths.py as flow/hardcaml_asic_flow/paths.py)
+  (hardcaml_asic_flow/physical_runtime.py as flow/hardcaml_asic_flow/physical_runtime.py)
+  (hardcaml_asic_flow/macro_flow.py as flow/hardcaml_asic_flow/macro_flow.py)
   (hardcaml_asic_flow/probe.py as flow/hardcaml_asic_flow/probe.py)
   (hardcaml_asic_flow/runtime_contract.py as flow/hardcaml_asic_flow/runtime_contract.py)
   (hardcaml_asic_flow/runtime_observation.py as flow/hardcaml_asic_flow/runtime_observation.py)

@@ -232,6 +232,221 @@ if '-m' in a and a[a.index('-m')+1] == 'librelane':
     liberty = next(p for p in external if p.suffix == ".lib")
     liberty.write_text("changed macro Liberty")
     assert ns["closure"]({}, bundle, pdk) != before
+    # The physical capability is independently validated, not inferred from the
+    # presence of a placement or a successful mocked implementation process.
+    physical_bundle = root / "physical-bundle"
+    run("emit-physical", root, physical_bundle)
+    run("validate", physical_bundle)
+    assert ns["validate_macro_bundle"](physical_bundle)
+    pm = json.loads((physical_bundle / "manifest.json").read_text())
+    assert pm["macro_contract"]["schema_version"] == 2
+    assert pm["macro_contract"]["physical_plan"] == json.loads((physical_bundle / "physical/macro-plan.json").read_text())
+    physical_original = copy.deepcopy(pm)
+    negatives = [
+        lambda m: m["macro_contract"]["physical_plan"].update(lvs_scope="device_lvs"),
+        lambda m: m["macro_contract"]["physical_plan"]["macros"][0].update(instance="not_registered"),
+        lambda m: m["macro_contract"]["macros"][0].update(physical_intent=None),
+        lambda m: m["flow_configuration"].update(EXTRA_SPICE_MODELS=[]),
+        lambda m: m["flow_configuration"].update(RUN_MAGIC_DRC=False),
+        lambda m: m["flow_configuration"].update(ERROR_ON_ILLEGAL_OVERLAPS=False),
+        lambda m: m["flow_configuration"].update(ERROR_ON_LVS_ERROR=False),
+        lambda m: m["flow_configuration"]["KLAYOUT_DRC_OPTIONS"].update(no_feol="true"),
+        lambda m: m["flow_configuration"]["KLAYOUT_DRC_OPTIONS"].update(no_recommended=1),
+        lambda m: m["flow_configuration"]["KLAYOUT_DRC_OPTIONS"].update(threads=20),
+    ]
+    for mutate in negatives:
+        bad = copy.deepcopy(physical_original)
+        mutate(bad)
+        (physical_bundle / "manifest.json").write_text(json.dumps(bad))
+        (physical_bundle / "src/config.json").write_text(json.dumps(bad["flow_configuration"]))
+        run("validate", physical_bundle, ok=False)
+        try:
+            ns["validate_macro_bundle"](physical_bundle)
+        except (ValueError, TypeError):
+            pass
+        else:
+            raise AssertionError("Python bridge accepted malformed physical contract")
+    (physical_bundle / "manifest.json").write_text(json.dumps(physical_original))
+    (physical_bundle / "src/config.json").write_text(json.dumps(physical_original["flow_configuration"]))
+    # Configure a fake pinned PDK checking tree. No EDA is imported/executed.
+    for relative in ("ihp-sg13cmos5l/libs.tech/klayout", "ihp-sg13g2/libs.tech/klayout/tech/drc",
+                     "ihp-sg13cmos5l/libs.tech/magic", "ihp-sg13cmos5l/libs.tech/netgen"):
+        directory = pdk / relative
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "fixture-dependency").write_text("pinned transitive checking input")
+    previous_replay_models = {}
+    for name in ("sg13cmos5l_stdcell.v", "sg13cmos5l_udp.v"):
+        path = pdk / "ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog" / name
+        previous_replay_models[path] = path.read_bytes() if path.exists() else None
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("pinned replay model")
+    pm = copy.deepcopy(physical_original)
+    for entry in pm["files"]:
+        if entry["path"] == "src/config.json":
+            entry["sha256"] = hashlib.sha256((physical_bundle / entry["path"]).read_bytes()).hexdigest()
+    pm["requested_tools"] = copy.deepcopy(runtime_manifest["requested_tools"])
+    pm["target"]["external_references"] = copy.deepcopy(runtime_manifest["target"]["external_references"])
+    (physical_bundle / "manifest.json").write_text(json.dumps(pm))
+    for name in ("python", "docker"):
+        p = bin_dir / name
+        p.write_text(fixture.FAKE.replace("INTERPRETER", sys.executable))
+        p.chmod(0o755)
+    # Reuse the actual preflight boundary with this physical bundle.
+    old_bundle = bundle
+    bundle = physical_bundle
+    report = preflight()
+    assert report["ready"], report
+    assert len([r for r in report["references"] if r["role"] == "physical:checking_collateral"]) == 6
+    plan_file = bundle / "physical/macro-plan.json"
+    saved_plan = plan_file.read_bytes()
+    plan_file.write_text('{}')
+    assert not preflight()["ready"]
+    plan_file.write_bytes(saved_plan)
+    pdn_file = bundle / "physical/pdn.tcl"
+    saved_pdn = pdn_file.read_bytes()
+    pdn_file.write_bytes(saved_pdn + b"\n# resealed noncanonical physical input\n")
+    resealed = copy.deepcopy(pm)
+    for entry in resealed["files"]:
+        if entry["path"] == "physical/pdn.tcl":
+            entry["sha256"] = hashlib.sha256(pdn_file.read_bytes()).hexdigest()
+    (bundle / "manifest.json").write_text(json.dumps(resealed))
+    assert any("canonical generation" in issue for issue in preflight()["issues"])
+    pdn_file.write_bytes(saved_pdn)
+    (bundle / "manifest.json").write_text(json.dumps(pm))
+    # Fake Docker observes the real emitted argv and effective environment. The
+    # second launch is mandatory physical-evidence validation, not a success flag.
+    physical_launch = r'''
+if pathlib.Path(sys.argv[0]).name == 'docker' and a[0] == 'run' and '-v' in a:
+    assert '--cpus=6' in a
+    assert all(x in a for x in ('OMP_NUM_THREADS=6', 'OPENROAD_THREADS=6', '_OPENLANE_MAX_CORES=6'))
+    project = pathlib.Path(a[a.index('-w')+1])
+    if any(x.endswith('/macro-flow.py') for x in a):
+        assert (project/'physical-runtime.py').is_file()
+        assert '--to' not in a and a[a.index('--jobs')+1] == '6'
+        assert 'STA_THREADS=1' in a
+        assert 'MAX_SLEW_VIOLATION_CORNERS=*' in a
+        assert 'MAX_CAP_VIOLATION_CORNERS=*' in a
+        assert 'ERROR_ON_MAGIC_DRC=false' in a
+    else:
+        assert a[-3:] == ['check', str(project), str(root/'pdk')]
+        if mode.get('physical_check_fail'): sys.exit(9)
+        (project/'runs/asic/physical-checks.json').write_text('{"status":"fixture-only"}')
+    sys.exit(0)
+'''
+    fake = fixture.FAKE.replace("if pathlib.Path(sys.argv[0]).name == 'docker':",
+                                physical_launch + "\nif pathlib.Path(sys.argv[0]).name == 'docker':", 1)
+    (bin_dir / "docker").write_text(fake.replace("INTERPRETER", sys.executable))
+    cmd = [str(bundle), str(tools), str(pdk), str(bin_dir / "python"), str(bridge.parent), str(launches)]
+    for mode, expected in (({}, "completed"), ({"physical_check_fail": True}, "failed")):
+        (root / "mode.json").write_text(json.dumps(mode))
+        result = subprocess.run([str(consumer), "coarse-full", *cmd], env=env, capture_output=True, text=True)
+        assert result.returncode == (0 if expected == "completed" else 1), result.stderr
+        outcome = json.loads(result.stdout)
+        assert outcome["status"] == expected, outcome
+        record = json.loads(Path(outcome["run_record"]).read_text())
+        assert len(record["commands"]) == 2
+        if expected == "completed":
+            completed_physical = Path(outcome["run_dir"])
+    # Exercise the native postcheck service through actual subprocesses. Docker
+    # simulates only tools; model derivation and the run-local TT adapter are real.
+    spec = importlib.util.spec_from_file_location("postcheck_fixture", Path(__file__).parent.parent / "check_postcheck.py")
+    post_fixture = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(post_fixture)
+    pre = tools / "precheck"
+    pre.mkdir(exist_ok=True)
+    (pre / "default.nix").write_text('let pkgs = import (fetchTarball "https://example.invalid/pinned.tar.gz") {}; in pkgs.mkShell {}')
+    (pre / "tool-versions.json").write_text(json.dumps({"klayout": "0.28.17"}))
+    (pre / "precheck.py").write_text(post_fixture.PRECHECK + '''
+def unused_pinned_cmos5l_invocation(gds):
+    return klayout_drc(gds, "sg13cmos5l",
+        f"{PDK_ROOT}/{PDK_NAME}/libs.tech/klayout/tech/drc/ihp-sg13cmos5l.drc",
+    )
+''')
+    import venv
+    import shutil
+    virtual = root / "precheck-venv"
+    venv.EnvBuilder(with_pip=False).create(virtual)
+    dist = next((virtual / "lib").glob("python*/site-packages")) / "klayout-0.28.17.dist-info"
+    dist.mkdir()
+    (dist / "METADATA").write_text("Name: klayout\nVersion: 0.28.17\n")
+    (bin_dir / "env").symlink_to(shutil.which("env"))
+    (bin_dir / "python3").symlink_to(sys.executable)
+    model_launch = r'''
+    if 'models' in a:
+        assert '--cpus=6' in a and 'OMP_NUM_THREADS=6' in a
+        index = a.index('models')
+        sys.exit(subprocess.call([sys.executable, *a[index-1:]]))
+'''
+    fake = post_fixture.FAKE.replace("    if 'iverilog' in a:", model_launch + "    if 'iverilog' in a:", 1)
+    fake = fake.replace("if name=='nix-shell':", "if name=='nix-shell':\n    assert a[a.index('--max-jobs')+1]=='1' and a[a.index('--cores')+1]=='6'", 1)
+    fake = fake.replace("    if 'iverilog' in a:", '''    if os.environ.get('OMP_NUM_THREADS')=='6': assert '--cpus=6' in a
+    if 'iverilog' in a:
+''', 1)
+    fake = fake.replace("        block('compile')", '''        block('compile')
+        assert any(x.endswith('stdcell-functional.v') for x in a)
+        assert len([x for x in a if pathlib.Path(x).name.startswith('model-')]) == 3
+        assert not any(x.endswith('.blackbox.v') or x.endswith('sg13cmos5l_stdcell.v') for x in a)
+''', 1)
+    fake = fake.replace("if os.environ.get('OMP_NUM_THREADS')=='20': assert len(os.sched_getaffinity(0))<=20",
+                        "if os.environ.get('OMP_NUM_THREADS')=='6': assert len(os.sched_getaffinity(0))<=6")
+    for name in ("docker", "nix-shell"):
+        path = bin_dir / name
+        path.write_text(fake.replace("INTERPRETER", sys.executable))
+        path.chmod(0o755)
+    record_path = completed_physical / "run.json"
+    record = json.loads(record_path.read_text())
+    binding = record["execution_binding"]
+    binding["engine_identity"].update(rootless=False, server_version="29")
+    record["environment"]["execution_binding"] = copy.deepcopy(binding)
+    flow = completed_physical / "project/runs/asic"
+    (flow / "final/gds").mkdir(parents=True)
+    (flow / "final/nl").mkdir()
+    top = pm["top_module"]
+    gds = flow / f"final/gds/{top}.gds"
+    gds.write_text("assembled fixture GDS")
+    (flow / f"final/nl/{top}.nl.v").write_text("sg13cmos5l_buf_1 buffer(.A(a),.X(x));")
+    evidence_path = completed_physical / "physical-checks.json"
+    evidence_path.write_text(json.dumps({"status": "pass", "gds_sha256": hashlib.sha256(gds.read_bytes()).hexdigest(), "artifacts": {}}))
+    record["physical_checks_sha256"] = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    record_path.write_text(json.dumps(record))
+    model_dir = pdk / "ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog"
+    (model_dir / "sg13cmos5l_stdcell.v").write_text("module sg13cmos5l_buf_1(input A, output X); assign X=A; endmodule\n")
+    run_preflight = json.loads((completed_physical / "preflight.json").read_text())
+    for reference in run_preflight["references"]:
+        path = Path(reference["path"])
+        reference["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    (completed_physical / "preflight.json").write_text(json.dumps(run_preflight))
+    record["environment"]["references"] = copy.deepcopy(run_preflight["references"])
+    record_path.write_text(json.dumps(record))
+    bench = root / "physical-replay.v"
+    bench.write_text("module memory_tb; endmodule\n")
+    (root / "mode.json").write_text("{}")
+    result = subprocess.run([str(consumer), "postcheck-physical", str(completed_physical), str(tools), str(pdk),
+                             str(virtual / "bin/python"), str(bench), str(bridge.parent)], env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    post = json.loads(result.stdout)
+    post_record = json.loads(Path(post["check_record"]).read_text())
+    assert post_record["checks"] == {"precheck": "pass", "gate_level": "pass"}
+    assert post_record["resource_limits"]["container_cpus"] == 6
+    assert "replay-models.json" in post_record["artifacts"]
+    assert post_record["resource_limits"]["tool_timeout_seconds"] == 1800
+    model_ref = pm["macro_contract"]["implementation_simulation"]["models"][0]
+    model_file = pdk / "ihp-sg13cmos5l" / model_ref[9:]
+    original_model = model_file.read_bytes()
+    model_file.write_text("model changed after recorded preflight")
+    rejected = subprocess.run([str(consumer), "postcheck-physical", str(completed_physical), str(tools), str(pdk),
+                               str(virtual / "bin/python"), str(bench), str(bridge.parent)], env=env, capture_output=True, text=True)
+    assert rejected.returncode == 2 and "physical postcheck collateral changed" in rejected.stderr, rejected.stdout + rejected.stderr
+    model_file.write_bytes(original_model)
+    print("Physical runtime: schema-2 positive, 10 OCaml/Python semantic negatives, checked plan/closure, Docker6/STA1 and mandatory evidence-check failure passed")
+    bundle = old_bundle
+    for dependency in pdk.rglob("fixture-dependency"):
+        dependency.unlink()
+    for path, content in previous_replay_models.items():
+        if content is None:
+            path.unlink()
+        else:
+            path.write_bytes(content)
     execute = next(n for n in ast.parse(bridge.read_text()).body if isinstance(n, ast.FunctionDef) and n.name == "execute")
     exec(compile(ast.Module(body=[execute], type_ignores=[]), str(bridge), "exec"), ns)
     candidate = root / "must-not-publish"

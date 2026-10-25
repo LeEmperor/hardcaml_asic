@@ -91,8 +91,10 @@ type t = private
     (** Configurable, explicitly assigned keys in backend-key order. Empty without
         methodology. Inherits checked project values when the catalog is silent.
         Project values are validated even when replaced by catalog assignments. *)
-  ; macros : Macro.t list (** Checked exact SRAM instances. Synthesis supported;
-      macro hardening fails until physical power/check policy is verified. *)
+   ; macros : Macro.t list (** Checked exact SRAM instances. *)
+   ; physical_plan : Macro_physical_plan.t option
+     (** Complete fresh-hardening policy, only for exact R0 SRAMs with common halo.
+         Runtime must validate actual geometry and execute the declared checking profile. *)
   }
 
 (** Resolve an implementation elaboration; defaults to {!Target.Inputs.reference_cmos5l_6x4}.

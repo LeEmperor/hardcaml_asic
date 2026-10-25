@@ -67,8 +67,25 @@ let collect ?context ?synthesis_state run_dir =
   let optional p f default = if file p then
     try f () with Invalid_argument s -> error (relative p^": "^s); default
     else default in
-  let values = try optional metrics (fun () -> csv metrics) [] with
-    Sys_error s -> error (relative metrics^": "^s); [] in
+   let values = try optional metrics (fun () -> csv metrics) [] with
+     Sys_error s -> error (relative metrics^": "^s); [] in
+   let manifest_path=Filename.concat run_dir "project/manifest.json" in
+   let manifest=if file manifest_path then read manifest_path else `Assoc [] in
+   let physical_profile=match get manifest "macro_contract" with `Assoc xs -> List.assoc_opt "execution" xs=Some (`String "fresh_full") | _ -> false in
+   let physical_evidence=if physical_profile then optional (run_dir ^ "/physical-checks.json") (fun () ->
+     let hash p=match Checkpoint.file_record p with Ok r -> r.sha256 | Error e -> invalid_arg e in
+     if get record "manifest_sha256"<>`String (hash manifest_path) then invalid_arg "physical manifest changed";
+     if get record "physical_checker_sha256"<>`String (hash (run_dir ^ "/project/physical-runtime.py")) then invalid_arg "physical checker bytes changed";
+     if get record "macro_flow_sha256"<>`Null && get record "macro_flow_sha256"<>`String (hash (run_dir ^ "/project/macro-flow.py")) then invalid_arg "macro reader adapter bytes changed";
+     let actual_hash=match Checkpoint.file_record (run_dir ^ "/physical-checks.json") with Ok r -> r.sha256 | Error e -> invalid_arg e in
+     if get record "physical_checks_sha256"<>`String actual_hash then invalid_arg "physical checker record hash mismatch";
+     let evidence=read (run_dir ^ "/physical-checks.json") in
+     let gds=flow ^ "/final/gds/" ^ text (get manifest "top_module") ^ ".gds" in
+     if get evidence "gds_sha256"<>`String (hash gds) then invalid_arg "physical evidence GDS hash mismatch";
+     List.iter (fun (path,digest) ->
+       if not (Filename.is_relative path) || List.mem ".." (String.split_on_char '/' path) then invalid_arg "unsafe physical evidence artifact";
+       if `String (hash (flow ^ "/" ^ path))<>digest then invalid_arg ("physical evidence changed: " ^ path)) (fields (get evidence "artifacts"));
+     evidence) `Null else `Null in
   let creator = ref `Null in
   let stats = optional !synth (fun () ->
     let report=read !synth in
@@ -134,10 +151,19 @@ let collect ?context ?synthesis_state run_dir =
     let numeric=List.map (fun (k,v) -> fst (number v k)) matches in
     let status,reason=if List.length matches<>List.length keys then "unknown",`String "metric missing"
       else if List.mem `Null numeric then "unknown",`String "malformed metric"
-      else (if List.for_all (function `Float f -> f=0. | _ -> false) numeric then "pass" else "fail"),`Null in
+       else (if List.for_all2 (fun (key,_) value -> match value with `Float f ->
+         f=0. || (physical_profile && key="magic__drc_error__count" && physical_evidence<>`Null &&
+           let disposition=get physical_evidence "magic_disposition" in
+           get disposition "status"=`String "dispositioned_stock_abstract" &&
+           fst (number (get disposition "unclassified_count") "Magic unclassified count")=`Float 0. &&
+           fst (number (get disposition "accepted_count") "Magic disposition count")=`Float f)
+         | _ -> false) matches numeric then "pass" else "fail"),`Null in
     name,`Assoc ["status",`String status; "source",`String (relative metrics); "raw",`Assoc matches; "reason",reason])
-    ["drc",["route__drc_errors";"magic__drc_error__count"]; "lvs",["design__lvs_error__count"];
-     "antenna",["antenna__violating__nets";"antenna__violating__pins"]] in
+     (["drc",(if physical_profile then ["route__drc_errors";"klayout__drc_error__count";"magic__drc_error__count";"magic__illegal_overlap__count"] else ["route__drc_errors";"magic__drc_error__count"]); "lvs",["design__lvs_error__count"];
+      "antenna",["antenna__violating__nets";"antenna__violating__pins"]] @
+      if physical_profile then List.map (fun (label,base) -> label,List.map (fun corner -> base ^ "__corner:" ^ text corner)
+        (match get (get manifest "flow_configuration") "STA_CORNERS" with `List xs -> xs | _ -> []))
+        ["max_slew","design__max_slew_violation__count";"max_cap","design__max_cap_violation__count"] else []) in
   let unconstrained=List.filter_map (fun (_,m) -> if get m "unavailable_reason"=`String "no constrained timing paths reported"
       then Some (get m "mode") else None) timing in
   let constrained=List.filter_map (fun (_,m) -> if List.mem (get m "mode") unconstrained then None else Some (get m "value")) timing in
@@ -148,8 +174,6 @@ let collect ?context ?synthesis_state run_dir =
     label,metric_json (metric ~value ~reason ~unit_:"count" ~definition:field ~stage:"Yosys.Synthesis" ~source:(relative !synth_state) ()))
     ["unmapped_instances","design__instance_unmapped__count"; "synthesis_errors","synthesis__check_error__count";
      "inferred_latches","design__inferred_latch__count"] in
-  let manifest_path=Filename.concat run_dir "project/manifest.json" in
-  let manifest=if file manifest_path then read manifest_path else `Assoc [] in
   let env=obj_default record "environment" in
   let runtime=obj_default env "runtime_contract" in
   let container=obj_default (obj_default runtime "observations") "container" in
@@ -165,17 +189,36 @@ let collect ?context ?synthesis_state run_dir =
     let xs=List.remove_assoc "mode" (fields m) in
     let xs=if synthesis then List.remove_assoc "corner" xs @ ["corner",corner] else xs in
     name,`Assoc (xs@["tool",(if synthesis then yosys else librelane);"mode",`String mode]) in
-  let checks=List.map (fun (name,c) -> name,update c ["definition",`String ("reported "^name^" violation counts are zero");
+   let checks=List.map (fun (name,c) -> name,update c ["definition",`String
+     (if physical_profile && name="drc" then "real-GDS KLayout/routing/overlap counts zero; raw Magic findings require exact stock abstract disposition"
+      else if physical_profile && name="lvs" then "abstract macro-boundary LVS with schematic CDL consumed; internal devices not verified"
+      else "reported "^name^" violation counts are zero");
     "unit",`String "count"; "stage",`String "final"; "corner",`Null; "tool",librelane]) checks in
   let reports=List.concat_map (fun step -> children (Filename.concat step "reports")
     |> List.filter (fun p -> Filename.check_suffix p ".rpt" || Filename.check_suffix p ".json")) (children flow) in
-  let artifacts = [!synth;metrics;!synth_state;Filename.concat flow "final/metrics.json"] @ reports
+   let profile_artifacts=if physical_evidence=`Null then [] else
+     (run_dir ^ "/physical-checks.json") :: List.map (fun (p,_) -> flow ^ "/" ^ p) (fields (get physical_evidence "artifacts")) in
+   let artifacts = profile_artifacts @ [!synth;metrics;!synth_state;Filename.concat flow "final/metrics.json"] @ reports
     @ List.filter (fun p -> Filename.check_suffix p ".gds") (children (Filename.concat flow "final/gds"))
     @ List.filter (fun p -> Filename.check_suffix p ".v") (children (Filename.concat flow "final/nl")) in
   let artifacts=List.filter file artifacts |> List.map relative |> List.sort_uniq String.compare |> List.map (fun s -> `String s) in
-  let postchecks=children (Filename.concat run_dir "checks") |> List.map (fun p -> Filename.concat p "postcheck.json")
-    |> List.filter Sys.file_exists |> List.map read in
-  `Assoc (["schema_version",`Int 1; "tool",librelane; "mode",`String "nominal and reported corners";
+   let postchecks=children (Filename.concat run_dir "checks") |> List.map (fun p -> Filename.concat p "postcheck.json")
+     |> List.filter Sys.file_exists |> List.map (fun path ->
+       let check=read path in
+       if physical_profile then (try
+         let hash p=match Checkpoint.file_record p with Ok r -> `String r.sha256 | Error e -> invalid_arg e in
+         let directory=Filename.dirname path in
+         List.iter (fun (key,p) -> if get (get check "inputs") key<>hash p then invalid_arg ("postcheck input changed: " ^ key))
+           ["gds_sha256",flow ^ "/final/gds/" ^ text (get manifest "top_module") ^ ".gds";
+            "netlist_sha256",flow ^ "/final/nl/" ^ text (get manifest "top_module") ^ ".nl.v";
+            "testbench_sha256",directory ^ "/testbench.v"];
+         List.iter (fun (name,digest) ->
+           if Filename.basename name<>name || digest<>hash (directory ^ "/" ^ name) then invalid_arg ("postcheck artifact changed: " ^ name))
+           (fields (get check "artifacts"))
+         with Invalid_argument message -> error message);
+       check) in
+   `Assoc ((if physical_profile then ["physical_profile",`String "cmos5l_real_gds_v1";"physical_evidence",physical_evidence] else []) @
+     ["schema_version",`Int 1; "tool",librelane; "mode",`String "nominal and reported corners";
     "metrics",`Assoc (List.map add_metric (mapped@timing@physical)); "checks",`Assoc checks;
     "timing_goal",`String timing_goal; "timing_unconstrained_modes",`List unconstrained;
     "mapped_cell_types",stat "num_cells_by_type"; "synthesis_checks",`Assoc (List.map add_metric synthesis_checks);

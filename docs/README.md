@@ -68,6 +68,8 @@ to the phase plan for current status.
 
 **Consumers, packaging and Workbench**
 
+- [SRAM physical integration](development/sram-example-physical.md): current
+  accepted example, power/electrical/checker fixes, retained evidence and limits.
 - [SRAM example integration](development/sram-example-integration.md): current
   production-style testbed work, architectural ownership, blog findings and
   agent-sized backend/flow/consumer assignments.

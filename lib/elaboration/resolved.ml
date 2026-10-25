@@ -17,8 +17,9 @@
    It does NOT emit anything, that is Bundle's job, and it does NOT open or hash the files
    the target references; Bundle only records their pinned hashes. It is TT/LibreLane
    specific on purpose: the wrapper port names, the single "clk" clock and the protected
-   keys all belong to that pair. Stock exact SRAM collateral is supported for
-   synthesis; physical macro execution is explicitly gated pending verification.
+   keys all belong to that pair. Stock exact SRAM synthesis preserves schema 1;
+   Hardening requires a complete versioned R0 edge-access/checking plan. Actual
+   geometry and physical acceptance remain execution checks, not resolution facts.
 *)
 
 open! Core
@@ -142,7 +143,8 @@ type t =
    ; settings           : Setting.t list
    ; methodology        : Hardcaml_asic_flow_domain.Catalog.resolved option
     ; effective_parameters : Effective_parameter.t list
-    ; macros : Macro.t list
+     ; macros : Macro.t list
+     ; physical_plan : Macro_physical_plan.t option
   }
 
 (* The name a port is known by at the top level; its first Hardcaml name;
@@ -899,10 +901,7 @@ let resolve_macros elaborated_project target =
                   || a.y_um +. 118.78 +. gap <= b.y_um || b.y_um +. 118.78 +. gap <= a.y_um)
         then Ok () else Or_error.error_string "macro placements or halos overlap")
       | _ -> None))) in
-  let%map () = if not (List.is_empty macros) && Flow.Config.Operation.equal flow.operation Hardening
-    then Or_error.error_string "SRAM hardening is unsupported: placement-aware Metal4 power access, real-GDS CMOS5L KLayout policy and CDL-backed LVS execution are not yet verified; use Synthesis"
-    else Ok () in
-  macros
+  Ok macros
 ;;
 
 let resolve ?inputs ?methodology elaborated_project =
@@ -931,6 +930,20 @@ let resolve ?inputs ?methodology elaborated_project =
   in
 
   let%bind.Or_error macros = resolve_macros elaborated_project target in
+  let%bind.Or_error physical_plan =
+    if List.is_empty macros
+       || Flow.Config.Operation.equal (Elaborated_project.flow elaborated_project).operation Synthesis
+    then Ok None
+    else (
+      let%bind.Or_error entries =
+        Or_error.all (List.map macros ~f:(fun m ->
+          match m.intent with
+          | None -> Or_error.error_s [%message "hardening requires complete macro placement intent" (m.instance : string)]
+          | Some intent -> Ok { Macro_physical_plan.resource = m.resource; instance = m.instance; name = m.name; intent }))
+      in
+      let%map.Or_error plan = Macro_physical_plan.create entries in
+      Some plan)
+  in
   (* Step 3 *)
   let%bind.Or_error clock, clock_period_ns, input_delays_ns, output_delays_ns =
     validate_timing elaborated_project
@@ -938,10 +951,22 @@ let resolve ?inputs ?methodology elaborated_project =
 
   (* Steps 4 and 5 *)
   let%bind.Or_error settings = resolve_settings elaborated_project target clock_period_ns in
-  let%map.Or_error settings, effective_parameters =
+  let%bind.Or_error settings, effective_parameters =
     match methodology with
     | None -> Ok (settings, [])
     | Some methodology -> merge_methodology methodology settings
+  in
+  let%map.Or_error () =
+    match physical_plan with
+    | None -> Ok ()
+    | Some _ ->
+      let project_keys = match (Elaborated_project.flow elaborated_project).adapter with
+        | Librelane s -> List.map s.overrides ~f:(fun o -> o.key) in
+      let keys = project_keys @ List.map settings ~f:(fun (s : Setting.t) -> s.key) in
+      let conflicts = List.filter keys ~f:Macro_physical_plan.owns_key
+        |> List.dedup_and_sort ~compare:String.compare in
+      if List.is_empty conflicts then Ok () else
+        Or_error.error_s [%message "physical macro generated settings conflict with overrides; remove owned keys and aliases" (conflicts : string list)]
   in
   { elaborated_project
   ; target
@@ -953,7 +978,8 @@ let resolve ?inputs ?methodology elaborated_project =
    ; settings
    ; methodology
     ; effective_parameters
-    ; macros
+     ; macros
+     ; physical_plan
   }
 ;;
 

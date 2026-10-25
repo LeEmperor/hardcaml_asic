@@ -9,6 +9,7 @@ let s x = codec (J.string x)
 let obj x = codec (J.object_ x)
 let get j k = match j with J.Object xs -> Option.value (List.assoc_opt k xs) ~default:J.null | _ -> J.null
 let text = function J.String x -> x | _ -> failwith "expected string"
+let array = function J.Array xs -> xs | _ -> failwith "expected array"
 let read p = let ch = open_in_bin p in Fun.protect ~finally:(fun () -> close_in_noerr ch)
   (fun () -> let n=in_channel_length ch in if n>1048576 then failwith ("probe/input exceeds 1 MiB: "^p); really_input_string ch n)
 let json p = codec (R.read_json p)
@@ -38,13 +39,13 @@ let rec copy_tree src dst = Unix.mkdir dst 0o777;
 let now () = let t = Unix.gettimeofday () in let sec = floor t in let tm = Unix.gmtime sec in
   Printf.sprintf "%04d-%02d-%02dT%02d:%02d:%02d.%06d+00:00" (tm.tm_year+1900) (tm.tm_mon+1) tm.tm_mday tm.tm_hour tm.tm_min tm.tm_sec (int_of_float ((t-.sec)*.1e6))
 let message = function Failure x | Invalid_argument x -> x | Runner.Callback_error e -> e.message | e -> Printexc.to_string e
-external enter_affinity : unit -> string = "hardcaml_postcheck_affinity_enter"
+external enter_affinity : int -> string = "hardcaml_postcheck_affinity_enter"
 external leave_affinity : string -> unit = "hardcaml_postcheck_affinity_leave"
 type outcome = {check_id:string;check_dir:string;check_record:string;status:string;exit_code:int}
 let outcome_json o = obj ["check_id",s o.check_id;"check_dir",s o.check_dir;"check_record",s o.check_record;
   "status",s o.status;"exit_code",codec (J.integer (string_of_int o.exit_code))]
 let run ~run_dir ~support_tools ~pdk_root ~precheck_python ~testbench ~testbench_top ~environment
-    ?context ?replay_trace ?timeout () =
+     ?context ?replay_trace ?timeout ?resources () =
   Option.iter (fun t -> if not (Float.is_finite t) || t<=0. then invalid_arg "finite positive timeout required") timeout;
   let run_dir=resolve run_dir and support_tools=resolve support_tools and pdk_root=resolve pdk_root in
   let testbench=resolve testbench and precheck_python=checked (Checkpoint.absolute_path precheck_python) in
@@ -59,7 +60,27 @@ let run ~run_dir ~support_tools ~pdk_root ~precheck_python ~testbench ~testbench
   let flow=text (get (get run "outputs") "flow") in
   let flow=if Filename.is_relative flow then Filename.concat run_dir flow else flow in
   let manifest=json (run_dir^"/project/manifest.json") in
-  Macro_contract.require_synthesis manifest;
+   Macro_contract.require_full manifest;
+   let physical=Macro_contract.physical manifest in
+   let timeout=if physical && timeout=None then Some 1800. else timeout in
+   let workers=if physical then 6 else 20 in
+   let budget=string_of_int workers in
+   let verify_physical_inputs () = if physical then (
+     let project=resolve (run_dir ^ "/project") in
+     List.iter (fun entry -> let relative=text (get entry "path") in
+       let path=resolve (project ^ "/" ^ relative) in
+       if not (Filename.is_relative relative) || not (String.starts_with ~prefix:(project ^ "/") path) ||
+          get entry "sha256"<>s (hash path) then invalid_arg ("physical bundle input changed: " ^ relative)) (array (get manifest "files"));
+     List.iter (fun reference -> let path=text (get reference "path") in
+       if get reference "sha256"<>s (hash path) then invalid_arg ("physical postcheck collateral changed: " ^ path))
+       (array (get (get run "environment") "references"))) in
+   verify_physical_inputs ();
+   if physical then (
+     let collected=Collect_service.to_json (Collect_service.collect run_dir) in
+     match collected with `Assoc xs ->
+       (match List.assoc_opt "physical_evidence" xs with Some (`Assoc evidence) when List.assoc_opt "status" evidence=Some (`String "pass") -> ()
+        | _ -> invalid_arg "physical postcheck requires intact completed physical checking evidence")
+     | _ -> invalid_arg "physical checking evidence missing");
   let top=text (get manifest "top_module") in
   let gds=flow^"/final/gds/"^top^".gds" and netlist=flow^"/final/nl/"^top^".nl.v" in
   List.iter (fun p -> if not (try (Unix.stat p).Unix.st_kind=Unix.S_REG with _ -> false) then
@@ -78,8 +99,8 @@ let run ~run_dir ~support_tools ~pdk_root ~precheck_python ~testbench ~testbench
     "checks",obj ["precheck",s "pending";"gate_level",s "pending"];
     "inputs",obj ["gds_sha256",s (hash gds);"netlist_sha256",s (hash netlist);"testbench_sha256",s (hash testbench);"testbench_top",s testbench_top];
     "logs",J.array [s "postcheck.log"];"tools",obj [];
-    "resource_limits",obj ["host_cpu_affinity_max",codec (J.integer "20");"tool_threads",codec (J.integer "20");
-      "container_cpus",codec (J.integer "20");"tool_timeout_seconds",(match timeout with None -> J.null | Some t -> codec (J.float t));
+     "resource_limits",obj ["host_cpu_affinity_max",codec (J.integer budget);"tool_threads",codec (J.integer budget);
+       "container_cpus",codec (J.integer budget);"tool_timeout_seconds",(match timeout with None -> J.null | Some t -> codec (J.float t));
       "cleanup_timeout_seconds",codec (J.integer "5")]] in
   let set k v = fields := (k,v)::List.remove_assoc k !fields in
   let put k name v = let xs=match List.assoc k !fields with J.Object xs -> xs | _ -> [] in set k (obj ((name,v)::List.remove_assoc name xs)) in
@@ -90,11 +111,11 @@ let run ~run_dir ~support_tools ~pdk_root ~precheck_python ~testbench ~testbench
   let env=ref (T.clean_environment environment) in
   let env_set key value = env:=List.filter (fun x -> not (String.starts_with ~prefix:(key^"=") x)) !env @ [key^"="^value] in
   env_set "PDK_ROOT" pdk_root; env_set "PDK" "ihp-sg13cmos5l";
-  List.iter (fun k -> env_set k "20") ["OMP_NUM_THREADS";"OPENROAD_THREADS";"_OPENLANE_MAX_CORES";"NIX_BUILD_CORES"];
+   List.iter (fun k -> env_set k budget) ["OMP_NUM_THREADS";"OPENROAD_THREADS";"_OPENLANE_MAX_CORES";"NIX_BUILD_CORES"];
   let serial=ref 0 in
   let work=check_dir^"/tt" in
   let status,exit_code = try
-    let affinity=enter_affinity () in
+     let affinity=enter_affinity workers in
     Fun.protect ~finally:(fun () -> leave_affinity affinity) (fun () ->
     let launch ?(logged=false) ?docker ~cwd argv =
       check_cancel (); incr serial;
@@ -108,7 +129,7 @@ let run ~run_dir ~support_tools ~pdk_root ~precheck_python ~testbench ~testbench
       let stdout,stderr=match log with
         | Some oc -> let output=Process.Descriptor (Unix.descr_of_out_channel oc) in output,output
         | None -> Process.File out,Process.File err in
-      let invocation=Option.map (fun d -> T.docker_invocation d ~project:run_dir ~pdk_root ~workdir:check_dir ~entrypoint:"env" ~interpreter:false
+       let invocation=Option.map (fun d -> T.docker_invocation d ~project:run_dir ~pdk_root ~workers ~workdir:check_dir ~entrypoint:"env" ~interpreter:false
           ~arguments:argv ~cwd ~environment:!env ~stdout ~stderr ()) docker in
       let spec=match invocation with Some i -> T.process_specification i | None ->
         Process.make ~prog ~argv ~cwd ~environment:!env ~stdout ~stderr in
@@ -151,8 +172,9 @@ let run ~run_dir ~support_tools ~pdk_root ~precheck_python ~testbench ~testbench
     let nix=read (cwd^"/default.nix") in
     let re=Str.regexp "fetchTarball[ \n\r\t]*\"\\([^\"]+\\)\"" in
     (try ignore (Str.search_forward re nix 0); env_set "NIX_PATH" ("nixpkgs="^Str.matched_group 1 nix) with Not_found -> ());
-    let nix_shell=Runtime_probe.find_executable ~environment:!env "nix-shell" in
-    let actual=probe ~cwd [nix_shell;"default.nix";"--run";"klayout -v"] in
+     let nix_shell=Runtime_probe.find_executable ~environment:!env "nix-shell" in
+     let nix_command=[nix_shell] @ (if physical then ["--max-jobs";"1";"--cores";"6"] else []) in
+     let actual=probe ~cwd (nix_command @ ["default.nix";"--run";"klayout -v"]) in
     put "tools" "klayout" (s actual); put "tools" "klayout_requested" (s pin); save ();
     if actual<>"KLayout "^pin then failwith ("precheck KLayout "^actual^"; requested "^pin);
     let version=probe ~cwd [precheck_python;"-c";"from importlib.metadata import version; print(version('klayout'))"] in
@@ -180,22 +202,47 @@ let run ~run_dir ~support_tools ~pdk_root ~precheck_python ~testbench ~testbench
       put "tools" "simulator_image" (s image_id);
       match T.docker ~executable ~rootless:false ~server_version:"historical-unrecorded" ~declared_ref ~image_id
         ~repo_digests:[] ~os:"linux" ~architecture:"historical-unrecorded" ~flags:T.Bytecode_disabled () with T.Docker d -> d | _ -> assert false) in
-    let iverilog=probe ~docker ~cwd:check_dir ["iverilog";"-V"] in
-    put "tools" "iverilog" (s (List.hd (String.split_on_char '\n' iverilog))); save ();
+     let iverilog=probe ~docker ~cwd:check_dir ["iverilog";"-V"] in
+     put "tools" "iverilog" (s (List.hd (String.split_on_char '\n' iverilog))); save ();
+     let helper=check_dir ^ "/physical-runtime.py" in
+     if physical then (
+       let resources=Option.value resources ~default:(Stage_preparation.installed_resources ~executable:Sys.executable_name) in
+       copy (resources ^ "/physical_runtime.py") helper;
+       put "inputs" "physical_runtime_sha256" (s (hash helper)); save ();
+       ignore (probe ~cwd:check_dir [precheck_python;helper;"tt";work]));
     let env_tool=Runtime_probe.find_executable ~environment:!env "env" in
     let shell="exec "^Filename.quote env_tool^" -u PYTHONPATH -u PYTHONHOME "^
       String.concat " " (List.map Filename.quote [precheck_python;"precheck.py";"--gds";gds;"--tech";"ihp-sg13cmos5l"]) in
-    let ok,_=launch ~logged:true ~cwd [nix_shell;"default.nix";"--run";shell] in
+     let ok,_=launch ~logged:true ~cwd (nix_command @ ["default.nix";"--run";shell]) in
     put "checks" "precheck" (s (if ok then "pass" else "fail")); save ();
     let cells=pdk_root^"/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/" in
-    let models=[pdk_root^"/ihp-sg13cmos5l/libs.ref/sg13cmos5l_io/verilog/sg13cmos5l_io.v";cells^"sg13cmos5l_udp.v";cells^"sg13cmos5l_stdcell.v"] in
+     let models=if physical then (
+       ignore (probe ~docker ~cwd:check_dir ["python3";helper;"models";run_dir ^ "/project";pdk_root;netlist;check_dir]);
+       let inventory=json (check_dir ^ "/replay-models.json") in
+       put "tools" "replay_scope" (s "zero_delay_gate_functional_not_timing_conformance"); save ();
+       List.map text (array (get inventory "models"))) else
+       [pdk_root^"/ihp-sg13cmos5l/libs.ref/sg13cmos5l_io/verilog/sg13cmos5l_io.v";cells^"sg13cmos5l_udp.v";cells^"sg13cmos5l_stdcell.v"] in
     if not (List.for_all Sys.file_exists models) then failwith "missing gate-level PDK Verilog models";
     let tb=check_dir^"/testbench.v" in copy testbench tb;
     let simulation_args=match replay_trace with None -> [] | Some p -> let trace=check_dir^"/replay-trace.txt" in
       copy p trace; put "inputs" "replay_trace_sha256" (s (hash trace)); save (); ["+trace="^trace] in
     let executable=check_dir^"/gate.out" in
     let compiled,_=launch ~logged:true ~docker ~cwd:check_dir (["iverilog";"-g2012";"-DFUNCTIONAL";"-DSIM";"-s";testbench_top;"-o";executable]@models@[netlist;tb]) in
-    let replayed=if not compiled then false else fst (launch ~logged:true ~docker ~cwd:check_dir (["vvp";executable]@simulation_args)) in
+      let replayed=if not compiled then false else fst (launch ~logged:true ~docker ~cwd:check_dir (["vvp";executable]@simulation_args)) in
+      if physical then (
+        verify_physical_inputs ();
+       List.iter (fun (key,path) -> if get (List.assoc "inputs" !fields) key<>s (hash path)
+         then failwith ("physical postcheck input changed: " ^ path))
+         ["gds_sha256",gds;"netlist_sha256",netlist;"testbench_sha256",testbench];
+       let inventory=json (check_dir ^ "/replay-models.json") in
+       (match get inventory "source_hashes" with J.Object xs -> List.iter (fun (path,digest) ->
+         if digest<>s (hash path) then failwith ("postcheck model changed: " ^ path)) xs | _ -> failwith "model source hashes missing");
+       (match get inventory "retained_hashes" with J.Object xs -> List.iter (fun (name,digest) ->
+         if Filename.basename name<>name || digest<>s (hash (check_dir ^ "/" ^ name)) then failwith ("retained replay model changed: " ^ name)) xs
+         | _ -> failwith "retained model hashes missing");
+       let names=Array.to_list (Sys.readdir check_dir) |> List.filter (fun name ->
+         String.starts_with ~prefix:"model-" name || List.mem name ["stdcell-functional.v";"stdcell-vendor.v";"replay-models.json";"physical-runtime.py";"tt-adaptation.json";"replay-trace.txt"]) in
+       set "artifacts" (obj (List.map (fun name -> name,s (hash (check_dir ^ "/" ^ name))) names)); save ());
     put "checks" "gate_level" (s (if replayed then "pass" else "fail"));
     if ok && replayed then "completed",0 else "failed",1)
   with e ->

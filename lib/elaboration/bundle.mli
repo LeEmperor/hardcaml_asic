@@ -24,7 +24,10 @@
        in the manifest; they are never meant to be compiled together. Exact SRAM
        synthesis adds a generated empty stub through EXTRA_VERILOG_MODELS. The
        macro_contract separately inventories vendor functional and timed models;
-       do not use the empty synthesis stub for implementation simulation.
+        do not use the empty synthesis stub for implementation simulation.
+    5. exact SRAM Hardening adds schema-2 [fresh_full] macro metadata and the
+       identity-covered [physical/macro-plan.json] and [physical/pdn.tcl]. The
+       generated runtime checks loaded geometry; emission is not physical proof.
 
    It does NOT validate the design or target; {!Resolved.resolve} already did. It
    does NOT invoke any EDA tool, access the PDK, or link the TT support-tools checkout

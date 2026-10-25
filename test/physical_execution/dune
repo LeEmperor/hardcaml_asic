@@ -1,0 +1,6 @@
+(rule
+ (alias runtest)
+ (deps check_physical_runtime.py ../../flow/hardcaml_asic_flow/physical_runtime.py)
+ (action (run python3 -B %{dep:check_physical_runtime.py}
+   %{dep:../../flow/hardcaml_asic_flow/physical_runtime.py}
+   %{exe:../report_consumer.exe} %{exe:../collect_consumer.exe})))

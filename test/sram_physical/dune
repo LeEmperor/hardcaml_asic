@@ -1,0 +1,10 @@
+(executable
+ (name physical_consumer)
+ (libraries core hardcaml_asic)
+ (preprocess (pps ppx_hardcaml ppx_jane)))
+
+(rule
+ (alias runtest)
+ (deps check_physical.py geometry.tcl mock_odb.py slew_evidence.py)
+ (action (run python3 -B %{dep:check_physical.py}
+   %{exe:physical_consumer.exe} %{dep:geometry.tcl})))

@@ -8,14 +8,16 @@
 #include <caml/fail.h>
 
 /* Children inherit this mask; restoration cannot expand spawned groups. */
-CAMLprim value hardcaml_postcheck_affinity_enter(value unit) {
-  CAMLparam1(unit);
+CAMLprim value hardcaml_postcheck_affinity_enter(value budget) {
+  CAMLparam1(budget);
   CAMLlocal1(saved);
   cpu_set_t old, limited;
   if (sched_getaffinity(0, sizeof(old), &old)) caml_failwith(strerror(errno));
   CPU_ZERO(&limited);
   int n = 0;
-  for (int i = 0; i < CPU_SETSIZE && n < 20; i++)
+  int max = Int_val(budget);
+  if (max < 1 || max > 20) caml_invalid_argument("affinity budget");
+  for (int i = 0; i < CPU_SETSIZE && n < max; i++)
     if (CPU_ISSET(i, &old)) { CPU_SET(i, &limited); n++; }
   saved = caml_alloc_string(sizeof(old));
   memcpy(Bytes_val(saved), &old, sizeof(old));

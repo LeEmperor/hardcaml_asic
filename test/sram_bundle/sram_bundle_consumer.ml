@@ -43,7 +43,7 @@ let check_resolution () =
   let resolved = Project.elaborate_for_flow (project () |> ok_exn) |> ok_exn in
   assert (List.length resolved.macros = 2);
   List.iter resolved.macros ~f:(fun m -> assert (String.equal m.instance (Resource.Id.rtl_instance_name m.resource)));
-  error_contains (Project.elaborate_for_flow (project ~operation:Hardening () |> ok_exn)) "hardening is unsupported";
+  ignore (Project.elaborate_for_flow (project ~operation:Hardening () |> ok_exn) |> ok_exn);
   error_contains (Project.elaborate_for_flow (project ~macros:[intent "missing" 42.] () |> ok_exn)) "selected macro resource";
   error_contains (Project.elaborate_for_flow (project ~macros:[intent "left" (-1.)] () |> ok_exn)) "target bounds";
   error_contains (Project.elaborate_for_flow (project ~macros:[intent "left" 42.; intent "right" 43.] () |> ok_exn)) "overlap";
@@ -71,9 +71,9 @@ let check_resolution () =
 
 let () =
   match Sys.get_argv () with
-  | [|_; "emit"; root; output|] ->
+   | [|_; ("emit" | "emit-physical" as mode); root; output|] ->
     check_resolution ();
-    let project = project () |> ok_exn in
+     let project = project ~operation:(if String.equal mode "emit-physical" then Hardening else Synthesis) () |> ok_exn in
     let a = Project.render_bundle project ~source_root:root |> ok_exn in
     let b = Project.render_bundle project ~source_root:root |> ok_exn in
     assert (String.equal (Bundle.identity a) (Bundle.identity b));
@@ -84,11 +84,17 @@ let () =
     let m = load "manifest.json" and c = load "src/config.json" in
     ignore (E.Macro_contract.validate m c);
     (try E.Macro_contract.require_synthesis m; failwith "physical gate missing" with Invalid_argument _ -> ())
-  | [|_; "preflight"; bundle; support_tools; pdk_root; python; resources; directory|] ->
+   | [|_; "preflight"; bundle; support_tools; pdk_root; python; resources; directory|] ->
     let module E = Hardcaml_asic_execution in
     let report = E.Preflight_service.probe ~bundle ~support_tools ~pdk_root ~python ~resources
       ~environment:(Array.to_list (U.environment ())) ~directory ~native:true () in
-    print_endline (E.Identity_json.canonical report)
+     print_endline (E.Identity_json.canonical report)
+   | [|_; "postcheck-physical"; run_dir; support_tools; pdk_root; precheck_python; testbench; resources|] ->
+     let module E = Hardcaml_asic_execution in
+     let o=E.Postcheck_service.run ~run_dir ~support_tools ~pdk_root ~precheck_python ~testbench
+       ~testbench_top:"memory_tb" ~resources ~environment:(Array.to_list (U.environment ())) () in
+     print_endline (E.Identity_json.canonical (E.Postcheck_service.outcome_json o));
+     Stdlib.exit o.exit_code
   | [|_; ("coarse-synthesis" | "coarse-full" as mode); bundle; support_tools; pdk_root; python; resources; runs|] ->
     let module E = Hardcaml_asic_execution in
     let plan = E.Execution_plan.Coarse.resolve (if String.equal mode "coarse-synthesis" then Synthesis else Full) in
