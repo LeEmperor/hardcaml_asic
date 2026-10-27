@@ -16,6 +16,7 @@ import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest import mock
+from resource_evidence_compat import historical_human, collection_expected
 
 RETAINED = Path('/tmp/opencode/native-final-integration/finalizations/20261014T040711301534Z_913453bd')
 
@@ -54,7 +55,7 @@ def suite(cli, consumer, package, fixtures, public=None):
         assert value['exit_code']==status and value['accepted']==(status==0), value
         expected_problems=output[output.index('PROBLEMS')+1:] if 'PROBLEMS' in output else []
         assert value['problems']==[p[4:] for p in expected_problems], (value,expected_problems)
-        assert value['human']==human.replace('   source '+source+'\n','   source fixture\n'), '\n'.join(
+        assert historical_human(value['human'])==human.replace('   source '+source+'\n','   source fixture\n'), '\n'.join(
             __import__('difflib').unified_diff(human.splitlines(),value['human'].splitlines(),fromfile='Python',tofile='OCaml'))
         count+=1
         return status,human
@@ -65,7 +66,7 @@ def suite(cli, consumer, package, fixtures, public=None):
         expected=original(*args)
         if args and args[0]!='--runs':
             actual=call(Path(args[0]), *args[1:])
-            assert (actual.returncode,actual.stdout,actual.stderr)==(expected.returncode,expected.stdout,expected.stderr), (args,expected,actual)
+            assert (actual.returncode,historical_human(actual.stdout),historical_human(actual.stderr))==(expected.returncode,expected.stdout,expected.stderr), (args,expected,actual)
         return expected
     with mock.patch.object(test_report,'reporter',side_effect=differential_reporter):
         result=unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromTestCase(test_report.ReportTest))
@@ -163,10 +164,13 @@ def suite(cli, consumer, package, fixtures, public=None):
         baseline['opaque_raw']={'nonfinite':float('inf'),'huge':10**100}
         persist(baseline)
         (run/'project/manifest.json').write_text('{bad')
+        # PT.5 cannot silently trust a malformed available expectation manifest.
+        assert call(run,'--json').returncode==2
+        (run/'project/manifest.json').write_text('{}')
         before=snapshot(run)
         status,human=compare(run,baseline,context,source='results.json')
         actual=call(run,'--json')
-        assert actual.returncode==0 and actual.stderr==human
+        assert actual.returncode==0 and historical_human(actual.stderr)==human
         assert actual.stdout==json.dumps(baseline,indent=2,sort_keys=True)+'\n'
         assert snapshot(run)==before
         for token in ['NaN','Infinity','-Infinity','1e999','-1e999']:
@@ -177,14 +181,14 @@ def suite(cli, consumer, package, fixtures, public=None):
         persist(baseline)
         assert call(run,'--diagnostics-only').stdout==call(run,'--diagnostics-only').stderr==''
         verbose=call(run,'--diagnostics-only','--verbose')
-        assert verbose.returncode==0 and verbose.stderr.startswith(human) and 'acceptance exit 0' in verbose.stderr
+        assert verbose.returncode==0 and historical_human(verbose.stderr).startswith(human) and 'acceptance exit 0' in verbose.stderr
         # Actual in-memory acquisition compared with actual Python collector/report.
         (run/'project/manifest.json').write_text('{}')
         (run/'results.json').unlink()
-        expected=phase4.collect(run)
+        expected=collection_expected(phase4.collect(run))
         status,human=compare(run,expected,context,source='collected in memory')
         before=snapshot(run); actual=call(run,'--json')
-        assert actual.returncode==status and actual.stderr==human,(actual.stderr,human)
+        assert actual.returncode==status and historical_human(actual.stderr)==human,(actual.stderr,human)
         assert actual.stdout==json.dumps(expected,indent=2,sort_keys=True)+'\n'
         assert snapshot(run)==before and not (run/'results.json').exists()
 
@@ -195,11 +199,11 @@ def suite(cli, consumer, package, fixtures, public=None):
         record=dict(context,requested_stage='synthesis',completed_stage='synthesis')
         (run/'run.json').write_text(json.dumps(record))
         metrics.write_text('timing__setup__ws,0\ntiming__hold__ws,0\n')
-        expected=phase4.collect(run)
+        expected=collection_expected(phase4.collect(run))
         status,human=compare(run,expected,record,source='collected in memory')
         assert status==0
         before=snapshot(run); actual=call(run,'--json')
-        assert actual.returncode==0 and actual.stderr==human
+        assert actual.returncode==0 and historical_human(actual.stderr)==human
         assert actual.stdout==json.dumps(expected,indent=2,sort_keys=True)+'\n'
         assert before==snapshot(run) and not (run/'results.json').exists()
 

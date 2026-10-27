@@ -178,7 +178,7 @@ let run ~execution ~store ~environment ?(accept=false) ?support_tools ?precheck_
       let dest=final^"/"^relative in Unix.mkdir (Filename.dirname dest) 0o777;copy source dest;
       provenance:= !provenance @ [obj ["boundary",s "signoff";"view",s key;"source",s source;"sha256",s (hash source);"mapped",s ("evidence/final/"^relative)]])
       ["gds","gds/"^top^".gds";"nl","nl/"^top^".nl.v";"lef","lef/"^top^".lef"];
-    let context=obj ["run_id",s a.identity;"build_identity",get manifest "identity";"bundle",s project;"status",s "completed";
+    let context=obj ["run_id",s a.identity;"build_identity",get manifest "identity";"manifest_sha256",s (hash (project^"/manifest.json"));"bundle",s project;"status",s "completed";
       "requested_stage",s "full";"completed_stage",s "full";"outputs",obj ["flow",s "evidence"];
       "execution_binding_required",J.bool true;"execution_binding",T.to_json binding;
       "evidence_origin",obj ["contract",s Finalization_record.contract;"schema_version",int "1";"operation",s op;"selected_checkpoints",selected_checkpoints];

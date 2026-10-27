@@ -62,6 +62,13 @@ let evaluate ~context:r t =
     add ("requested "^str requested^" but completed stage is run="^E.repr completed^", results="^E.repr cp);
   (match get t "errors" with `List xs -> List.iter (fun e -> add ("collection error: "^str e)) xs
     | _ -> add "collection errors field missing or malformed");
+  (match get t "resource_evidence" with
+   | `Null -> () (* Historical direct evaluation has no manifest; run adds a fresh inspection. *)
+   | evidence ->
+     if field (field evidence "provenance") "run_id"<>get r "run_id" ||
+        field (field evidence "provenance") "build_identity"<>get r "build_identity" then add "resource evidence run/build provenance mismatch";
+     if field (field evidence "provenance") "requested_stage"<>get r "requested_stage" then add "resource evidence requested-stage provenance mismatch";
+     List.iter add (Resource_evidence.problems evidence));
   let metrics=get t "metrics" in
   if not (object_ metrics) then add "metrics missing or malformed";
   let check container name count zero =
@@ -190,6 +197,12 @@ let render ~run_dir ~context:r ~results:t ~source verdict =
   let display container name digits = let item=field container name in let reason=field item "unavailable_reason" in
     out ("  "^pad 22 name^" "^number ~digits (field item "value")^(if reason<>`Null then "   "^str reason else "")) in
   display metrics "mapped_area" 3; display metrics "mapped_cells" 0;
+  (match get t "resource_evidence" with `Null -> out "  resource realization unavailable (historical results have no resource evidence)"
+   | evidence -> out ("  resource coverage "^str (get evidence "coverage"));
+     (match get evidence "observations" with `List observations -> List.iter (fun o ->
+       out ("  resource "^str (get o "stage")^": "^str (get o "status"));
+       match get o "resources" with `List rows -> List.iter (fun row -> out ("    "^str (get row "resource_id")^": "^str (get row "status")^" — "^str (get row "reason"))) rows | _ -> ()) observations | _ -> ());
+     List.iter (fun p -> out ("  resource: "^p)) (Resource_evidence.problems evidence));
   List.iter (fun n -> display (get t "synthesis_checks") n 0) ["unmapped_instances";"synthesis_errors";"inferred_latches"];
   (if verdict.scope=Full then (
     out "\nTIMING"; out ("  goal "^str (get t "timing_goal"));
@@ -234,6 +247,20 @@ let run ?context ?synthesis_state run_dir =
   let stored=Filename.concat run_dir "results.json" in
   let results,source=if file stored then E.value (E.read stored),"results.json"
     else Collect_service.to_json (Collect_service.collect ~context ?synthesis_state run_dir),"collected in memory" in
+  let results=match get results "resource_evidence" with
+    | `Null -> results
+    | evidence ->
+      (match Resource_evidence.validate evidence with Ok _ -> () | Error e -> invalid_arg ("malformed stored resource evidence: "^e));
+      match Resource_evidence.verify_sources ~context ~run_dir evidence with
+      | Ok () -> results
+      | Error e -> let errors=match get results "errors" with `List xs -> xs | _ -> [] in
+        `Assoc (("errors",`List (errors@[`String e]))::List.remove_assoc "errors" (match results with `Assoc xs -> xs | _ -> invalid_arg "results object required")) in
+  let has_resource_inventory=match Resource_evidence.inventory_available ~run_dir with Ok b -> b | Error e -> invalid_arg e in
+  let results=if has_resource_inventory then (
+    let fresh=Resource_evidence.collect ~context ~run_dir () in
+    `Assoc (["resource_evidence",fresh;"resource_evidence_unavailable_reason",`Null] @
+      List.remove_assoc "resource_evidence_unavailable_reason" (List.remove_assoc "resource_evidence" (match results with `Assoc xs -> xs | _ -> invalid_arg "results object required")))) else results in
+  let source=if has_resource_inventory then source^" + read-only resource reconciliation" else source in
   let verdict=evaluate ~context results in
   let human=render ~run_dir ~context ~results ~source verdict in
   {results; source; verdict; human}

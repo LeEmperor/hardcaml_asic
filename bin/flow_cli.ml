@@ -119,7 +119,8 @@ let route a request =
       (if c="run" then ["--public-cli4"] else []) @ switches ["native";"force"] @ presentation
      | "postcheck" -> c,["--public-cli4"] @ resources @ fields ["run-dir";"support-tools";"pdk-root";"precheck-python";"testbench";"testbench-top";"replay-trace";"timeout"] @ presentation
     | "collect" -> c,fields ["run-dir"] @ (if flag a "stdout" then ["--stdout"] else fields ["output"]) @ presentation
-    | "report" -> c,fields ["target"] @ presentation
+     | "report" -> c,fields ["target"] @ presentation
+     | "resources-inspect" -> c,fields ["run-dir"] @ presentation
     | "inspect" -> c,fields ["execution";"domain";"stage";"row-id";"expected-digest"] @ presentation
     | "archive" -> c,fields ["run-dir";"output"] @ switches ["list";"force"] @ presentation
     | "checkpoint-inspect" -> c,(if flag a "json" then ["--json"] else []) @ [value a "checkpoint"] @ fields ["compatibility";"restart-to"]

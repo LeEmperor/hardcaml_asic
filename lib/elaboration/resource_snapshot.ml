@@ -129,6 +129,7 @@ let of_json = J.checked (fun j ->
        if not (Resource.Id.equal selected resource_id) then J.fail "policy instance mismatch"
      | _ -> J.exact policy ["kind"; "path"];
        let path = J.list (J.get policy "path") |> List.map ~f:identifier in
+       if List.is_empty path then J.fail "empty policy subtree";
        if not (List.is_prefix resource_id.path ~prefix:path ~equal:String.equal) then J.fail "policy subtree mismatch");
     let sel = J.get r "selection" in J.exact sel ["implementation"; "reason"];
     let impl = J.get sel "implementation" in
@@ -191,3 +192,59 @@ let of_json = J.checked (fun j ->
     resource_id) in
   if not (List.equal Resource.Id.equal ids (List.dedup_and_sort ids ~compare:Resource.Id.compare)) then J.fail "resource IDs must be unique and sorted";
   j)
+
+let records t =
+  let collateral j : Resource.Technology.Collateral.t =
+    let role : Resource.Technology.Collateral.Role.t =
+      match J.string (J.get j "role") with
+      | "simulation_model" -> Simulation_model
+      | "timed_simulation_model" -> Timed_simulation_model
+      | "black_box" -> Black_box
+      | "timing_model" -> Timing_model { corner = J.string (J.get j "corner") }
+      | "physical_abstract" -> Physical_abstract
+      | "physical_layout" -> Physical_layout
+      | "spice_netlist" -> Spice_netlist
+      | _ -> assert false
+    in
+    { role; reference = J.string (J.get j "reference") }
+  in
+  J.list (J.get t "resources") |> List.map ~f:(fun r ->
+    let id = J.get r "id" in
+    let id = Resource.Id.create_exn
+      ~path:(J.list (J.get id "path") |> List.map ~f:J.string)
+      ~name:(J.string (J.get id "name")) in
+    let request = J.get r "request" in
+    let request = Resource.Request.create_exn ~kind:(J.string (J.get request "kind"))
+      ~contract:(J.read_sexp (J.get request "contract")) in
+    let requirement : Resource.Policy.Requirement.t = match J.string (J.get r "requirement") with
+      | "flops" -> Flops | "exact" -> Exact | "exact_or_flop_fallback" -> Exact_or_flop_fallback
+      | _ -> assert false in
+    let p = J.get r "policy" in
+    let policy : Resource.Policy.Applied.t = match J.string (J.get p "kind") with
+      | "default" -> Default
+      | "instance" -> Rule (Resource.Policy.Selector.instance_exn (J.string (J.get p "resource")))
+      | "subtree" -> Rule (Resource.Policy.Selector.subtree_exn
+          (J.list (J.get p "path") |> List.map ~f:J.string |> String.concat ~sep:"/"))
+      | _ -> assert false in
+    let s = J.get r "selection" in
+    let i = J.get s "implementation" in
+    let implementation : Resource.Selection.Implementation.t = match J.string (J.get i "kind") with
+      | "flops" -> Flops | "macro" -> Macro (J.string (J.get i "name")) | _ -> assert false in
+    let why = J.get s "reason" in
+    let reason : Resource.Selection.Reason.t = match J.string (J.get why "kind") with
+      | "explicit_flops" -> Explicit_flops
+      | "exact_mapping" -> Exact_mapping { technology = J.string (J.get why "technology") }
+      | "flop_fallback" -> Flop_fallback { no_exact_mapping_in = J.string (J.get why "technology") }
+      | _ -> assert false in
+    let elaborated_as : Resource.Record.Elaborated_as.t = match J.string (J.get r "elaborated_as") with
+      | "behavioral_model" -> Behavioral_model | "selected_implementation" -> Selected_implementation
+      | _ -> assert false in
+    let sources = J.list (J.get r "sources") |> List.map ~f:(fun s ->
+      match J.string (J.get s "kind") with
+      | "generated_behavioral_model" -> Resource.Record.Source.Generated_behavioral_model
+      | "generated_synthesis_rtl" -> Generated_synthesis_rtl
+      | "collateral" -> Collateral (collateral (J.get s "collateral"))
+      | _ -> assert false) in
+    { Resource.Record.id; request; requirement; policy;
+      selection = { implementation; reason }; elaborated_as; sources })
+;;

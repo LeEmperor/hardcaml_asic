@@ -63,6 +63,88 @@ let sha256 contents =
 (* Pretty printed JSON plus a trailing newline; how every .json file is written; *)
 let json value = Yojson.Safe.pretty_to_string value ^ "\n"
 
+(* Absence is the historical contract, never an empty or upgraded snapshot. A
+   present snapshot is checked even when a caller has recomputed the outer hash. *)
+let verify_resource_snapshot manifest =
+  let module J = Preparation_json in
+  match List.Assoc.find (J.fields manifest) "resource_snapshot" ~equal:String.equal with
+  | None -> ()
+  | Some snapshot ->
+    let checked = Resource_snapshot.of_json snapshot |> Or_error.ok_exn in
+    J.expect (J.get snapshot "project") (J.get manifest "project");
+    J.expect (J.get snapshot "top") (J.get manifest "top_module");
+    J.expect (J.get snapshot "mode") (`String "implementation");
+    J.expect (J.get snapshot "scope") (`String "resolved");
+    let records = Resource_snapshot.records checked in
+    let legacy = J.list (J.get manifest "resources") in
+    let sexp_equal json expected =
+      if not (Sexp.equal (Sexp.of_string (J.string json)) expected)
+      then J.fail "snapshot/resource inventory mismatch"
+    in
+    if List.length records <> List.length legacy then J.fail "snapshot/resource count mismatch";
+    List.iter2_exn records legacy ~f:(fun (r : Resource.Record.t) old ->
+      J.exact old ["id"; "request"; "requirement"; "policy"; "selection"; "elaborated_as"; "source_roles"];
+      J.expect (J.get old "id") (`String (Resource.Id.to_string r.id));
+      List.iter
+        [ "request", Resource.Request.sexp_of_t r.request
+        ; "requirement", Resource.Policy.Requirement.sexp_of_t r.requirement
+        ; "policy", Resource.Policy.Applied.sexp_of_t r.policy
+        ; "selection", Resource.Selection.sexp_of_t r.selection
+        ; "elaborated_as", Resource.Record.Elaborated_as.sexp_of_t r.elaborated_as ]
+        ~f:(fun (key, expected) -> sexp_equal (J.get old key) expected);
+      let sources = J.list (J.get old "source_roles") in
+      if List.length sources <> List.length r.sources then J.fail "snapshot/source count mismatch";
+      List.iter2_exn sources r.sources ~f:(fun source expected ->
+        sexp_equal source (Resource.Record.Source.sexp_of_t expected)));
+    let expected_macros =
+      J.list (J.get snapshot "resources") |> List.concat_map ~f:(fun r ->
+        let actual = J.get r "actual_instances" in
+        if String.equal (J.string (J.get actual "status")) "rtl_verified"
+        then List.map (J.list (J.get actual "instances")) ~f:(fun i ->
+          J.string (J.get (J.get r "id") "display"),
+          J.string (J.get i "module"), J.string (J.get i "instance"))
+        else [])
+    in
+    let macro_entries =
+      match List.Assoc.find (J.fields manifest) "macro_contract" ~equal:String.equal with
+      | None -> []
+      | Some contract -> J.list (J.get contract "macros")
+    in
+    let macros = List.map macro_entries ~f:(fun m ->
+        J.string (J.get m "resource"), J.string (J.get m "module"), J.string (J.get m "instance"))
+    in
+    if not (Poly.equal expected_macros macros) then J.fail "snapshot/macro inventory mismatch";
+    List.iter macro_entries ~f:(fun m ->
+      let resource = List.find_exn (J.list (J.get snapshot "resources")) ~f:(fun r ->
+        Poly.equal (J.get (J.get r "id") "display") (J.get m "resource")) in
+      let record = List.find_exn records ~f:(fun r ->
+        String.equal (Resource.Id.to_string r.id) (J.string (J.get m "resource"))) in
+      let expected_collateral = List.filter_map record.sources ~f:(function
+        | Collateral c -> Some (Resource.Technology.Collateral.Role.sexp_of_t c.role, c.reference)
+        | _ -> None) in
+      (* The role S-expression includes the timing corner. Compare inventories,
+         preserving multiplicity but not declaration order. The logical sources
+         have already been checked against both snapshot and legacy resources. *)
+      let actual_collateral = J.list (J.get m "collateral") |> List.map ~f:(fun c ->
+        J.exact c ["role"; "reference"];
+        Sexp.of_string (J.string (J.get c "role")), J.string (J.get c "reference")) in
+      if not (Poly.equal
+        (List.sort expected_collateral ~compare:Poly.compare)
+        (List.sort actual_collateral ~compare:Poly.compare))
+      then J.fail "snapshot/macro collateral inventory mismatch";
+      let intent = J.get resource "physical_intent" in
+      let physical = J.get m "physical_intent" in
+      match J.string (J.get intent "status") with
+      | "unavailable" -> J.expect physical `Null
+      | "resolved_intent" ->
+        List.iter ["location_um", "location_um"; "halo_um", "halo_um";
+                   "orientation", "orientation"; "supplies", "power"]
+          ~f:(fun (snapshot_key, macro_key) ->
+            if not (String.equal (J.bytes (J.get intent snapshot_key)) (J.bytes (J.get physical macro_key)))
+            then J.fail "snapshot/macro physical intent mismatch")
+      | _ -> J.fail "resolved macro requires resolved physical intent")
+;;
+
 let verify_manifest_identity manifest =
   Or_error.try_with (fun () ->
     Flow.Plan_json.validate manifest;
@@ -71,7 +153,8 @@ let verify_manifest_identity manifest =
       let identity = Flow.Plan_json.string (Flow.Plan_json.get manifest "identity") in
       let payload = `Assoc (List.filter fields ~f:(fun (k, _) -> not (String.equal k "identity"))) in
       if not (String.equal identity (sha256 (Yojson.Safe.to_string payload)))
-      then invalid_arg "bundle manifest identity mismatch"
+      then invalid_arg "bundle manifest identity mismatch";
+      verify_resource_snapshot manifest
     | _ -> invalid_arg "expected bundle manifest object")
 ;;
 
@@ -679,6 +762,7 @@ let render
       ; "synthesis_sources", `List [ string ("src/" ^ source_name) ]
       ; "simulation_sources", `List [ string simulation_source ]
       ; "resources", list resource_json (Elaborated_project.resources elaborated_project)
+      ; "resource_snapshot", Resource_snapshot.to_json (Resource_snapshot.of_resolved resolved)
       ; ( "simulation_resources"
         , Option.value_map simulation_project ~default:(`List []) ~f:(fun simulation ->
              list resource_json (Elaborated_project.resources simulation)) )

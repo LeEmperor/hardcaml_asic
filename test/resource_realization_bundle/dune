@@ -1,0 +1,8 @@
+(executable
+ (name bundle_tests)
+ (libraries core hardcaml hardcaml_asic unix yojson)
+ (preprocess (pps ppx_jane)))
+
+(rule
+ (alias runtest)
+ (action (run %{exe:bundle_tests.exe})))

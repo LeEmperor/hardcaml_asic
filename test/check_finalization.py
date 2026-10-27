@@ -150,15 +150,18 @@ def suite(cli,consumer,package,fixtures,public=None):
         for key in ('status','acceptance','external_postcheck','exit_code'):
             assert actual[key]==expected[key],(key,actual[key],expected[key],actual.get('error'))
         if expected['results'] is not None:
-            exp=phase4.read_json(expected_dir/'results.json');act=phase4.read_json(actual_dir/'results.json')
+            from resource_evidence_compat import collection_expected, historical_human
+            exp=collection_expected(phase4.read_json(expected_dir/'results.json'));act=phase4.read_json(actual_dir/'results.json')
             def normalize(v):
                 return json.loads(json.dumps(v,ensure_ascii=False).replace(str(actual_dir),str(expected_dir)).replace(actual['attempt_id'],expected['attempt_id']))
             for key in ('metrics','synthesis_checks','checks','provenance'):
                 assert normalize(act[key])==exp[key],(key,act[key],exp[key])
-            assert normalize(actual['evidence_context'])==expected['evidence_context']
+            context=normalize(actual['evidence_context'])
+            assert context.pop('manifest_sha256')==hashlib.sha256((actual_dir/'project/manifest.json').read_bytes()).hexdigest()
+            assert context==expected['evidence_context']
             if kwargs.get('accept') or kwargs.get('public_cli'):
                 output=[];code=report.report(actual_dir,act,'segmented mapped evidence',context=actual['evidence_context'],output=output.append)
-                assert code==actual['exit_code'] and (actual_dir/'acceptance.txt').read_text()=='\n'.join(output)+'\n'
+                assert code==actual['exit_code'] and historical_human((actual_dir/'acceptance.txt').read_text())=='\n'.join(output)+'\n'
         if before==f.execution.read_bytes(): assert before==f.execution.read_bytes()
         phase4.save(f.support/'precheck/tool-versions.json',{'klayout':'fixture'})
         count+=1
@@ -291,7 +294,8 @@ def suite(cli,consumer,package,fixtures,public=None):
         source_before=hashlib.sha256(execution.read_bytes()).hexdigest()
         assert subprocess.run([str(consumer),'select',str(execution)],capture_output=True).returncode==0
         r=subprocess.run([str(consumer),'normalize',str(RETAINED)],text=True,capture_output=True);assert r.returncode==0,r.stderr
-        actual=json.loads(r.stdout);expected=phase4.collect(RETAINED,context=receipt['evidence_context'],synthesis_state=RETAINED/'evidence/synthesis-state.json')
+        from resource_evidence_compat import collection_expected
+        actual=json.loads(r.stdout);expected=collection_expected(phase4.collect(RETAINED,context=receipt['evidence_context'],synthesis_state=RETAINED/'evidence/synthesis-state.json'))
         assert actual['results']==expected and actual['exit_code']==report.report(RETAINED,expected,'fixture',context=receipt['evidence_context'],output=lambda _:None)==0
         assert snapshot(RETAINED)==before and hashlib.sha256(execution.read_bytes()).hexdigest()==source_before
         print('retained accepted finalization and source execution: read-only selection/normalization/policy parity')
@@ -318,7 +322,8 @@ def main():
         assert r.returncode==0,(r.stdout,r.stderr)
         actual=json.loads(r.stdout.splitlines()[-1]);directory=Path(actual.pop('attempt'))
         assert actual['status']=='completed' and actual['acceptance']=='not_evaluated' and not (directory/'run.json').exists()
-        expected=phase4.collect(directory,context=actual['evidence_context'],synthesis_state=directory/'evidence/synthesis-state.json')
+        from resource_evidence_compat import collection_expected
+        expected=collection_expected(phase4.collect(directory,context=actual['evidence_context'],synthesis_state=directory/'evidence/synthesis-state.json'))
         expected['provenance']={'contract':finalization.CONTRACT,'operation':str(directory/'operation.json'),
             'selected_evidence':actual['selected_evidence'],'adapter':actual['adapter']}
         for group in ('metrics','synthesis_checks','checks'):

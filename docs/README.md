@@ -28,6 +28,7 @@ How to use behavior that is implemented now.
 | [Bundle emission](guides/bundle-emission.md) | The project-centered entry point, bundle layout, identity and provenance |
 | [Memory example](guides/memory-example.md) | PDK-free behavioral and flop checks for `Single_port_ram` |
 | [Resource preparation](guides/resource-preparation.md) | Project-owned durable Elaborate & Resolve operation, identities, cancellation and historical CLI inspection |
+| [Resource realization](guides/resource-realization.md) | Bundle-owned expectations, read-only synthesis/physical reconciliation, resource-aware area/count semantics and acceptance |
 | [Execution and results](guides/flow.md) | Command and storage defaults, run/postcheck/collect/report/archive, observation schemas, runtime policy, finalization |
 | [Stage quickstart](guides/stage-quickstart.md) | Explicit six-stage runs, checkpoints, restart, live watch and reporting |
 | [OCaml stage recipes](guides/ocaml-stage-recipes.md) | Typed `Flow.Stage` / `Flow.Recipe` declarations and schema-3 Python interoperability |
@@ -72,6 +73,9 @@ to the phase plan for current status.
 - [Resource preparation implementation](development/resource-preparation.md):
   PT.4 operation/snapshot design, agent assignments, lifecycle review and CLI-only
   independent-consumer acceptance.
+- [Resource realization implementation](development/resource-realization-plan.md):
+  PT.5 design, bundle/execution handoffs, independent review corrections and retained
+  example acceptance; outstanding measurement attribution remains in the phase plan.
 - [SRAM physical integration](development/sram-example-physical.md): current
   accepted example, power/electrical/checker fixes, retained evidence and limits.
 - [SRAM example integration](development/sram-example-integration.md): current

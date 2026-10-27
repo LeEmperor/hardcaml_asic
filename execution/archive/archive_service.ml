@@ -150,9 +150,19 @@ let acquire ~verb ~include_records ~run_dir =
          if optional record "macro_flow_sha256"<>`String (hash (run_dir ^ "/project/macro-flow.py")) then fail "macro reader adapter changed";
          [run_dir ^ "/project/macro-flow.py"])))
      else [] in
+   let resource_files=match optional (if file (run_dir^"/results.json") then read (run_dir^"/results.json") else `Assoc []) "resource_evidence" with
+     | `Null -> []
+     | evidence ->
+       (match Resource_evidence.verify_sources ~context:record ~run_dir evidence with Ok () -> () | Error e -> fail e);
+       (* Source-aware replay validates the assertions, not acceptance: genuine
+          failed reconciliations remain archivable with all advertised bytes. *)
+       array (get evidence "evidence_refs") |> List.map (fun ref_ ->
+         let name=safe (text (get ref_ "path")) "resource evidence path" in
+         let path=join run_dir name in regular path "resource evidence is missing or a symlink";
+         if `String (hash path)<>get ref_ "sha256" then fail ("resource evidence changed: "^name);path) in
    let candidates=List.map (join run_dir) (["execution.log";"project/src/config.json"] @
     List.map (fun p -> join flow p) ["final/metrics.csv";"final/metrics.json";"final/sdc";"final/gds";"final/nl";"06-yosys-synthesis";"55-openroad-stapostpnr"])
-     @ physical_files
+      @ physical_files @ resource_files
      @ List.concat_map (fun d -> List.map (Filename.concat d) (["postcheck.log";"testbench.v";"tt/precheck/reports"] @
        if physical then List.filter (fun name -> String.starts_with ~prefix:"model-" name || List.mem name
          ["stdcell-functional.v";"stdcell-vendor.v";"replay-models.json";"physical-runtime.py";"tt-adaptation.json";"replay-trace.txt"])
@@ -168,8 +178,8 @@ let acquire ~verb ~include_records ~run_dir =
     let name=relative run_dir p in let files=walk p |> List.sort String.compare in
     selected @ List.map (fun p -> source p (relative run_dir p)) files,
      omitted @ if files=[] then [name] else []) ([],[]) candidates in
-   let reports=if physical then List.fold_left (fun selected (source:Evidence_tar.source) ->
-     if List.exists (fun (prior:Evidence_tar.source) -> prior.name=source.name) selected then selected else selected@[source]) [] reports else reports in
+   let reports=List.fold_left (fun selected (source:Evidence_tar.source) ->
+      if List.exists (fun (prior:Evidence_tar.source) -> prior.name=source.name) selected then selected else selected@[source]) [] reports in
   let record_omissions=ref [] in
   let records=if not include_records then [] else List.filter_map (fun name -> let p=run_dir^"/"^name in
     if file p then (regular p "archive record is a symlink"; Some (source p name))

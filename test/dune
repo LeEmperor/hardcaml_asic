@@ -1,6 +1,28 @@
 ; P0 lifecycle, registration and selection tests.
 
 (executable
+ (name resource_evidence_consumer)
+ (modules resource_evidence_consumer)
+ (libraries hardcaml_asic.execution yojson))
+
+(rule
+ (alias resource-evidence)
+ (deps check_resource_evidence.py ../bin/experimental_resources_inspect.exe)
+ (action (run python3 -B %{dep:check_resource_evidence.py}
+   --cli %{exe:../bin/flow_cli.exe}
+   --consumer %{exe:resource_evidence_consumer.exe})))
+
+(alias (name runtest) (deps (alias resource-evidence)))
+
+(rule
+ (alias resource-evidence)
+ (deps check_resource_evidence_review.py check_resource_evidence.py
+   ../bin/experimental_resources_inspect.exe ../bin/experimental_archive.exe)
+ (action (run python3 -B %{dep:check_resource_evidence_review.py}
+   --cli %{exe:../bin/flow_cli.exe}
+   --consumer %{exe:resource_evidence_consumer.exe})))
+
+(executable
  (name preparation_consumer)
  (modules preparation_consumer)
  (libraries core hardcaml hardcaml_asic.execution unix)
@@ -95,7 +117,7 @@
 
 (rule
  (alias ocaml-finalization)
- (deps reference_harness.py check_finalization.py test_finalization.py ../bin/experimental_finalization_inspect.exe (source_tree ../flow))
+ (deps reference_harness.py resource_evidence_compat.py check_finalization.py test_finalization.py ../bin/experimental_finalization_inspect.exe (source_tree ../flow))
  (action (run python3 -B %{dep:check_finalization.py}
    --cli %{exe:../bin/experimental_finalization.exe}
    --consumer %{exe:finalization_consumer.exe})))
@@ -125,7 +147,7 @@
 
 (rule
  (alias ocaml-report)
- (deps reference_harness.py check_report.py test_report.py (source_tree ../flow))
+ (deps reference_harness.py resource_evidence_compat.py check_report.py test_report.py (source_tree ../flow))
  (action (run python3 -B %{dep:check_report.py}
    --cli %{exe:../bin/experimental_report.exe}
    --consumer %{exe:report_consumer.exe})))
@@ -141,7 +163,7 @@
 
 (rule
  (alias ocaml-collect)
- (deps reference_harness.py check_collect.py test_phase4.py (source_tree ../flow))
+ (deps reference_harness.py resource_evidence_compat.py check_collect.py test_phase4.py (source_tree ../flow))
  (action (run python3 -B %{dep:check_collect.py}
    --cli %{exe:../bin/experimental_collect.exe}
    --consumer %{exe:collect_consumer.exe})))
@@ -330,7 +352,7 @@
 
 (library
  (name hardcaml_asic_test)
-     (modules (:standard \ preparation_consumer inspection_parser_tests named_observation_race stage_report_consumer coarse_execution_consumer archive_consumer archive_encoding_consumer finalization_consumer postcheck_consumer report_consumer collect_consumer coarse_run_consumer preflight_consumer stage_domain_consumer project_api_consumer stage_recipe_contract execution_identity_driver execution_plan_consumer backend_protocol_driver process_supervisor_consumer execution_transport_consumer runtime_contract_consumer result_store_consumer checkpoint_consumer checkpoint_publisher_consumer runner_consumer segment_service_consumer stage_preparation_consumer observation_consumer observation_writer_consumer))
+     (modules (:standard \ resource_evidence_consumer preparation_consumer inspection_parser_tests named_observation_race stage_report_consumer coarse_execution_consumer archive_consumer archive_encoding_consumer finalization_consumer postcheck_consumer report_consumer collect_consumer coarse_run_consumer preflight_consumer stage_domain_consumer project_api_consumer stage_recipe_contract execution_identity_driver execution_plan_consumer backend_protocol_driver process_supervisor_consumer execution_transport_consumer runtime_contract_consumer result_store_consumer checkpoint_consumer checkpoint_publisher_consumer runner_consumer segment_service_consumer stage_preparation_consumer observation_consumer observation_writer_consumer))
  ; The trailing -source-tree-root wins over the one dune passes (%{workspace_root},
  ; .. from here). Works around a ppx_expect v0.18~preview bug: it drops the directory
  ; from the test file's path when registering a test, then rebuilds the path at exit
@@ -411,6 +433,7 @@
  (alias flow-cli)
  (deps
   test_flow_cli.py
+  resource_evidence_compat.py
   ../bin/flow_cli.exe
   ../bin/experimental_archive.exe
   ../bin/experimental_collect.exe

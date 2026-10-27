@@ -123,9 +123,9 @@ let collect ?context ?synthesis_state run_dir =
     let value,reason=number (stat field) name in
     name,metric_json (metric ~value ~reason ~unit_ ~definition ~stage:"Yosys.Synthesis" ~source:(relative !synth) ()) in
   let mapped=List.map (fun (a,b,c,d) -> mk a b c d)
-    ["mapped_area","area","um^2","sum of mapped standard-cell areas";
+    ["mapped_area","area","um^2","producer mapped library-known cell area; macro inclusion requires resource_evidence area cross-check";
      "sequential_area","sequential_area","um^2","mapped sequential-cell area";
-     "mapped_cells","num_cells","cells","mapped standard-cell instance count"] in
+      "mapped_cells","num_cells","cells","total mapped cell instance count, including macros"] in
   let timing = List.map (fun (name,prefix,mode) ->
     let valid = List.filter_map (fun (k,raw) ->
       if String.starts_with ~prefix k then match number raw k with `Float f,_ -> Some (k,f) | _ -> None else None) values in
@@ -145,7 +145,7 @@ let collect ?context ?synthesis_state run_dir =
     let value,reason=number (Option.value (List.assoc_opt field values) ~default:`Null) name in
     name,metric_json (metric ~value ~reason ~unit_ ~definition ~stage:"final" ~source:(relative metrics) ()))
     ["final_standard_cell_area","design__instance__area__stdcell","um^2","standard-cell area after the completed physical flow";
-     "final_utilization","design__instance__utilization__stdcell","fraction","standard-cell area divided by placement area"] in
+      "final_utilization","design__instance__utilization__stdcell","fraction","producer standard-cell utilization; denominator/excluded regions not retained, not whole-design occupancy"] in
   let checks=List.map (fun (name,keys) ->
     let matches=List.filter_map (fun k -> Option.map (fun v -> k,v) (List.assoc_opt k values)) keys in
     let numeric=List.map (fun (k,v) -> fst (number v k)) matches in
@@ -217,7 +217,17 @@ let collect ?context ?synthesis_state run_dir =
            (fields (get check "artifacts"))
          with Invalid_argument message -> error message);
        check) in
+   let has_resource_inventory=get manifest "resources"<>`Null || get manifest "resource_snapshot"<>`Null || get manifest "macro_contract"<>`Null in
+   let resource_evidence=if not has_resource_inventory then `Null else
+     try Resource_evidence.collect ~context:record ~run_dir () with
+     | Invalid_argument message | Failure message | Sys_error message -> error ("resource evidence: "^message); `Null
+     | Unix.Unix_error (e,f,p) -> error ("resource evidence: "^f^" "^p^": "^Unix.error_message e);`Null
+     | End_of_file -> error "resource evidence: truncated input";`Null in
+   let resource_artifacts=match resource_evidence with `Assoc _ -> (match get resource_evidence "evidence_refs" with `List refs -> List.map (fun r -> get r "path") refs | _ -> []) | _ -> [] in
+   let artifacts=List.sort_uniq compare (artifacts@resource_artifacts) in
    `Assoc ((if physical_profile then ["physical_profile",`String "cmos5l_real_gds_v1";"physical_evidence",physical_evidence] else []) @
+     ["resource_evidence",resource_evidence;
+      "resource_evidence_unavailable_reason",(if resource_evidence=`Null then `String (if has_resource_inventory then "resource evidence collection failed (see errors)" else "historical manifest resource inventory unavailable; retention not evaluated") else `Null)] @
      ["schema_version",`Int 1; "tool",librelane; "mode",`String "nominal and reported corners";
     "metrics",`Assoc (List.map add_metric (mapped@timing@physical)); "checks",`Assoc checks;
     "timing_goal",`String timing_goal; "timing_unconstrained_modes",`List unconstrained;

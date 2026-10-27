@@ -67,7 +67,7 @@ named owner and does not reuse that repository's phase IDs.
 | 3 | PT.2 — Macro collateral and physical controls | PT.1 mapping/wrapper contract | Complete for stock 256×16/R0 fresh full profile; example acceptance passed |
 | 4 | PT.3 — Macro-backed Protemu acceptance | Required PT.1 scope and PT.2; consumer API migration | Pending; independent consumer-adoption track |
 | 5 | PT.4 — Resource-mapping inspection API | Existing records; PT.1–PT.2 for macro fields | Complete: CLI/library preparation and independent-example acceptance |
-| 6 | PT.5 — Requested-versus-realized resource checks | PT.2, PT.4 | Pending |
+| 6 | PT.5 — Requested-versus-realized resource checks | PT.2, PT.4 | Reconciliation/acceptance delivered; richer physical/timing attribution remains open |
 | 7 | PT.6 — Workbench resource inspector | PT.4; PT.5 for realized evidence | Pending |
 | 8 | PT.7 — Synchronizer/reset-aware timing declarations | Endpoint reference design and Protemu timing review | Pending |
 | 9 | PT.8 — Reproducible design-variant comparisons | PT.3–PT.5; PT.7 for final physical selection | Pending |
@@ -263,14 +263,38 @@ the implementation selected for fabrication.
 
 **Owner: ASIC; Workbench consumes the results.**
 
-- [ ] **PT.5a — Reconciliation.** Check expected macro type/count/identity against
+Implementation authorized 2026-10-26 after separate flow work finished:
+[bounded assignments, shared evidence contract and acceptance plan](development/resource-realization-plan.md).
+Preparation selects resources, bundle emission binds expectations, and synthesis/
+physical result checks establish realization. Separate PT.4-attempt linkage is
+optional and unavailable unless verified. Reconciliation and acceptance are now
+delivered; richer PT.5b attribution remains open below. Library/CLI and the independent example are the testbed;
+Protemu adoption and Workbench integration are independent.
+
+- [x] **PT.5a — Reconciliation.** Check expected macro type/count/identity against
   synthesis and final physical instances. Report missing, unexpected, unresolved
   and optimized-away instances distinctly, retaining stage and producer identity.
+  Delivered 2026-10-27 for supported flat mapped/final-netlist evidence; unsupported
+  hierarchy is unresolved, and absence never implies optimization. New bundles bind
+  a structured snapshot to their exact resolution; historical inventories remain
+  explicitly legacy. Separate PT.4 attempt linkage is optional/unavailable.
 - [ ] **PT.5b — Resource evidence.** Report macro versus standard-cell area,
   utilization and links to macro-boundary timing paths. Attribute flop-resource
   costs only where the mapping survives synthesis; otherwise report unavailable.
-- [ ] **PT.5c — Acceptance integration.** Make required-macro mismatches fail the
+  **Partial, 2026-10-27:** scoped counts, bound synthesis macro/standard-cell area,
+  combined estimate, separate final standard-cell area and qualified utilization
+  are delivered. Flop ownership, resource timing/electrical links, physical macro
+  footprint and occupancy denominator remain explicitly unavailable. Remaining
+  bounded work is producer-backed physical footprint/occupancy and resource-linked
+  timing evidence; do not infer these from global metrics or reopen SRAM feasibility.
+- [x] **PT.5c — Acceptance integration.** Make required-macro mismatches fail the
   relevant implementation checks, with negative fixtures and actual-run evidence.
+  Completed 2026-10-27: public library/CLI, collection/report and archive validation;
+  corrected installed example passed 20 focused tests / 76 API-CLI calls, preserving
+  276 historical files. Both full suites passed with documented fixture limits.
+  Independent review defects were corrected and reverified. See the
+  [closeout](development/resource-realization-plan.md#implementation-and-review-closeout-2026-10-27)
+  and [operating guide](guides/resource-realization.md).
 
 **Exit:** selected mapping and verified implementation are separate inspectable
 facts. A declaration alone cannot establish that a run retained its SRAM.

@@ -173,7 +173,8 @@ let run ?(verbose=false) target = protect (fun () ->
     "target",obj ["kind",str kind;"path",str path;"selected_record",selected];
     "execution",(match execution with None -> J.null | Some r -> r.raw);
     "completion",obj ["requested",requested;"physical",physical];
-    "acceptance",str "not_evaluated";"external_postcheck",str "not_evaluated";
+     "acceptance",str "not_evaluated";"external_postcheck",str "not_evaluated";
+     "resource_realization",obj ["status",str "unavailable";"reason",str "checkpoint boundary metrics do not establish per-resource instance realization; use coarse/finalized resource evidence where retained"];
      "checkpoints",J.array checkpoints;"diagnostics",J.array !diagnostics] @
       (match methodology with None -> [] | Some m -> ["methodology",m]) @
       (match execution with None -> [] | Some r ->

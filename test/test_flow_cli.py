@@ -582,7 +582,8 @@ class PresentationTest(unittest.TestCase):
             "run_id": "fixture", "build_identity": "build", "status": "failed",
             "requested_stage": "synthesis", "completed_stage": None,
             "outputs": {"flow": "project/runs/asic"}}))
-        payload = flow_cli.phase4.collect(run)
+        from resource_evidence_compat import collection_expected
+        payload = collection_expected(flow_cli.phase4.collect(run))
         with mock.patch.object(flow_cli.phase4, "collect", side_effect=AssertionError("native boundary required")):
             code, stdout, _ = self.invoke(["collect", "run"])
             self.assertEqual(code, 0)

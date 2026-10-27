@@ -154,10 +154,16 @@ let verify_associations
   effective_parameters
   =
   let m = Yojson.Safe.from_string manifest in
+  let snapshot_fields =
+    match m with
+    | `Assoc xs when List.Assoc.mem xs "resource_snapshot" ~equal:String.equal ->
+      [ "resource_snapshot" ]
+    | _ -> []
+  in
   J.object_
     m
     ~fields:
-      [ "identity"
+      ([ "identity"
       ; "schema_version"
       ; "project"
       ; "top_module"
@@ -175,7 +181,8 @@ let verify_associations
       ; "flow_configuration"
       ; "generated_settings"
       ; "requested_tools"
-      ];
+       ]
+       @ snapshot_fields);
   if not (String.equal manifest (Yojson.Safe.to_string m))
   then J.fail "noncompact bundle manifest";
   J.checked (Elaboration.Bundle.verify_manifest_identity m);

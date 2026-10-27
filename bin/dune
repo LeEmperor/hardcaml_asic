@@ -114,4 +114,11 @@
  (modules experimental_preparation_inspect)
  (public_name hardcaml-asic-experimental-preparation-inspect)
  (package hardcaml_asic)
- (libraries hardcaml_asic.execution))
+  (libraries hardcaml_asic.execution))
+
+(executable
+ (name experimental_resources_inspect)
+ (modules experimental_resources_inspect)
+ (public_name hardcaml-asic-experimental-resources-inspect)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution yojson))

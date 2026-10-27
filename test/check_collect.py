@@ -15,6 +15,7 @@ import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest import mock
+from resource_evidence_compat import collection_expected
 
 RETAINED = Path('/tmp/opencode/native-final-integration/finalizations/20261014T040711301534Z_913453bd')
 
@@ -35,7 +36,7 @@ def suite(cli, consumer, package, fixtures, public=None, retained=RETAINED):
 
     def compare(run, *, context=None, synthesis_state=None):
         nonlocal count
-        expected = original(run, context=context, synthesis_state=synthesis_state)
+        expected = collection_expected(original(run, context=context, synthesis_state=synthesis_state))
         actual = invoke(dict(run_dir=str(run), context=context,
                              synthesis_state=str(synthesis_state) if synthesis_state else None))
         expected_bytes = json.dumps(expected, indent=2, sort_keys=True)+'\n'
@@ -223,7 +224,7 @@ def suite(cli, consumer, package, fixtures, public=None, retained=RETAINED):
             out=subprocess.run([str(cli),'--run-dir',str(disposable),'--context',str(context_file),
                 '--synthesis-state',str(disposable/'evidence/synthesis-state.json'),'--json'],text=True,capture_output=True)
             assert out.returncode==0,(out.stdout,out.stderr)
-            expected=original(disposable,context=context,synthesis_state=disposable/'evidence/synthesis-state.json')
+            expected=collection_expected(original(disposable,context=context,synthesis_state=disposable/'evidence/synthesis-state.json'))
             assert json.loads(out.stdout)==expected
             assert report.report(disposable,expected,'native collected',context=context,output=lambda *_:None)==0
             print('retained accepted finalization: read-only differential and disposable-copy acceptance passed')

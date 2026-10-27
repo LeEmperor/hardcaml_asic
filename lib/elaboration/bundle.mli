@@ -103,5 +103,8 @@ val manifest : t -> Yojson.Safe.t
 val identity : t -> string
 
 (** Pure verification using the existing order-sensitive bundle identity algorithm.
+    When [resource_snapshot] is present, strictly checks its resolved implementation
+    schema and association with project, top, resource and macro inventories.
+    Historical absence remains supported without rewriting the manifest.
     This verifies the manifest assertion, not files on disk or a source stamp. *)
 val verify_manifest_identity : Yojson.Safe.t -> unit Or_error.t
