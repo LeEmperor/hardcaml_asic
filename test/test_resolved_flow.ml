@@ -336,7 +336,7 @@ let%expect_test "metadata and all 24 pin meanings are required" =
 
 let%expect_test "clock and I/O delay endpoints resolve with nanosecond units" =
   let timing =
-    { Timing.input_delays =
+    { Timing.empty with input_delays =
         [ { port = "ui_in"
           ; minimum = Time_float.Span.of_ns 0.5
           ; maximum = Time_float.Span.of_ns 3.

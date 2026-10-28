@@ -145,6 +145,7 @@ type t =
     ; effective_parameters : Effective_parameter.t list
      ; macros : Macro.t list
      ; physical_plan : Macro_physical_plan.t option
+     ; timing_intent : Timing_intent.t option
   }
 
 (* The name a port is known by at the top level; its first Hardcaml name;
@@ -948,6 +949,10 @@ let resolve ?inputs ?methodology elaborated_project =
   let%bind.Or_error clock, clock_period_ns, input_delays_ns, output_delays_ns =
     validate_timing elaborated_project
   in
+  let%bind.Or_error timing_intent = Timing_intent.resolve
+    ~circuit:(Elaborated_project.circuit elaborated_project)
+    ~timing:(Elaborated_project.timing elaborated_project)
+    ~registrations:(Elaborated_project.timing_stages elaborated_project) in
 
   (* Steps 4 and 5 *)
   let%bind.Or_error settings = resolve_settings elaborated_project target clock_period_ns in
@@ -980,6 +985,7 @@ let resolve ?inputs ?methodology elaborated_project =
     ; effective_parameters
      ; macros
      ; physical_plan
+     ; timing_intent
   }
 ;;
 

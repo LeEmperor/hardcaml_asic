@@ -67,9 +67,9 @@ named owner and does not reuse that repository's phase IDs.
 | 3 | PT.2 — Macro collateral and physical controls | PT.1 mapping/wrapper contract | Complete for stock 256×16/R0 fresh full profile; example acceptance passed |
 | 4 | PT.3 — Macro-backed Protemu acceptance | Required PT.1 scope and PT.2; consumer API migration | Pending; independent consumer-adoption track |
 | 5 | PT.4 — Resource-mapping inspection API | Existing records; PT.1–PT.2 for macro fields | Complete: CLI/library preparation and independent-example acceptance |
-| 6 | PT.5 — Requested-versus-realized resource checks | PT.2, PT.4 | Reconciliation/acceptance delivered; richer physical/timing attribution remains open |
-| 7 | PT.6 — Workbench resource inspector | PT.4; PT.5 for realized evidence | Pending |
-| 8 | PT.7 — Synchronizer/reset-aware timing declarations | Endpoint reference design and Protemu timing review | Pending |
+| 6 | PT.5 — Requested-versus-realized resource checks | PT.2, PT.4 | Complete in supported retained-evidence scope: reconciliation, physical measurements and sampled resource timing |
+| 7 | PT.6 — Workbench resource inspector | PT.4; PT.5 for realized evidence | Delivered: bounded Resources inspector, exact sources, qualified comparison and declared controls |
+| 8 | PT.7 — Synchronizer/reset-aware timing declarations | Endpoint reference design; independent example acceptance | First bounded slice accepted: PT.7a/b scalar CMOS5L subset; PT.7c coverage/flow integration and consumer review pending |
 | 9 | PT.8 — Reproducible design-variant comparisons | PT.3–PT.5; PT.7 for final physical selection | Pending |
 
 This is the preferred execution order, not a requirement to serialize design
@@ -267,8 +267,9 @@ Implementation authorized 2026-10-26 after separate flow work finished:
 [bounded assignments, shared evidence contract and acceptance plan](development/resource-realization-plan.md).
 Preparation selects resources, bundle emission binds expectations, and synthesis/
 physical result checks establish realization. Separate PT.4-attempt linkage is
-optional and unavailable unless verified. Reconciliation and acceptance are now
-delivered; richer PT.5b attribution remains open below. Library/CLI and the independent example are the testbed;
+optional and unavailable unless verified. Reconciliation, physical measurements and
+sampled resource timing are now delivered in the supported evidence scope below.
+Library/CLI and the independent example are the testbed;
 Protemu adoption and Workbench integration are independent.
 
 - [x] **PT.5a — Reconciliation.** Check expected macro type/count/identity against
@@ -278,15 +279,20 @@ Protemu adoption and Workbench integration are independent.
   hierarchy is unresolved, and absence never implies optimization. New bundles bind
   a structured snapshot to their exact resolution; historical inventories remain
   explicitly legacy. Separate PT.4 attempt linkage is optional/unavailable.
-- [ ] **PT.5b — Resource evidence.** Report macro versus standard-cell area,
+- [x] **PT.5b — Resource evidence.** Report macro versus standard-cell area,
   utilization and links to macro-boundary timing paths. Attribute flop-resource
   costs only where the mapping survives synthesis; otherwise report unavailable.
-  **Partial, 2026-10-27:** scoped counts, bound synthesis macro/standard-cell area,
-  combined estimate, separate final standard-cell area and qualified utilization
-  are delivered. Flop ownership, resource timing/electrical links, physical macro
-  footprint and occupancy denominator remain explicitly unavailable. Remaining
-  bounded work is producer-backed physical footprint/occupancy and resource-linked
-  timing evidence; do not infer these from global metrics or reopen SRAM feasibility.
+  **Completed in supported scope, 2026-10-27:** schema 2 provides checker/DEF-bound
+  macro footprint, optional exact LEF-class component sums, explicit gross-core/die
+  ratios, and resource-linked sampled timing paths/slew/output loads. Existing
+  synthesis estimates and native rounded physical metrics remain distinct. Final
+  installed acceptance: 15 tests, 186 sampled paths / 372 electrical observations,
+  complete 76-reference archive closure and historical schema-1 replay. No EDA rerun.
+  [Contract and closeout](development/resource-measurements-plan.md#implementation-and-acceptance-closeout).
+  Coverage remains the validated stock/R0 physical checker and retained native
+  post-PNR report format; unsupported inputs are unavailable/diagnosed. Flop ownership,
+  exhaustive timing, per-pin compliance margins, usable-site utilization, IR/EM and
+  resource power remain unestablished—not implied by gross-area ratios or sampled links.
 - [x] **PT.5c — Acceptance integration.** Make required-macro mismatches fail the
   relevant implementation checks, with negative fixtures and actual-run evidence.
   Completed 2026-10-27: public library/CLI, collection/report and archive validation;
@@ -303,33 +309,83 @@ facts. A declaration alone cannot establish that a run retained its SRAM.
 
 **Owner: Workbench; ASIC owns and tests the public data contract.**
 
-- [ ] **PT.6a — Resource table.** Display resource identity, shape/contract, policy,
+Implementation authorized 2026-10-28. [Cross-repository integration contract](../../hardcaml_workbench/docs/resource_inspector_plan.md)
+defines typed bundle/coarse/execution/finalization targets, bounded index/detail/source
+queries, explicit historical import and Resources workspace acceptance. Existing
+PT.5 raw inspection remains compatible; UI does not duplicate selection/reconciliation.
+
+- [x] **PT.6a — Resource table.** Display resource identity, shape/contract, policy,
   implementation and selection reason, distinguishing explicit flops from fallback.
-- [ ] **PT.6b — Drilldown.** Link a logical resource to its hierarchy, collateral,
+- [x] **PT.6b — Drilldown.** Link a logical resource to its hierarchy, collateral,
   placement and realized-mapping/timing evidence; show unavailable or pending data.
-- [ ] **PT.6c — Controls and comparison.** Compare two configurations/runs and
+- [x] **PT.6c — Controls and comparison.** Compare two configurations/runs and
   expose project-supported selection controls through public preview/new-build
   interfaces. Do not mutate immutable bundles or duplicate selection logic in UI.
+
+Delivered 2026-10-28: provider-owned `resource-inspect` bounded bridge and Resources
+workspace with explicit bundle/coarse/execution/finalization sources, paged details
+and authorized artifacts. Exact A/B captures compare selection differences and
+compatible Observed/Derived scalars; estimates/unknowns have no measured delta.
+Controls reuse project-advertised flow/profile/assignments; unsupported memory-policy
+knobs and automatic variant sweeps are not introduced. Actual augmented SRAM UI
+acceptance verifies `program`, stock macro, matched synthesis/final observations,
+physical area and sampled paths; empty FIFO and unavailable historical inventory
+are distinct. [Operating guide](../../hardcaml_workbench/docs/resource_inspector.md),
+[acceptance](../../hardcaml_workbench/docs/resource_inspector_acceptance.md).
+Both full suites and independent correction review pass. Named-checkpoint realization,
+unlinked preparation history and PT.5b physical/timing limits remain explicit; no EDA
+or new named macro execution is claimed. Application provider upgrade was separately
+approved; user visual acceptance after restart remains distinct from native PTY proof.
 
 **Exit:** selecting `program` shows its contract, selected macro and whether the
 chosen run actually retained it. The same facts remain available headlessly.
 
 ## PT.7 — Synchronizer/reset-aware timing declarations
 
-**Owners: ASIC for validation/rendering; Protemu for circuit intent and review.**
+Started 2026-10-28: [bounded implementation plan and shared contract](development/pt7-timing-intent.md).
+Generic library/example acceptance is independent of Protemu adoption. Consumer-specific
+protocol/reset/I/O review remains pending and is not authorized in this slice.
 
-- [ ] **PT.7a — Endpoint references.** Define stable port/register-pin references
-  and verify their resolution after synthesis. Diagnose empty or ambiguous matches.
-- [ ] **PT.7b — Narrow timing intent.** Support reasoned asynchronous-capture and
-  reset exceptions plus supported synchronizer preservation attributes. Keep
-  downstream synchronizer stages timed normally; no blanket chain false paths.
-- [ ] **PT.7c — Reviewable evidence.** Emit the resolved exceptions and unconstrained
-  path coverage. Review Protemu's protocol inputs, sampled host link, reset and
-  board/pad I/O assumptions, then rerun affected physical checks.
+**Owners: ASIC for declarations, validation/rendering and evidence; example for
+generic acceptance; Protemu for its separate circuit intent and consumer review.**
 
-**Exit:** Protemu's final implementation uses reviewed, traceable constraints,
-not just the provisional blanket min/max I/O delays. Digital phase-sweep tests
-and STA do not by themselves establish analog metastability reliability.
+- [x] **PT.7a — Endpoint references (bounded subset).** Exact scalar/bit inputs and
+  registered scalar Q anchors resolve after synthesis to supported CMOS5L pins.
+  Empty/ambiguous/merged/unsupported matches and changed clock/data/reset connectivity
+  reject before applying exceptions. Native bit/scalar acceptance completed 2026-10-28.
+- [x] **PT.7b — Narrow timing intent (bounded subset).** Reasoned external capture
+  to one first-stage D and enumerated externally active-low/reset-to-zero controls;
+  requested Yosys `keep=1` preserves five original stages in the tested mapping.
+  All three sampled downstream setup/hold links remain timed. No automatic state
+  insertion, general false paths, blanket chain exceptions or physical-preservation claim.
+- [ ] **PT.7c — Reviewable evidence.** Delivered identity-covered requested intent,
+  producer-reported resolution, command-completed application, hash-bound raw reports
+  and strict read-only library/CLI inspection for standalone synthesized-netlist audits.
+  **Remaining:** interpreted native exception-effect/unconstrained coverage and ordinary
+  execution/collection integration with new stage/corner provenance; post-PNR acceptance
+  when that scope is implemented. Current OpenSTA lacks `report_exceptions`; valid
+  audits stay **exit 1 / unavailable**, never passing coverage. Sampled reports are
+  not exhaustive. Do not promote command completion to proof of all affected paths.
+- [ ] **Consumer review (separate pending track).** Review Protemu's protocol inputs,
+  sampled host link, reset and board/pad I/O assumptions, then rerun affected physical
+  checks. No Protemu inspection, modification or timing-correctness claim in this slice.
+
+Accepted example provider `74e9a52b43a14c69bff2763325b39522`, source snapshot
+`a6723afb6a88bce6152d7b05662ea614a6e1a75352b870b4e20391e7c2d3f684`.
+Fresh audits `sta-bit-r3` and `sta-scalar-r3` use Yosys 0.66 / OpenSTA 2.7.0,
+typical CMOS5L corner and unmodified public-bundle SDC. Sampled setup is
+**+19.432287 ns**, hold **−0.044244 ns (violated)**; this proves sampled timing
+preservation, not closure. No P&R was run. Native lookup/boundary-net and evidence
+validation defects found after initial suites passed were fixed and retested;
+all earlier failures remain retained.
+[Operating guide](guides/timing-intent.md),
+[actual example evidence](../../hardcaml_asic_example/docs/pt7_timing_final.md),
+[independent final review](development/pt7-final-review.md).
+
+**Exit:** generic implemented hardware has reviewed, traceable constraints with
+explicit coverage and producer limitations. Protemu's final physical selection
+additionally requires its own consumer review and affected checks. Digital
+phase-sweep tests and ordinary STA do not establish analog metastability reliability.
 
 ## PT.8 — Reproducible design-variant comparisons
 

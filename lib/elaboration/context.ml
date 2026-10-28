@@ -37,6 +37,7 @@ type shared =
   ; database        : Circuit_database.t
   ; mutable state   : State.t
   ; mutable records : Resource.Record.t Map.M(Resource.Id).t
+  ; mutable timing_stages : (Platform.Timing.Stage.t * Signal.t) list
   }
 
 (* Elaboration.Context.t : maintains a shared grouping record, as well as the main scope it's attached to in the hierarchy; *)
@@ -244,6 +245,28 @@ let register_exn t ~name request =
   Because of how MLIs work we can somewhat emulate this item as the "only" way to make Elaboration.Context.t
 
 *)
+let register_timing_stage_exn t ~stage ~q =
+  check_open t ~operation:"register_timing_stage";
+  try
+    if Signal.width q <> 1 || not (Signal.Type.is_reg q)
+    then invalid_arg "timing stage requires an existing scalar register Q";
+    if List.exists t.shared.timing_stages ~f:(fun (s, other) ->
+      String.equal s.Platform.Timing.Stage.id stage.Platform.Timing.Stage.id
+      || Signal.Type.Uid.equal (Signal.uid q) (Signal.uid other))
+    then invalid_arg "timing stage ID or Q registered more than once";
+    let anchor = Platform.Timing.Stage.anchor stage in
+    if List.exists (Signal.names q) ~f:(String.is_prefix ~prefix:"hc_pt7_")
+    then invalid_arg "timing register already has a reserved hc_pt7_ name";
+    if List.exists (Signal.attributes q) ~f:(fun a ->
+      String.equal (Rtl_attribute.name a) "keep")
+    then invalid_arg "timing register keep attribute is owned by registration";
+    ignore (Signal.( -- ) q anchor : Signal.t);
+    ignore (Signal.add_attribute q
+      (Rtl_attribute.create ~value:(Int 1) "keep") : Signal.t);
+    t.shared.timing_stages <- (stage, q) :: t.shared.timing_stages
+  with exn -> fail t; raise exn
+;;
+
 module Private = struct
   let create ~mode ~technology ~policy ~scope =
     { shared =
@@ -253,6 +276,7 @@ module Private = struct
         ; database = Scope.circuit_database scope (* derives from the hardcaml scope's circuit database *)
         ; state = Open
         ; records = Map.empty (module Resource.Id)
+        ; timing_stages = []
         }
     ; scope
     }
@@ -333,5 +357,6 @@ module Private = struct
 
   (* if the fail happens, here it is! *)
   let fail = fail
+  let timing_stages t = t.shared.timing_stages
 end
 [@@@ocamlformat "enable"]

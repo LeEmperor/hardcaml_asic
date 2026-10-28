@@ -41,6 +41,7 @@ val clocks : t -> Platform.Clock.t list
 
 val pinout : t -> Platform.Pinout.t
 val timing : t -> Platform.Timing.t
+val timing_stages : t -> (Platform.Timing.Stage.t * Signal.t) list
 
 (** Ordered by {!Resource.Id.compare}, independent of registration order. *)
 val resources : t -> Resource.Record.t list
@@ -49,6 +50,7 @@ val resources : t -> Resource.Record.t list
 val circuit : t -> Circuit.t
 
 module Private : sig
+  val with_timing_stages : t -> (Platform.Timing.Stage.t * Signal.t) list -> t
   (** Only {!Project.elaborate} should call this, after
       {!Context.Private.finalize} succeeded. It performs no validation. *)
   val create

@@ -15,6 +15,17 @@
 (alias (name runtest) (deps (alias resource-evidence)))
 
 (rule
+ (alias resource-physical-evidence)
+ (deps check_resource_physical_evidence.py check_resource_evidence.py
+   (source_tree resource_timing/fixtures)
+   ../bin/experimental_resources_inspect.exe)
+ (action (run python3 -B %{dep:check_resource_physical_evidence.py}
+   --cli %{exe:../bin/flow_cli.exe}
+   --consumer %{exe:resource_evidence_consumer.exe})))
+
+(alias (name runtest) (deps (alias resource-physical-evidence)))
+
+(rule
  (alias resource-evidence)
  (deps check_resource_evidence_review.py check_resource_evidence.py
    ../bin/experimental_resources_inspect.exe ../bin/experimental_archive.exe)

@@ -24,15 +24,23 @@ example synthesis/physical snapshots described below. Exit codes:
 
 - **0:** no failed required-macro reconciliation checks. A resource-free/flop-only
   design may have no required macro checks; consult coverage and availability.
-- **1:** required reconciliation failed or required evidence is unresolved.
+- **1:** required reconciliation failed, required evidence is unresolved, or supplied
+  physical/timing provenance or measurement evidence is contradictory.
 - **2:** invalid input or provenance.
 
-The schema-1 `hardcaml-asic.resource-evidence` object exposes manifest-derived
+The current schema-2 `hardcaml-asic.resource-evidence` object exposes manifest-derived
 `resource_inventory`, stage-specific `observations`, `check_outcomes`, provenance,
 coverage and hashed `evidence_refs`. Expectations and observed instances remain
 separate. Missing, unexpected and unresolved outcomes have explicit reasons;
 absence is never assumed to prove optimization. Instance identity matters even
 when aggregate counts agree.
+
+Schema 2 adds per-resource physical geometry, structured component-area/ratio
+evidence and sampled macro timing/electrical links. Schema-1 readers and full source
+replay remain supported: replay uses the **recorded schema's semantics**, without
+adding new assertions or sources to historical schema-1 reports. Current collection
+and read-only reporting emit schema 2. CLI capability `resource_evidence2` advertises
+the new format alongside explicit supported read/write schemas.
 
 New bundles contain an identity-covered `resource_snapshot` made from the same
 resolved implementation used to render the bundle. Historical manifests without
@@ -72,8 +80,54 @@ an unavailable reason where needed. In particular:
   Standard-cell utilization is not whole-design occupancy; the retained producer
   percentage does not establish its denominator or excluded regions.
 - Sequential counts/area are whole-design evidence, not per-resource flop cost.
-  Resource-linked timing/electrical attribution, optimized flop ownership and
-  physical macro footprint are currently unavailable.
+  Optimized flop ownership remains unavailable.
+- Where retained proof supports it, physical macro footprint is derived from
+  executed geometry, actual DEF placement and exact final-netlist ownership.
+  It excludes halo, supply bridges, routing and surrounding repair logic.
+- Complete bound LEF/DEF coverage provides separate nonspacer, spacer/fill/decap,
+  macro and all-component footprint sums. Missing LEFs leave exact sums unavailable;
+  known partial coverage still rejects contradictions it can prove. Native rounded
+  producer metrics remain separate from exact DBU/LEF-derived values.
+
+## Physical footprint and gross-area ratios
+
+Final observations expose `physical.floorplan`, `physical.measurements` and
+`physical.ratios`; resource rows expose `geometry` and footprint `area`. Each ratio
+retains explicit numerator and denominator measurements and evidence references.
+Core/die denominators are **gross bounding rectangles**, not usable placement sites.
+Numerators are sums of component rectangles, **not geometric unions or routed-metal
+coverage**. Ratios do not reverse-engineer the producer's utilization definition.
+
+Supported physical proof currently uses the retained `cmos5l_real_gds_v1` checker
+contract for the stock macro/R0 profile. Unsupported layouts, transformations and
+missing measurement sources are explicit; this does not extend physical qualification
+to arbitrary macros. Contradictory supplied geometry, counts or areas fails the
+measurement observation, including after disposable fixture hashes are rebound.
+
+## Sampled resource timing and electrical observations
+
+With retained post-PNR reports, a resource's `timing_links.paths` identifies exact
+data endpoints, macro pins, corner, min/max mode, group, signed slack and report
+line spans. `electrical_links.points` retains observed slew, reported output load,
+fanout, delay, arrival, edge and data/launch-clock/capture-clock roles. Blank columns
+stay null. Capacitance on a macro output is **reported load**, not intrinsic pin cap.
+
+Every link retains producer/run/build/netlist/config/state/log/report/unit-library
+provenance. External model paths/hashes are recorded references, not claims that
+the model bytes were retained or re-read. Fast −40°C analysis remains distinct
+from its bound −55°C SRAM model. Unit declarations must be direct library attributes.
+Malformed report sections cannot turn a clock pin into a data endpoint.
+
+Coverage is `sampled_reported_paths_not_exhaustive`; electrical compliance is
+`not_assessed`. Partial/unreadable reports produce diagnostics. Resource retention
+can pass while some optional timing links remain unavailable; inspect diagnostics.
+A valid negative-slack path is retained measurement evidence, not a macro-retention
+failure. Existing global timing acceptance checks remain independent.
+
+This slice does not establish exhaustive timing coverage, per-pin electrical limits
+or margins, timed SRAM conformance, resource power, IR/EM qualification, or flop
+ownership. The typed parser supports the validated native post-PNR report format;
+unknown units/layouts are diagnosed rather than guessed.
 
 Supported mapped standard-cell classification requires known library namespaces,
 finite area attributes and blackbox leaf semantics. Unsupported hierarchy becomes
@@ -85,12 +139,13 @@ this feature does not add named-flow macro/checkpoint execution support.
 
 ## Validated example
 
-From `hardcaml_asic_example`, using its isolated PT.5 capture:
+From `hardcaml_asic_example`, using its isolated PT.5b capture:
 
 ```sh
-P="$PWD/.dev/asic-pt5/current/bin/hardcaml-asic-flow"
+P="$PWD/.dev/asic-pt5b/current/bin/hardcaml-asic-flow"
 "$P" resources-inspect acceptance/sram/8b48d7d0-functional --json
 "$P" resources-inspect acceptance/sram/physical-p4 --json
+"$P" resources-inspect acceptance/resource-measurements/accepted-live-01/run --json
 ```
 
 The synthesis specimen reports 176 total cells: **175 standard cells + one SRAM**.
@@ -101,8 +156,34 @@ run reports **4,793.64 µm²** final standard-cell area. Its final netlist conta
 389 logical standard cells. The physical snapshot lacks bound synthesis stat and
 Liberty area inputs; inspection does not borrow them from the other run.
 
-See the [implementation/acceptance record](../development/resource-realization-plan.md#implementation-and-review-closeout-2026-10-27)
-and [example guide](../../../hardcaml_asic_example/docs/resource_realization.md)
-for identities, negative fixtures and limitations. The old physical qualification
+Physical schema-2 evidence additionally establishes:
+
+| Quantity | Value |
+| --- | ---: |
+| Macro rectangular footprint | 28,127.104 µm² |
+| Nonspacer component footprints | 4,793.6448 µm² / 389 cells |
+| Spacer/fill/decap footprints | 866,655.4176 µm² / 68,539 cells |
+| Nonspacer + macro footprint sum | 32,920.7488 µm² |
+| Gross core rectangle | 902,417.2416 µm² |
+| Macro / gross core | 3.116862434% |
+| Nonspacer + macro / gross core | 3.648062923% |
+| All components including spacers / gross core | 99.685170554% |
+
+The new augmented capture retains unchanged raw reports from the same accepted run,
+yielding **186 linked sampled paths / 372 electrical observations**. For example:
+
+- Slow setup, macro `A_DOUT[11]` → `uo_out[3]`: slack **11.246561 ns**,
+  macro output slew **0.067838 ns**, reported load **0.004815 pF**.
+- Fast hold, `_203_/Q` → macro `A_ADDR[6]`: slack **0.223533 ns**,
+  macro input slew **0.167545 ns**; its blank Cap field remains null.
+
+Original `physical-p4` has no raw STA reports, so its resource timing still stays
+unavailable; the inspector does not borrow reports from the new capture. All old
+evidence and app-provider selections remain preserved.
+
+See the [PT.5b closeout](../development/resource-measurements-plan.md#implementation-and-acceptance-closeout),
+[original reconciliation record](../development/resource-realization-plan.md#implementation-and-review-closeout-2026-10-27)
+and [measurement acceptance guide](../../../hardcaml_asic_example/docs/resource_measurements.md)
+for identities, negative fixtures and limits. The old physical qualification
 remains unchanged: raw Magic=3 with exact disposition, abstract macro-boundary LVS,
 and no new timed-model/IR-EM claim.

@@ -117,7 +117,12 @@ nonfinite maximums, nonfinite minimums or minimums above their maximum
 delays on `clk`, and additional clocks. It sorts delay endpoints for
 stable emission. P3 renders the resolved primary clock to LibreLane
 `CLOCK_PORT`/`CLOCK_PERIOD` and TT `clock_hz`, and the validated delay
-subset to SDC. No other SDC intent is accepted by this declaration API.
+subset to SDC. PT.7 additionally supports exact scalar-stage asynchronous-capture
+and enumerated active-low/reset-to-zero exceptions, registered Q anchors and
+Yosys `keep=1` preservation intent. The [timing-intent guide](../guides/timing-intent.md)
+defines the supported mapped-cell/pin subset, fail-closed resolution and standalone
+native acceptance limits. General false paths, generated clocks and arbitrary SDC
+remain unsupported.
 The pinned `src/config.json` declares only `CLOCK_PORT` and `CLOCK_PERIOD` as
 timing inputs; it has no reviewed board-specific I/O delay values. Those
 delays therefore remain optional declarations rather than fabricated defaults.

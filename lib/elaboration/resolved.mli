@@ -94,7 +94,9 @@ type t = private
    ; macros : Macro.t list (** Checked exact SRAM instances. *)
    ; physical_plan : Macro_physical_plan.t option
      (** Complete fresh-hardening policy, only for exact R0 SRAMs with common halo.
-         Runtime must validate actual geometry and execute the declared checking profile. *)
+          Runtime must validate actual geometry and execute the declared checking profile. *)
+   ; timing_intent : Timing_intent.t option
+     (** Validated scalar timing declarations, not mapped-tool resolution facts. *)
   }
 
 (** Resolve an implementation elaboration; defaults to {!Target.Inputs.reference_cmos5l_6x4}.

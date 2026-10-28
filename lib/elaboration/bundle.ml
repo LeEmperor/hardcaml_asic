@@ -369,6 +369,7 @@ let sdc (resolved : Resolved.t) =
         (ports outputs)
     ; List.map resolved.input_delays_ns ~f:(delay "input") |> String.concat
     ; List.map resolved.output_delays_ns ~f:(delay "output") |> String.concat
+    ; Option.value_map resolved.timing_intent ~default:"" ~f:Timing_intent.sdc
     ]
 ;;
 
@@ -766,7 +767,9 @@ let render
       ; ( "simulation_resources"
         , Option.value_map simulation_project ~default:(`List []) ~f:(fun simulation ->
              list resource_json (Elaborated_project.resources simulation)) )
-       ] @ (if List.is_empty resolved.macros then [] else
+       ] @ Option.value_map resolved.timing_intent ~default:[] ~f:(fun intent ->
+           ["timing_intent", Timing_intent.to_json intent])
+        @ (if List.is_empty resolved.macros then [] else
        [ "macro_contract", assoc
             ([ "schema_version", `Int (if Option.is_some resolved.physical_plan then 2 else 1)
             ; "execution", string (if Option.is_some resolved.physical_plan then "fresh_full" else "synthesis_only")

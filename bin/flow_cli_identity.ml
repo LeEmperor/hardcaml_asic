@@ -23,11 +23,15 @@ let describe () =
          "namedflow1",`Bool true;
          "preparation1",`Bool true;
          "inspection1",`Bool true;
-         "resource_evidence1",`Bool true;
-        "timing_analysis1",`Bool true;
+          "resource_evidence1",`Bool true;
+           "resource_evidence2",`Bool true;
+           "resource_inspection1",`Bool true;
+          "resource_evidence_schemas",`Assoc ["write",`Int 2;"read",`List [`Int 1;`Int 2]];
+         "timing_analysis1",`Bool true;
+         "timing_intent_evidence1",`Assoc ["read_only",`Bool true;"scope",`String "standalone_synthesized_netlist_sta";"native_path_effect_coverage",`String "unavailable"];
         "timing_stage1",`Bool true;
         "json_commands",strings ["preflight";"run";"postcheck";"collect";"report";"inspect";"execute";"archive";"stages";"checkpoint-inspect";
-           "observation describe";"observation inspect";"observation read-updates";"observation watch";"finalize";"finalization-inspect";"preparation-inspect";"resources-inspect"];
+             "observation describe";"observation inspect";"observation read-updates";"observation watch";"finalize";"finalization-inspect";"preparation-inspect";"resources-inspect";"resource-inspect";"timing-intent-inspect"];
         "json_lines_commands",strings ["stages";"finalize";"observation watch"];
         "observation_watch",`Assoc ["incremental",`Bool true;"interval_seconds",`Float 0.5;
           "envelopes",strings ["updates";"status"];"records_flushed",`Bool true;

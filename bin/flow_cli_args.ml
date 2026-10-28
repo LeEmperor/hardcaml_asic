@@ -4,7 +4,7 @@ type t = { command : string; query : string; values : (string,string) Hashtbl.t;
 exception Usage of string
 let error s = raise (Usage s)
 let commands = ["provision";"preflight";"run";"postcheck";"collect";"report";"archive";
-  "execute";"stages";"finalize";"finalization-inspect";"checkpoint-inspect";"observation";"inspect";"preparation-inspect";"resources-inspect"]
+  "execute";"stages";"finalize";"finalization-inspect";"checkpoint-inspect";"observation";"inspect";"preparation-inspect";"resources-inspect";"resource-inspect";"timing-intent-inspect"]
 let tools = ["toolchain";"support-tools";"pdk-root"]
 let identity = ["dependency-lock";"waiver"]
 let grammar command query = match command with
@@ -16,6 +16,8 @@ let grammar command query = match command with
   | "collect" -> ["output"], ["stdout"], "run-dir"
   | "report" -> [], [], "target"
   | "resources-inspect" -> [], [], "run-dir"
+  | "timing-intent-inspect" -> [], [], "target"
+  | "resource-inspect" -> ["kind";"query";"resource-id";"section";"expected-digest";"artifact-id";"offset";"limit"], [], "target"
   | "inspect" -> ["domain";"stage";"row-id";"expected-digest"], [], "execution"
   | "archive" -> ["output"], ["list";"force"], "run-dir"
   | "stages" -> ["support-tools";"pdk-root";"python";"workspace";"checkpoint-store";"endpoint";"plan";"methodology-plan";"expected-plan-identity";"checkpoint";"timeout";"observation-store"], ["no-observation"], "bundle"

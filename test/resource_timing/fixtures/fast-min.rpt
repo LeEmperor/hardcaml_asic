@@ -1,0 +1,61 @@
+
+===========================================================================
+report_checks -path_delay min (Hold)
+============================================================================
+======================= nom_fast_1p32V_m40C Corner ===================================
+
+Startpoint: _203_ (rising edge-triggered flip-flop clocked by clk)
+Endpoint: hc_resource_7_program (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: min
+
+Fanout         Cap        Slew       Delay        Time   Description
+---------------------------------------------------------------------------------------------
+                                  0.000000    0.000000   clock clk (rise edge)
+                                  0.000000    0.000000   clock source latency
+     2    0.109161    0.075710    0.067503    0.067503 ^ clk (in)
+                                                         clk (net)
+                      0.098541    0.000000    0.067503 ^ clkbuf_regs_0_clk/A (sg13cmos5l_buf_8)
+     1    0.008888    0.016676    0.068795    0.136298 ^ clkbuf_regs_0_clk/X (sg13cmos5l_buf_8)
+                                                         clk_regs (net)
+                      0.016677    0.000345    0.136642 ^ clkbuf_0_clk_regs/A (sg13cmos5l_buf_8)
+     4    0.044095    0.022658    0.047707    0.184349 ^ clkbuf_0_clk_regs/X (sg13cmos5l_buf_8)
+                                                         clknet_0_clk_regs (net)
+                      0.022961    0.001884    0.186234 ^ clkbuf_2_1__f_clk_regs/A (sg13cmos5l_buf_8)
+     4    0.038161    0.021090    0.048361    0.234595 ^ clkbuf_2_1__f_clk_regs/X (sg13cmos5l_buf_8)
+                                                         clknet_2_1__leaf_clk_regs (net)
+                      0.021898    0.003025    0.237620 ^ _203_/CLK (sg13cmos5l_dfrbpq_1)
+     1    0.003760    0.017866    0.106652    0.344273 ^ _203_/Q (sg13cmos5l_dfrbpq_1)
+                                                         signal_reg_1[6] (net)
+                      0.017866    0.000133    0.344406 ^ hold198/A (sg13cmos5l_dlygate4sd3_1)
+     1    0.020539    0.066217    0.268952    0.613357 ^ hold198/X (sg13cmos5l_dlygate4sd3_1)
+                                                         net198 (net)
+                      0.066263    0.001506    0.614864 ^ hold140/A (sg13cmos5l_dlygate4sd3_1)
+     2    0.045538    0.125626    0.332280    0.947144 ^ hold140/X (sg13cmos5l_dlygate4sd3_1)
+                                                         net140 (net)
+                      0.167545    0.001894    0.949038 ^ hc_resource_7_program/A_ADDR[6] (RM_IHPSG13_1P_256x16_c2_bm_bist)
+                                              0.949038   data arrival time
+
+                                  0.000000    0.000000   clock clk (rise edge)
+                                  0.000000    0.000000   clock source latency
+     2    0.112296    0.077581    0.064317    0.064317 ^ clk (in)
+                                                         clk (net)
+                      0.088646    0.000000    0.064317 ^ delaybuf_0_clk/A (sg13cmos5l_buf_8)
+     1    0.070238    0.032242    0.082762    0.147079 ^ delaybuf_0_clk/X (sg13cmos5l_buf_8)
+                                                         delaynet_0_clk (net)
+                      0.046352    0.017289    0.164368 ^ clkbuf_0_clk/A (sg13cmos5l_buf_8)
+     1    0.011740    0.014860    0.056459    0.220826 ^ clkbuf_0_clk/X (sg13cmos5l_buf_8)
+                                                         clknet_0_clk (net)
+                      0.014878    0.000993    0.221819 ^ clkbuf_1_0__f_clk/A (sg13cmos5l_buf_8)
+     1    0.008703    0.012356    0.043332    0.265151 ^ clkbuf_1_0__f_clk/X (sg13cmos5l_buf_8)
+                                                         clknet_1_0__leaf_clk (net)
+                      0.016482    0.000538    0.265689 ^ hc_resource_7_program/A_CLK (RM_IHPSG13_1P_256x16_c2_bm_bist)
+                                  0.250000    0.515689   clock uncertainty
+                                  0.000000    0.515689   clock reconvergence pessimism
+                                  0.209815    0.725504   library hold time
+                                              0.725504   data required time
+---------------------------------------------------------------------------------------------
+                                              0.725504   data required time
+                                             -0.949038   data arrival time
+---------------------------------------------------------------------------------------------
+                                              0.223533   slack (MET)

@@ -41,7 +41,13 @@ val in_scope : t -> Scope.t -> t
     {!Private.finalize} returns an error. *)
 val register_exn : t -> name:string -> Resource.Request.t -> Resource.Record.t
 
+(** Register an existing scalar stage; attach only a reserved Q name and Yosys
+    keep=1. Duplicate IDs/Qs fail the context. No hardware or semantics are added. *)
+val register_timing_stage_exn
+  : t -> stage:Platform.Timing.Stage.t -> q:Signal.t -> unit
+
 module Private : sig
+  val timing_stages : t -> (Platform.Timing.Stage.t * Signal.t) list
   val create
     :  mode:Mode.t
     -> technology:Resource.Technology.t

@@ -45,6 +45,7 @@ type t =
   ; timing       : Platform.Timing.t
   ; resources    : Resource.Record.t list
   ; circuit      : Circuit.t
+  ; timing_stages : (Platform.Timing.Stage.t * Signal.t) list
   }
 
 (* Hand written instead of derived, because Circuit.t has no useful sexp; the circuit is
@@ -53,7 +54,7 @@ type t =
    Careful: the field order here is the order the lifecycle expect test prints, [top] sits
    right after [project_name]. Reordering is harmless but shows up as an expect diff.
 *)
-let sexp_of_t { project_name; metadata; mode; target; flow; clocks; pinout; timing; resources; circuit } =
+let sexp_of_t { project_name; metadata; mode; target; flow; clocks; pinout; timing; resources; circuit; timing_stages = _ } =
   let top = Circuit.name circuit in
   [%sexp
     { project_name : string
@@ -88,6 +89,7 @@ let flow t = t.flow
 let clocks t = t.clocks
 let pinout t = t.pinout
 let timing t = t.timing
+let timing_stages t = t.timing_stages
 
 (* grab the resource inventory; already sorted by identity, see [Private.create] *)
 let resources t = t.resources
@@ -124,7 +126,8 @@ module Private = struct
       List.sort resources ~compare:(fun (a : Resource.Record.t) b ->
         Resource.Id.compare a.id b.id)
     in
-    { project_name; metadata; mode; target; flow; clocks; pinout; timing; resources; circuit }
+    { project_name; metadata; mode; target; flow; clocks; pinout; timing; resources; circuit; timing_stages = [] }
   ;;
+  let with_timing_stages t timing_stages = { t with timing_stages }
 end
 [@@@ocamlformat "enable"]

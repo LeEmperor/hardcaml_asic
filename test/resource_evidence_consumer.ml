@@ -11,7 +11,15 @@ let () =
     | "archive" -> let i=Archive_service.inspect ~run_dir:root in
       `List (List.map (fun (s:Evidence_tar.source) -> `String s.name) i.reports)
     | "validate" -> let j=Evidence_json.value (Evidence_json.read root) in
-      (match Resource_evidence.validate j with Ok _ -> `String "valid" | Error s -> `String s)
+       (match Resource_evidence.validate j with Ok _ -> `String "valid" | Error s -> `String s)
+    | "inspect-verify" ->
+      (match Resource_evidence.inspect ~run_dir:root with
+       | Error e -> `String e
+       | Ok evidence -> (match Resource_evidence.verify_sources ~run_dir:root evidence with
+         | Ok () -> `Assoc ["verified",`Bool true;"evidence",evidence]
+         | Error e -> `String e))
+    | "verify-file" -> let evidence=Evidence_json.value(Evidence_json.read Sys.argv.(3)) in
+      (match Resource_evidence.verify_sources ~run_dir:root evidence with Ok () -> `String "valid" | Error e -> `String e)
     | ("verify"|"verify-context") -> let results=Evidence_json.value (Evidence_json.read (Filename.concat root "results.json")) in
       let evidence=match results with `Assoc xs -> List.assoc "resource_evidence" xs | _ -> invalid_arg "results object" in
       let context=if operation="verify-context" then Some (Evidence_json.value (Evidence_json.read (Filename.concat root "context.json"))) else None in

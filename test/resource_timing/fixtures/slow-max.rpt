@@ -1,0 +1,62 @@
+
+===========================================================================
+report_checks -path_delay max (Setup)
+============================================================================
+======================= nom_slow_1p08V_125C Corner ===================================
+
+Startpoint: hc_resource_7_program
+            (rising edge-triggered flip-flop clocked by clk)
+Endpoint: uo_out[3] (output port clocked by clk)
+Path Group: clk
+Path Type: max
+
+Fanout         Cap        Slew       Delay        Time   Description
+---------------------------------------------------------------------------------------------
+                                  0.000000    0.000000   clock clk (rise edge)
+                                  0.000000    0.000000   clock source latency
+     2    0.109492    0.187740    0.147970    0.147970 ^ clk (in)
+                                                         clk (net)
+                      0.191789    0.000000    0.147970 ^ delaybuf_0_clk/A (sg13cmos5l_buf_8)
+     1    0.068837    0.077296    0.212329    0.360299 ^ delaybuf_0_clk/X (sg13cmos5l_buf_8)
+                                                         delaynet_0_clk (net)
+                      0.083827    0.018212    0.378511 ^ clkbuf_0_clk/A (sg13cmos5l_buf_8)
+     1    0.010338    0.031493    0.132412    0.510922 ^ clkbuf_0_clk/X (sg13cmos5l_buf_8)
+                                                         clknet_0_clk (net)
+                      0.031499    0.000866    0.511788 ^ clkbuf_1_0__f_clk/A (sg13cmos5l_buf_8)
+     1    0.008598    0.028429    0.100144    0.611932 ^ clkbuf_1_0__f_clk/X (sg13cmos5l_buf_8)
+                                                         clknet_1_0__leaf_clk (net)
+                      0.037909    0.000530    0.612462 ^ hc_resource_7_program/A_CLK (RM_IHPSG13_1P_256x16_c2_bm_bist)
+     1    0.004815    0.067838    5.275789    5.888251 ^ hc_resource_7_program/A_DOUT[11] (RM_IHPSG13_1P_256x16_c2_bm_bist)
+                                                         signal_inst[11] (net)
+                      0.050878    0.000115    5.888366 ^ _135_/A (sg13cmos5l_inv_1)
+     1    0.031419    0.166370    0.168869    6.057235 v _135_/Y (sg13cmos5l_inv_1)
+                                                         _039_ (net)
+                      0.166457    0.003348    6.060584 v _152_/A2 (sg13cmos5l_a21oi_1)
+     1    0.024714    0.347388    0.382913    6.443497 ^ _152_/Y (sg13cmos5l_a21oi_1)
+                                                         net208 (net)
+                      0.347436    0.003551    6.447048 ^ wire211/A (sg13cmos5l_buf_1)
+     1    0.018401    0.132627    0.288659    6.735707 ^ wire211/X (sg13cmos5l_buf_1)
+                                                         net211 (net)
+                      0.132638    0.001386    6.737093 ^ wire210/A (sg13cmos5l_buf_2)
+     1    0.020437    0.082357    0.198594    6.935688 ^ wire210/X (sg13cmos5l_buf_2)
+                                                         net210 (net)
+                      0.082589    0.003249    6.938937 ^ wire209/A (sg13cmos5l_buf_1)
+     1    0.017061    0.119978    0.190002    7.128939 ^ wire209/X (sg13cmos5l_buf_1)
+                                                         net209 (net)
+                      0.119987    0.001187    7.130126 ^ wire208/A (sg13cmos5l_buf_2)
+     1    0.024736    0.094259    0.204162    7.334287 ^ wire208/X (sg13cmos5l_buf_2)
+                                                         uo_out[3] (net)
+                      0.094329    0.002486    7.336773 ^ uo_out[3] (out)
+                                              7.336773   data arrival time
+
+                                 20.833334   20.833334   clock clk (rise edge)
+                                  0.000000   20.833334   clock network delay (propagated)
+                                 -0.250000   20.583334   clock uncertainty
+                                  0.000000   20.583334   clock reconvergence pessimism
+                                 -2.000000   18.583334   output external delay
+                                             18.583334   data required time
+---------------------------------------------------------------------------------------------
+                                             18.583334   data required time
+                                             -7.336773   data arrival time
+---------------------------------------------------------------------------------------------
+                                             11.246561   slack (MET)

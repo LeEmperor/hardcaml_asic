@@ -1,0 +1,11 @@
+(executable
+ (name probe)
+ (libraries core hardcaml hardcaml_asic)
+ (preprocess (pps ppx_jane ppx_hardcaml)))
+
+(rule
+ (alias runtest)
+  (deps probe.py objects.tcl ../../dune-project)
+  (action (progn
+    (run python3 -B %{dep:probe.py} %{exe:probe.exe} %{dep:objects.tcl})
+    (run %{exe:probe.exe} tests ../..))))

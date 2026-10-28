@@ -120,7 +120,9 @@ let route a request =
      | "postcheck" -> c,["--public-cli4"] @ resources @ fields ["run-dir";"support-tools";"pdk-root";"precheck-python";"testbench";"testbench-top";"replay-trace";"timeout"] @ presentation
     | "collect" -> c,fields ["run-dir"] @ (if flag a "stdout" then ["--stdout"] else fields ["output"]) @ presentation
      | "report" -> c,fields ["target"] @ presentation
-     | "resources-inspect" -> c,fields ["run-dir"] @ presentation
+       | "resources-inspect" -> c,fields ["run-dir"] @ presentation
+       | "timing-intent-inspect" -> c,[value a "target"] @ presentation
+      | "resource-inspect" -> c,fields ["target";"kind";"query";"resource-id";"section";"expected-digest";"artifact-id";"offset";"limit"] @ presentation
     | "inspect" -> c,fields ["execution";"domain";"stage";"row-id";"expected-digest"] @ presentation
     | "archive" -> c,fields ["run-dir";"output"] @ switches ["list";"force"] @ presentation
     | "checkpoint-inspect" -> c,(if flag a "json" then ["--json"] else []) @ [value a "checkpoint"] @ fields ["compatibility";"restart-to"]

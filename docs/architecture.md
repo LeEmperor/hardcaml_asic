@@ -256,6 +256,14 @@ provenance; the consumer still owns reset, enable, pin arbitration and testbench
 behavior.
 
 Timing supports one primary `clk` and optional minimum and maximum I/O delays.
+PT.7 extends that same declaration with registered scalar Q anchors and reasoned
+first-stage capture/enumerated asynchronous-reset exceptions. Exact native mapped
+resolution fails closed before application; no hardware is inserted. The first
+qualified CMOS5L subset and standalone synthesized-netlist audit CLI are documented
+in the [timing-intent guide](guides/timing-intent.md). Requested intent,
+producer-reported resolution and command-completed application stay separate.
+Native coverage is unavailable in this first reader; ordinary-flow evidence
+integration and post-PNR qualification remain open in PT.7c.
 Resolved target constraints include drive/load and timing margins. Expose those
 facts and the emitted constraint identity to observers rather than creating a
 second editable configuration in Workbench. Generated clocks and CTS (clock-tree

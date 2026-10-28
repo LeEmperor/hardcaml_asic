@@ -1,0 +1,4 @@
+(test
+ (name check)
+ (libraries hardcaml_asic.execution yojson unix)
+ (action (run %{test} %{exe:../../bin/experimental_resource_inspect.exe})))

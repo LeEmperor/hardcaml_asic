@@ -117,8 +117,22 @@
   (libraries hardcaml_asic.execution))
 
 (executable
- (name experimental_resources_inspect)
+  (name experimental_resources_inspect)
  (modules experimental_resources_inspect)
  (public_name hardcaml-asic-experimental-resources-inspect)
+ (package hardcaml_asic)
+  (libraries hardcaml_asic.execution yojson))
+
+(executable
+ (name experimental_resource_inspect)
+ (modules experimental_resource_inspect)
+ (public_name hardcaml-asic-experimental-resource-inspect)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution yojson))
+
+(executable
+ (name experimental_timing_intent_inspect)
+ (modules experimental_timing_intent_inspect)
+ (public_name hardcaml-asic-experimental-timing-intent-inspect)
  (package hardcaml_asic)
  (libraries hardcaml_asic.execution yojson))

@@ -1,0 +1,11 @@
+(test
+ (name check)
+ (libraries core hardcaml hardcaml_asic hardcaml_asic.execution yojson unix)
+ (preprocess (pps ppx_jane ppx_hardcaml))
+ (deps ../../dune-project ../../bin/flow_cli.exe ../../bin/experimental_timing_intent_inspect.exe))
+
+(rule
+ (alias runtest)
+ (deps review_regression.py ../../dune-project)
+ (action (run python3 -B %{dep:review_regression.py} %{exe:check.exe}
+   %{exe:../../bin/experimental_timing_intent_inspect.exe})))

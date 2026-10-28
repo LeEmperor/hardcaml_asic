@@ -222,7 +222,7 @@ let liberty_cell_area ~name raw =
       decr depth;if !depth<0 then invalid_arg "unbalanced Liberty braces")) tokens;
   if !depth<>0 then invalid_arg "truncated Liberty groups";
   match !cells,!areas with 1,[area] -> area | _ -> invalid_arg "missing/duplicate Liberty macro cell or direct area"
-let run ?context ~run_dir () =
+let run ?context ?(schema_version=2) ~run_dir () =
   if String.trim run_dir="" then invalid_arg "resource inspection requires a nonempty run directory";
   let r={root=Unix.realpath run_dir;refs=[];bytes=0} in
   let record,run_ref=match context with
@@ -383,9 +383,19 @@ let run ?context ~run_dir () =
       ~definition:(if is_macro then "resource macro library-area estimate; not physical footprint or placed cost" else "per-resource flop area attribution") value reason])) in
   synthesis:=obj (List.remove_assoc "resources" (List.remove_assoc "measurements" (fields !synthesis)) @ ["measurements",obj !measure;"resources",arr resources]);
   let observations=ref [!synthesis] in
+  let reader : Resource_physical_evidence.reader =
+    {read=(fun path format -> read r path format);exists=(fun path ->
+       if not(Filename.is_relative path) || List.exists(fun p -> p=".." || p="." || p="") (String.split_on_char '/' path) then false
+       else let path=Filename.concat r.root path in
+         file path && String.starts_with ~prefix:(r.root^"/") (Unix.realpath path))} in
   if get record "requested_stage"=s "full" then (
+    let verified_checks=ref None in
+    let checker_ref=ref `Null in
+    let final_netlist=ref `Null in
+    let final_flow=ref flow in
     let physical,physical_data=observe "final_physical" (paths [flow^"/final/nl/"^top^".nl.v"] ["flow/final/nl/"^top^".nl.v"]) (fun p ->
       if get record "completed_stage"<>s "full" then invalid_arg "final physical stage not reached";
+      final_flow:=(if String.starts_with ~prefix:"flow/" p then "flow" else flow);
       if get record "physical_checks_sha256"<>`Null || get (get manifest "macro_contract") "execution"=s "fresh_full" then (
         let checks,ref_=json r "physical-checks.json" in
         if get ref_ "sha256"<>get record "physical_checks_sha256" then invalid_arg "physical checker record digest mismatch";
@@ -399,8 +409,10 @@ let run ?context ~run_dir () =
           let ref_=hash_source r (actual_flow^"/"^path) "physical_checker_artifact" in
           if get ref_ "sha256"<>digest then invalid_arg ("physical artifact hash mismatch: "^path)) artifacts;
         let gds=require_path r [actual_flow^"/final/gds/"^top^".gds";"final.gds"] in
-        if get (hash_source r gds "gds") "sha256"<>get checks "gds_sha256" then invalid_arg "physical final GDS digest mismatch");
-      let raw,_=read r p "verilog_gate_netlist" in verilog_instances ~top raw) in
+         if get (hash_source r gds "gds") "sha256"<>get checks "gds_sha256" then invalid_arg "physical final GDS digest mismatch";
+         verified_checks:=Some checks;checker_ref:=ref_);
+       let raw,ref_=read r p "verilog_gate_netlist" in
+       let cells=verilog_instances ~top raw in final_netlist:=ref_;cells) in
     let measurements=ref [] in
     List.iter (fun (name,selector,definition) ->
       let value=match physical_data with None -> `Null | Some cells ->
@@ -419,10 +431,43 @@ let run ?context ~run_dir () =
         measurements:= !measurements@[name,measurement ~stage:"final_physical" ~refs:[ref_] ~scope:"native final metrics; standard cells exclude macros; physical-only inclusion is producer-defined" ~unit_ ~definition value "native final metric absent"])
         ["final_standard_cell_area","design__instance__area__stdcell","um^2","final physical standard-cell area, distinct from synthesis";
          "standard_cell_utilization","design__instance__utilization__stdcell","ratio","producer standard-cell utilization; denominator/excluded regions unavailable; not whole-design occupancy"]);
-    observations:= !observations@[obj (List.remove_assoc "measurements" (fields physical)@["measurements",obj !measurements])]);
+     let physical=obj (List.remove_assoc "measurements" (fields physical)@["measurements",obj !measurements]) in
+     let physical=if schema_version=1 then physical else (
+       let actual_flow= !final_flow in
+       let extra,geometries=try Resource_physical_evidence.collect ~reader ~flow:actual_flow ~snapshot:snapshot_layout
+         ~manifest
+         ~resources:(list(get physical "resources")) ~instances:physical_data ~checks:!verified_checks
+         ~checker_ref:!checker_ref ~final_netlist:!final_netlist
+         with Invalid_argument e | Failure e ->
+           obj["status",s "invalid";"reason",s e],[] in
+       let resources=List.map(fun row ->
+         let geometry=Option.value (List.assoc_opt (text(get row "resource_id")) geometries)
+           ~default:(unavailable "physical geometry unavailable; see observation diagnostics") in
+         let area=if get geometry "status"=s "available" then measurement ~stage:"final_physical"
+           ~refs:(list(get geometry "evidence_refs")) ~scope:"exact reconciled macro footprint; excludes halo, bridges, routing and surrounding cells"
+           ~unit_:"um^2" ~definition:"physical macro footprint, not Liberty estimate or integration envelope"
+           (get geometry "area_um2") "" else get row "area" in
+         obj(List.remove_assoc "area" (fields row)@["area",area;"geometry",geometry])) (list(get physical "resources")) in
+       let timing=if physical_data=None then Ok {Resource_timing_evidence.resources=[];diagnostics=["final netlist identity unavailable"]}
+         else Resource_timing_evidence.collect ~read:reader.read ~exists:reader.exists ~flow:actual_flow
+           ~context:record ~manifest ~resources ~final_netlist:!final_netlist in
+       let resources=match timing with Error _ -> resources | Ok result ->
+         List.map(fun row -> match List.find_opt(fun (links:Resource_timing_evidence.links) -> get row "resource_id"=s links.resource_id) result.resources with
+           | None -> row | Some links -> obj(List.remove_assoc "electrical_links" (List.remove_assoc "timing_links" (fields row)) @
+             ["timing_links",links.timing_links;"electrical_links",links.electrical_links])) resources in
+       let diagnostics=match timing with Ok result -> result.diagnostics | Error e -> [e] in
+       let fs=List.remove_assoc "resources" (fields physical) in
+       let fs=if get extra "status"=s "invalid" then List.remove_assoc "status" fs@["status",s "fail";"measurement_error",get extra "reason"] else fs in
+       let fs=match timing with Ok _ -> fs | Error e -> List.remove_assoc "measurement_error" (List.remove_assoc "status" fs)@["status",s "fail";"measurement_error",s e] in
+       obj(fs@["resources",arr resources;"physical",extra;"timing_diagnostics",arr(List.map s diagnostics)])) in
+     observations:= !observations@[physical]);
+   if schema_version=2 then observations:=List.map(fun o ->
+     if get o "stage"=s "final_physical" then o else
+       obj(List.remove_assoc "resources" (fields o)@["resources",arr(List.map(fun row ->
+         obj(fields row@["geometry",unavailable "synthesis has no final physical geometry"])) (list(get o "resources")))])) !observations;
   List.iter (fun ref_ -> let p=Filename.concat r.root (text (get ref_ "path")) in
     match Checkpoint.file_record p with Ok f when s f.sha256=get ref_ "sha256" -> () | _ -> invalid_arg "resource evidence changed after capture") r.refs;
-  obj ["contract",s "hardcaml-asic.resource-evidence";"schema_version",`Int 1;"coverage",s coverage;
+   obj ["contract",s "hardcaml-asic.resource-evidence";"schema_version",`Int schema_version;"coverage",s coverage;
     "resource_inventory",arr rows;
     "provenance",obj ["run_id",s run_id;"build_identity",build;"manifest",manifest_ref;"run",run_ref;
       "requested_stage",get record "requested_stage";"completed_stage",get record "completed_stage";
@@ -443,7 +488,9 @@ let evaluate evidence =
     let exact j keys = let actual=List.map fst (fields j) in unique "evidence field" actual;
       if List.sort String.compare actual<>List.sort String.compare keys then invalid_arg "malformed resource evidence object fields" in
     exact evidence ["contract";"schema_version";"coverage";"resource_inventory";"provenance";"observations";"check_outcomes";"evidence_refs"];
-    if get evidence "contract"<>s "hardcaml-asic.resource-evidence" || get evidence "schema_version"<>`Int 1 then invalid_arg "unsupported resource evidence schema";
+     let schema_version=get evidence "schema_version" in
+     if get evidence "contract"<>s "hardcaml-asic.resource-evidence" || not(List.mem schema_version [`Int 1;`Int 2]) then invalid_arg "unsupported resource evidence schema";
+     let enriched=schema_version=`Int 2 in
     if not (List.mem (get evidence "coverage") [s "resource_snapshot";s "legacy_resources_macro_contract"]) then invalid_arg "unknown resource evidence coverage";
     let inventory_keys=["resource_id";"requested_contract";"selected_implementation";"instances";"selection";"requirement";"policy";"inventory_record"] in
     let inventory_rows=list (get evidence "resource_inventory") in
@@ -489,8 +536,12 @@ let evaluate evidence =
       | _ -> invalid_arg "unsupported producing run stage" in
     if stages<>expected_stages then invalid_arg "resource observation stages disagree with producing run";
     List.iter (fun o ->
-      exact o (["stage";"producer";"producer_origin";"run_id";"build_identity";"resources";"unexpected_instances";"inventory_coverage";
-        "cell_type_counts";"measurements";"status";"reason";"evidence_refs"] @ (if get o "measurement_error"=`Null then [] else ["measurement_error"]));
+       exact o (["stage";"producer";"producer_origin";"run_id";"build_identity";"resources";"unexpected_instances";"inventory_coverage";
+         "cell_type_counts";"measurements";"status";"reason";"evidence_refs"] @ (if enriched && get o "stage"=s "final_physical" then ["physical";"timing_diagnostics"] else []) @ (if get o "measurement_error"=`Null then [] else ["measurement_error"]));
+       if enriched && get o "stage"=s "final_physical" then (
+         List.iter(fun v -> ignore(text v)) (list(get o "timing_diagnostics"));
+         Resource_physical_evidence.validate ~refs (get o "physical");
+         if get (get o "physical") "status"=s "invalid" && get o "status"<>s "fail" then invalid_arg "invalid physical evidence has passing verdict");
       if get o "run_id"<>get provenance "run_id" || get o "build_identity"<>get provenance "build_identity" then invalid_arg "resource observation provenance mismatch";
       if get o "stage"=s "synthesis" && get o "status"=s "pass" && not (List.mem (get provenance "completed_stage") [s "synthesis";s "full"]) then invalid_arg "passing synthesis resource check before synthesis completion";
       if get o "stage"=s "final_physical" && get o "status"=s "pass" && get provenance "completed_stage"<>s "full" then invalid_arg "passing physical resource check before physical completion";
@@ -529,8 +580,36 @@ let evaluate evidence =
       unique "observed resource ID" (List.map (fun row -> text (get row "resource_id")) resources);
       if List.sort String.compare (List.map (fun row -> text (get row "resource_id")) resources)<>List.sort String.compare inventory_ids then invalid_arg "observation omitted or added resource inventory rows";
       List.iter (fun row ->
-        exact row ["resource_id";"requested_contract";"selected_implementation";"instances";"selection";"requirement";"policy";"inventory_record";
-          "expected";"realized";"status";"reason";"area";"attribution";"timing_links";"electrical_links";"evidence_refs"];
+         exact row (["resource_id";"requested_contract";"selected_implementation";"instances";"selection";"requirement";"policy";"inventory_record";
+           "expected";"realized";"status";"reason";"area";"attribution";"timing_links";"electrical_links";"evidence_refs"] @ if enriched then ["geometry"] else []);
+         if enriched then (
+           if get o "stage"=s "final_physical" then (
+             (match Resource_timing_evidence.validate_links ~references:refs ~resource:row
+               ~timing_links:(get row "timing_links") ~electrical_links:(get row "electrical_links") with
+             | Ok () -> () | Error e -> invalid_arg e);
+             let links=get row "timing_links" in
+             if get links "status"=s "observed" then (
+               if get provenance "completed_stage"<>s "full" then invalid_arg "timing links before final completion";
+               List.iter(fun path ->
+               let p=get path "provenance" in
+               if get p "run_id"<>get o "run_id" || get p "build_identity"<>get o "build_identity" then
+                 invalid_arg "timing link observation provenance mismatch") (list(get links "paths"))))
+           else List.iter(fun k -> let j=get row k in exact j ["status";"reason"];
+             if get j "status"<>s "unavailable" then invalid_arg "synthesis timing links unsupported";ignore(text(get j "reason"))) ["timing_links";"electrical_links"];
+           let geometry=get row "geometry" in
+           Resource_physical_evidence.validate_geometry ~refs geometry;
+           if get geometry "status"=s "available" then (
+             if get (get o "physical") "status"<>s "available" then invalid_arg "resource geometry without available physical observation";
+             if get o "stage"<>s "final_physical" || get provenance "completed_stage"<>s "full" || get row "status"<>s "matched" then invalid_arg "geometry without matched final resource";
+             let wanted=list(get (get row "realized") "instances") |> List.map(fun i -> get i "instance",get i "module") in
+             let actual=list(get geometry "instances") |> List.map(fun i -> get i "instance",get i "module") in
+             if List.sort compare wanted<>List.sort compare actual then invalid_arg "geometry resource identity mismatch";
+             let area=get row "area" in
+             if get area "unit"<>s "um^2" then invalid_arg "geometry resource area unit mismatch";
+             let area_refs=list(get area "evidence_refs") and geometry_refs=list(get geometry "evidence_refs") in
+             if area_refs=[] || not(List.for_all(fun ref_ -> List.mem ref_ area_refs) geometry_refs) then
+               invalid_arg "geometry resource area lacks geometry proof references";
+             if get area "value"<>get geometry "area_um2" then invalid_arg "geometry resource area mismatch"));
         let declared=List.find (fun r -> get r "resource_id"=get row "resource_id") inventory_rows in
         List.iter (fun key -> if not (equal (get row key) (get declared key)) then invalid_arg ("observation contradicts resource inventory: "^key)) inventory_keys;
         List.iter (fun ref_ -> if not (List.mem ref_ refs) then invalid_arg "unclosed resource row reference") (list (get row "evidence_refs"));
@@ -559,7 +638,18 @@ let evaluate evidence =
         if float_of_int count>observed then invalid_arg "matched resource rows exceed observed macro type count";
         if get o "status"=s "pass" && float_of_int count<>observed then invalid_arg "passing resource rows do not cover observed macro instances") macro_types;
       if get o "status"=s "pass" && (match observed_types with None -> true | Some ts -> List.exists (fun t -> get t "classification"=s "unknown") ts) then invalid_arg "passing resource check has incomplete instance coverage") observations;
-    let checks=list (get evidence "check_outcomes") in
+     if enriched then List.iter(fun o ->
+       if get o "stage"=s "final_physical" && get (get o "physical") "status"=s "available" then (
+         let geometries=List.map(fun row -> get row "geometry") (list(get o "resources")) in
+         let sum=List.fold_left(fun n g -> if get g "status"=s "available" then n+.numeric "geometry area" (get g "area_um2") else n) 0. geometries in
+         let measurements=get (get o "physical") "measurements" in
+         let total=numeric "macro footprint total" (get (get measurements "macro_footprint_area") "value") in
+         if abs_float(sum-.total)>1e-8 *. max 1. total then invalid_arg "physical aggregate differs from resource geometry";
+         let count=get (get measurements "macro_component_count") "value" in
+         if count<>`Null then (
+           let observed=List.fold_left(fun n g -> if get g "status"=s "available" then n+List.length(list(get g "instances")) else n) 0 geometries in
+           if numeric "macro component count" count<>float_of_int observed then invalid_arg "physical macro count differs from resource geometry"))) observations;
+     let checks=list (get evidence "check_outcomes") in
     if List.length checks<>List.length observations then invalid_arg "missing resource check outcome";
     List.map2 (fun o c ->
       exact c ["stage";"status";"required"];
@@ -573,7 +663,8 @@ let evaluate evidence =
 let validate evidence = protect (fun () -> ignore (evaluate evidence);evidence)
 let problems evidence = match protect (fun () -> evaluate evidence) with Ok problems -> problems | Error e -> [e]
 let verify_sources ?context ~run_dir evidence = protect (fun () ->
-  ignore (evaluate evidence);
+   let evidence=normalize evidence in
+   ignore (evaluate evidence);
   let root=Unix.realpath run_dir in
   List.iter (fun ref_ ->
     let path=Unix.realpath (Filename.concat root (text (get ref_ "path"))) in
@@ -581,10 +672,27 @@ let verify_sources ?context ~run_dir evidence = protect (fun () ->
     match Checkpoint.file_record path with
     | Ok f when get ref_ "sha256"=s f.sha256 -> ()
     | _ -> invalid_arg ("resource evidence source changed: "^text (get ref_ "path"))) (list (get evidence "evidence_refs"));
-  let replay=run ?context ~run_dir () in
-  ignore (evaluate replay);
-  if E.record_bytes (normalize evidence)<>E.record_bytes (normalize replay) then
-    invalid_arg "resource evidence assertion differs from source-aware reconciliation replay")
+   let schema_version=match get evidence "schema_version" with `Int 1 -> 1 | _ -> 2 in
+   let replay=run ?context ~schema_version ~run_dir () in
+   ignore (evaluate replay);
+   (* JSON object member order is not assertion semantics. In particular schema-1
+      records may have been serialized by a different consumer. Arrays, source
+      ordering and all values remain significant. Duplicate keys were rejected. *)
+   let rec canonical = function
+     | `Assoc xs -> `Assoc (List.sort compare (List.map(fun (k,v) -> k,canonical v) xs))
+     | `List xs -> `List(List.map canonical xs)
+     | x -> x in
+   let actual=canonical(normalize evidence) and expected=canonical(normalize replay) in
+   if E.record_bytes actual<>E.record_bytes expected then (
+     let rec difference path a b =
+       if E.record_bytes a=E.record_bytes b then None else match a,b with
+       | `Assoc xs,`Assoc ys when List.map fst xs=List.map fst ys ->
+         List.find_map(fun ((k,a),(_,b)) -> difference (path^"."^k) a b) (List.combine xs ys)
+       | `List xs,`List ys when List.length xs=List.length ys ->
+         List.find_map(fun (i,(a,b)) -> difference (path^"["^string_of_int i^"]") a b) (List.mapi(fun i x -> i,x) (List.combine xs ys))
+       | _ -> Some path in
+     invalid_arg ("resource evidence assertion differs from source-aware reconciliation replay at "^
+       Option.value (difference "$" actual expected) ~default:"$")))
 let inventory_available ~run_dir = protect (fun () ->
   let r={root=Unix.realpath run_dir;refs=[];bytes=0} in
   match first r manifest_paths with None -> false | Some path ->

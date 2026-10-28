@@ -93,7 +93,7 @@ let project kind =
     ~timing:
       (if String.equal kind "observable"
        then
-         { Timing.input_delays =
+          { Timing.empty with input_delays =
              List.map [ "ui_in"; "rst_n"; "ena" ] ~f:(fun port ->
                { Timing.Delay.port
                ; minimum = Time_float.Span.of_ns 0.

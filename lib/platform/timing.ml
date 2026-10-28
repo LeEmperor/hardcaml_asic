@@ -16,9 +16,9 @@
    silent gap impossible to declare;
 
    It does NOT own the clock; the one primary clock the delays are measured against is a
-   Clock.t, declared separately. Only minimum and maximum I/O delays exist; false paths,
-   clock uncertainty and any other SDC intent are not accepted by this declaration API
-   (see docs/reference/target-reference.md).
+   Clock.t, declared separately. PT.7 adds exact scalar synchronizer-stage declarations
+   and reasoned data/reset exceptions, checked by Elaboration.Timing_intent. General
+   false paths and arbitrary SDC remain unsupported.
 *)
 
 open! Core
@@ -55,20 +55,51 @@ end
                    input;
    output_delays : output delays, in any order; each [port] must be a top-level output;
 
-   The record is left transparent (there is no mli) so a project declaration can build it
-   as a plain record literal -> see examples/tt_bundle_example.ml.
+   The record remains transparent in the mli. Prefer [create] so future optional
+   declaration fields do not require changes to project record literals.
 
    Two lists rather than one list tagged with a direction on purpose: the direction is
    stated once by which field a delay sits in, and Elaboration.Resolved.validate_timing
    checks each list against the ports of that direction only, so a delay in the wrong list
    is reported as naming no such port.
 
-   Duplicates are only checked within a list; the same port in both lists is still
+   Delay duplicates are only checked within a list; the same port in both lists is still
    rejected, since it cannot be both an input and an output.
 *)
+module Port = struct
+  type direction = Input | Output [@@deriving sexp_of, equal]
+  type t = { direction : direction; port : string; bit : int option }
+  [@@deriving sexp_of, equal]
+  let input port = { direction = Input; port; bit = None }
+  let output port = { direction = Output; port; bit = None }
+  let bit t bit =
+    if Option.is_some t.bit then invalid_arg "timing port already has a bit selection";
+    { t with bit = Some bit }
+end
+
+module Stage = struct
+  type t = { id : string; chain : string; index : int } [@@deriving sexp_of, equal]
+  let create ~id ~chain ~index = { id; chain; index }
+  let anchor t = "hc_pt7_" ^ t.id
+end
+
+module Exception = struct
+  type kind = Async_capture | Async_reset [@@deriving sexp_of, equal]
+  type t =
+    { id : string; reason : string; kind : kind; source : Port.t; targets : Stage.t list }
+  [@@deriving sexp_of]
+  let async_capture ~id ~reason ~source ~first_stage =
+    { id; reason; kind = Async_capture; source; targets = [first_stage] }
+  let async_reset ~id ~reason ~source ~targets =
+    { id; reason; kind = Async_reset; source; targets }
+  let kind_string = function Async_capture -> "async_capture" | Async_reset -> "async_reset"
+end
+
 type t =
   { input_delays  : Delay.t list
   ; output_delays : Delay.t list
+  ; stages : Stage.t list [@sexp.omit_nil]
+  ; exceptions : Exception.t list [@sexp.omit_nil]
   }
 [@@deriving sexp_of]
 
@@ -78,6 +109,8 @@ type t =
    Empty on purpose rather than some typical value: there are no reviewed board specific
    delays for the TT harness, so the SDC gets only the clock instead of fabricated delays;
 *)
-let empty = { input_delays = []; output_delays = [] }
+let create ?(input_delays = []) ?(output_delays = []) ?(stages = [])
+    ?(exceptions = []) () = { input_delays; output_delays; stages; exceptions }
+let empty = create ()
 
 [@@@ocamlformat "enable"]

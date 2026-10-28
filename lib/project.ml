@@ -178,6 +178,8 @@ let elaborate_with_phases t ~mode ~on_phase =
       ~timing:t.timing
       ~resources
       ~circuit
+    |> fun project -> Elaboration.Elaborated_project.Private.with_timing_stages project
+         (Elaboration.Context.Private.timing_stages context)
 
   (* Elaborated_project.Private.create and Elaboration.Context.Private are exposed
      conventional internal APIs intended for Project.elaborate. This naming convention

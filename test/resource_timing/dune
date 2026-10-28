@@ -1,0 +1,4 @@
+(test
+ (name check)
+ (libraries hardcaml_asic.execution yojson str)
+ (deps (glob_files fixtures/*)))
