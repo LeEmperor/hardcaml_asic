@@ -31,6 +31,7 @@
   (hardcaml_asic_flow/physical_runtime.py as flow/hardcaml_asic_flow/physical_runtime.py)
   (hardcaml_asic_flow/macro_flow.py as flow/hardcaml_asic_flow/macro_flow.py)
   (hardcaml_asic_flow/timing_intent_runtime.py as flow/hardcaml_asic_flow/timing_intent_runtime.py)
+  (hardcaml_asic_flow/timing_physical_runtime.py as flow/hardcaml_asic_flow/timing_physical_runtime.py)
   (hardcaml_asic_flow/probe.py as flow/hardcaml_asic_flow/probe.py)
   (hardcaml_asic_flow/runtime_contract.py as flow/hardcaml_asic_flow/runtime_contract.py)
   (hardcaml_asic_flow/runtime_observation.py as flow/hardcaml_asic_flow/runtime_observation.py)

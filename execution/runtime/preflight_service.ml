@@ -58,6 +58,7 @@ let check_cancel cancel = match cancel () with None -> () | Some signal ->
 let probe_with_cancel ~cancel ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~directory
     ?(native=false) ?(allow_python_mismatch=false) () =
   let manifest = codec (R.read_json (bundle ^ "/manifest.json")) in
+  Manifest_metadata.validate (Yojson.Safe.from_string (J.canonical manifest));
   let requested = get manifest "requested_tools" in
   let issues = ref [] and waivers = ref [] and references = ref [] and actual = ref [] in
   let add x = issues := !issues @ [s x] in
@@ -140,6 +141,15 @@ let probe_with_cancel ~cancel ~bundle ~support_tools ~pdk_root ~python ~resource
      if command "git" (["-C";pdk_root;"status";"--porcelain";"--"] @ paths) <> ""
      then failwith "modified pinned checking collateral";
      List.iter (fun path -> references := !references @ [obj ["role",s "physical:checking_collateral";"path",s path;"sha256",s (hash path)]]) paths);
+   if get manifest "timing_physical_qualification"<>J.null && not (Macro_contract.physical manifest) then attempt (fun () ->
+     Timing_intent_evidence.validate_qualification (Yojson.Safe.from_string (J.canonical manifest));
+     let paths=List.map (safe_child pdk_root)
+       ["ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v";
+        "ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_udp.v"] in
+     if command "git" (["-C";pdk_root;"status";"--porcelain";"--"] @ paths)<>"" then
+       failwith "modified pinned timing functional-model source";
+     List.iter (fun path -> if not (is_file path) then failwith ("missing timing functional-model source: "^path);
+       references:= !references @ [obj ["role",s "timing:functional_model_source";"path",s path;"sha256",s (hash path)]]) paths);
    List.iter (fun reference -> attempt (fun () ->
     let repo,root = if get reference "source" = s "Support_tools" then support_tools,support_tools
       else pdk_root,Filename.concat pdk_root (text (get target "technology")) in

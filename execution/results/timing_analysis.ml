@@ -135,6 +135,8 @@ let names dir =
       loop 0 [])
 ;;
 
+let native_runtime_seconds = runtime
+
 let safe_component s =
   s <> ""
   && s <> "."

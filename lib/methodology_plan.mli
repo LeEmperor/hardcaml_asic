@@ -17,6 +17,10 @@ val recipe : t -> Flow.Recipe.t
 val methodology_hash : t -> string
 val plan_identity : t -> string
 
+(** The checked frozen manifest declaration, never inferred from the current
+    catalog. Historical absence is None. No independent second declaration. *)
+val hardware_variant : t -> Hardware_variant.t option
+
 (** Only accepts Project's inseparable checked render result, never an arbitrary
     resolution/bundle pair. Validates emitted configuration and manifest links. *)
 val of_rendered : Project.Rendered.t -> t Or_error.t

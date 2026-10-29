@@ -63,14 +63,21 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
   let python = checked (Checkpoint.absolute_path python) in
   let manifest_path = bundle ^ "/manifest.json" in
   let manifest = codec (R.read_json manifest_path) in
+  Manifest_metadata.validate (Yojson.Safe.from_string (J.canonical manifest));
    if stage=Execution_plan.Coarse.Full then Macro_contract.require_full manifest;
    let macro = Macro_contract.active manifest in
-   let pt7 = Timing_intent_flow.expected (Yojson.Safe.from_string (J.canonical manifest)) in
+    let pt7 = Timing_intent_flow.expected (Yojson.Safe.from_string (J.canonical manifest)) in
+    let qualification=get manifest "timing_physical_qualification"<>J.null in
+    if qualification && not pt7 then invalid_arg "physical timing qualification requires the native-v2 producer";
+    if qualification then Timing_intent_evidence.validate_qualification (Yojson.Safe.from_string (J.canonical manifest));
+    if qualification && get (get manifest "target") "technology"<>s "ihp-sg13cmos5l" then invalid_arg "physical timing qualification requires CMOS5L";
+    if qualification && stage=Execution_plan.Coarse.Full && get manifest "operation"<>s "Hardening" then
+      invalid_arg "physical timing full execution requires a freshly emitted Hardening bundle";
    if pt7 then (
      let native=get manifest "timing_native_coverage" in
      if get native "schema"<>codec (J.integer "2") || get native "profile"<>s "opensta-2.7-native-state-v2"
      then invalid_arg "unsupported native producer profile; emit/capture native profile 2 before synthesis");
-   if pt7 && stage<>Execution_plan.Coarse.Synthesis then invalid_arg "PT7 native producer ordinary integration supports coarse synthesis only";
+    if pt7 && not qualification && stage<>Execution_plan.Coarse.Synthesis then invalid_arg "PT7 native producer ordinary integration supports coarse synthesis only";
    if pt7 && native then invalid_arg "PT7 native producer requires the qualified immutable Docker runtime";
    if pt7 && macro then invalid_arg "PT7 linked analysis currently supports macro-free coarse synthesis only";
    let bounded = macro || pt7 in
@@ -79,7 +86,8 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
   check_cancel ();
   let a = R.allocate runs in
     let record = C.create a ~bundle ~build_identity:identity ~manifest_sha256 ~stage in
-   if pt7 then C.set record "timing_intent_expected" (J.bool true);
+    if pt7 then C.set record "timing_intent_expected" (J.bool true);
+    if qualification then C.set record "timing_physical_expected" (J.bool true);
     if bounded then C.set record "resource_limits" (obj ["tool_workers",codec (J.integer "6");
      "container_cpus",codec (J.integer "6");"sta_workers",codec (J.integer "1")]);
   let path = a.directory ^ "/run.json" and preflight_path = a.directory ^ "/preflight.json" in
@@ -103,7 +111,11 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
          | T.Docker d when d.image_id=Hardcaml_asic_flow_domain.Backends.Librelane.Mapping.tested_image_id -> ()
          | _ -> failwith "PT7 native producer requires the qualified immutable image");
       C.set record "execution_binding" (T.to_json binding);
-      let project = a.directory ^ "/project" in copy_tree bundle project;
+       let project = a.directory ^ "/project" in copy_tree bundle project;
+       if qualification then List.iter (fun name -> copy (resources^"/"^name) (project^"/"^name))
+         ["timing_physical_runtime.py";"timing_intent_runtime.py"];
+       if qualification then C.set record "timing_runtime_helpers" (obj (List.map (fun name -> name,s (hash (project^"/"^name)))
+         ["timing_physical_runtime.py";"timing_intent_runtime.py"]));
       List.iter (fun ref -> if get ref "source"=s "Support_tools" then (
         let relative = text (get ref "path") in let destination = safe_child (project ^ "/tt") relative in
         mkdir (Filename.dirname destination); copy (safe_child support_tools relative) destination))
@@ -127,7 +139,7 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
            "OPENROAD_THREADS=" ^ (if bounded then "6" else "20");
            "OMP_NUM_THREADS=" ^ (if bounded then "6" else "20")] in
       C.status record C.Running; save (); check_cancel ();
-       let arguments = (if physical_full then [project ^ "/macro-flow.py"] else ["-m";"librelane"]) @
+       let arguments = (if physical_full then [project ^ "/macro-flow.py"] else if qualification then [project^"/timing_physical_runtime.py";"implementation"] else ["-m";"librelane"]) @
          ["--pdk-root";pdk_root;"--pdk";technology;"--manual-pdk";
         "--run-tag";"asic";"--force-run-dir";"runs/asic"] @
         (if stage=Execution_plan.Coarse.Synthesis then ["--to";"Yosys.Synthesis"] else []) @
@@ -158,7 +170,7 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
            | Process_supervisor.Signaled _ -> "signaled",J.null
            | Process_supervisor.Timed_out -> "timed_out",J.null
            | Process_supervisor.Failed _ -> "failed",J.null in
-         C.set record "synthesis_process" (obj ["outcome",s outcome;"code",code;
+         C.set record (if qualification then "implementation_process" else "synthesis_process") (obj ["outcome",s outcome;"code",code;
            "argv",(match get (C.to_json record) "commands" with J.Array [command] -> command | _ -> failwith "PT7 synthesis command association missing");
            "succeeded",J.bool (T.succeeded result)]); save ());
       Option.iter (fun (cleanup : T.cleanup) -> C.set record "container_cleanup" (J.array (List.map (fun (attempt : T.removal) ->
@@ -191,6 +203,10 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
          copy (project ^ "/runs/asic/physical-checks.json") (a.directory ^ "/physical-checks.json");
          C.set record "physical_checks_sha256" (s (hash (a.directory ^ "/physical-checks.json"))));
        let verify_inputs () =
+        if qualification then List.iter (fun name ->
+          if get (get (C.to_json record) "timing_runtime_helpers") name<>s (hash (project^"/"^name)) ||
+             hash (resources^"/"^name)<>hash (project^"/"^name) then failwith "timing runtime helper changed during implementation")
+          ["timing_physical_runtime.py";"timing_intent_runtime.py"];
        if hash (project ^ "/manifest.json") <> manifest_sha256 || hash manifest_path <> manifest_sha256 then failwith "build manifest changed during execution";
        if bounded then (
         List.iter (fun entry -> check_cancel ();

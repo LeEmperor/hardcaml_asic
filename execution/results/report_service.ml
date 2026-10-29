@@ -69,11 +69,20 @@ let evaluate ~context:r t =
         field (field evidence "provenance") "build_identity"<>get r "build_identity" then add "resource evidence run/build provenance mismatch";
      if field (field evidence "provenance") "requested_stage"<>get r "requested_stage" then add "resource evidence requested-stage provenance mismatch";
       List.iter add (Resource_evidence.problems evidence));
-   (match get t "timing_intent" with
-    | `Null -> ()
-    | evidence when List.mem (field evidence "status") [`String "invalid";`String "failed"] ->
-      add ("timing intent evidence "^str (field evidence "status")^": "^str (field evidence "reason"))
-    | _ -> ());
+    (match get t "timing_intent" with
+     | `Null -> if get r "timing_physical_expected"=`Bool true then add "required physical timing evidence missing"
+     | evidence when List.mem (field evidence "status") [`String "invalid";`String "failed"] ->
+       add ("timing intent evidence "^str (field evidence "status")^": "^str (field evidence "reason"))
+     | evidence when equal (field (field evidence "provenance") "schema") (`Int 2) ->
+       if scope=Full then (
+         if field evidence "qualification_corner_coverage"<>`String "complete" then add "required fast/slow/typical qualification corners not all executed";
+         if field evidence "all_corner_timing_goal"<>`String "pass" then add ("all-corner extracted timing "^str (field evidence "all_corner_timing_goal"));
+         match field evidence "corners" with
+         | `List corners -> List.iter (fun corner ->
+           if field (field corner "timing") "electrical_goal"<>`String "pass" then add "all-corner electrical limits failed or unavailable";
+           if field (field corner "timing") "annotation_goal"<>`String "pass" then add "extracted parasitic annotation failed or unavailable") corners
+         | _ -> add "all-corner evidence missing")
+     | _ -> ());
   let metrics=get t "metrics" in
   if not (object_ metrics) then add "metrics missing or malformed";
   let check container name count zero =
@@ -119,8 +128,7 @@ let accepted v = v.problems=[]
 let exit_code v = if accepted v then 0 else 1
 
 let file p = try (Unix.stat p).Unix.st_kind=Unix.S_REG with Unix.Unix_error ((Unix.ENOENT|Unix.ENOTDIR),_,_) -> false
-let read p = let ic=open_in_bin p in Fun.protect ~finally:(fun () -> close_in_noerr ic)
-  (fun () -> really_input_string ic (in_channel_length ic))
+let read p = Retained_file.read p
 let strip s =
   (* Python str.strip's Unicode whitespace, also used around Markdown cells. *)
   let spaces=[" ";"\t";"\n";"\r";"\011";"\012";"\028";"\029";"\030";"\031";
@@ -212,8 +220,15 @@ let render ~run_dir ~context:r ~results:t ~source verdict =
    (match get t "timing_intent" with
     | `Null -> ()
     | evidence ->
-      out "\nLINKED PRE-PNR TIMING INTENT";
+      out (if field evidence "stage"=`String "post_pnr" then "\nLINKED POST-PNR TIMING INTENT" else "\nLINKED PRE-PNR TIMING INTENT");
       out ("  status "^str (field evidence "status")^"; exhaustive exception-effect coverage unavailable (not pass)");
+      if equal (field (field evidence "provenance") "schema") (`Int 2) then (
+        out ("  all-corner timing "^str (field evidence "all_corner_timing_goal"));
+        (match field evidence "executed_corners" with `List xs -> out ("  actually executed "^String.concat ", " (List.map str xs)) | _ -> ());
+        match field evidence "corners" with `List xs -> List.iter (fun corner ->
+          let timing=field corner "timing" in
+          out ("  "^str (field corner "corner")^": setup "^str (field timing "setup_goal")^", hold "^str (field timing "hold_goal")^
+            ", electrical "^str (field timing "electrical_goal")^(if field timing "annotation_goal"=`Null then "" else ", native connected-net annotation "^str (field timing "annotation_goal")))) xs | _ -> ());
       if field evidence "reason"<>`Null then out ("  "^str (field evidence "reason"));
       if field evidence "source_digest"<>`Null then out ("  exact source digest "^str (field evidence "source_digest")));
   (if verdict.scope=Full then (
@@ -233,7 +248,9 @@ let render ~run_dir ~context:r ~results:t ~source verdict =
     out "\nPOSTCHECKS";
     (match get t "postchecks" with `List xs -> List.iter (fun entry -> if object_ entry then
       List.iter (fun name -> let status=field (get entry "checks") name in
-        out ("  "^pad 12 name^" "^(if truth status then str status else "missing"))) ["precheck";"gate_level"]) xs | _ -> ());
+        out ("  "^pad 12 name^" "^(if truth status then str status else "missing"))) ["precheck";"gate_level"];
+        if field (field entry "tools") "replay_profile"=`String "cmos5l_physical_timing_used_cells_v1" then
+          out "  replay scope: zero-delay digital functional only; vendor timing/SDF conformance not established") xs | _ -> ());
     List.iter (fun check -> let path=Filename.concat check "tt/precheck/reports/results.md" in
       if file path then List.iter (fun line -> let cells=String.split_on_char '|' line in
         let cells=match cells with [] -> [] | _::xs -> List.rev (match List.rev xs with [] -> [] | _::ys -> ys) |> List.map strip in
@@ -253,11 +270,20 @@ let render ~run_dir ~context:r ~results:t ~source verdict =
   if verdict.problems<>[] then (out "PROBLEMS"; List.iter (fun p -> out ("  - "^p)) verdict.problems)
   else out (if verdict.scope=Synthesis then "synthesis acceptance passed; physical timing and signoff were not evaluated" else "full-flow acceptance passed");
   Buffer.contents b
-type result = { results : E.t; source : string; verdict : verdict; human : string }
-let run ?context ?synthesis_state run_dir =
-  let context=match context with Some x -> x | None -> E.value (E.read (Filename.concat run_dir "run.json")) in
+type result = { results : E.t; source : string; verdict : verdict; human : string; metadata_sources:E.t list }
+let run ?context ?synthesis_state ?(render_human=true) ?(strict_sources=false) run_dir =
+  let run_dir=Unix.realpath run_dir in
+  let metadata_sources=ref [] and used=ref 0 in
+  let metadata path =
+    let raw=Retained_file.read ~max_bytes:(min (32*1024*1024) (64*1024*1024 - !used)) path in
+    used:= !used+String.length raw;
+    let document=match E.parse raw with Ok d -> d | Error e -> invalid_arg e in
+    metadata_sources:= !metadata_sources@[`Assoc ["path",`String path;
+      "sha256",`String (Identity_json.sha256_bytes raw);"bytes",`Int (String.length raw)]];
+    E.value document in
+  let context=match context with Some x -> x | None -> metadata (Filename.concat run_dir "run.json") in
   let stored=Filename.concat run_dir "results.json" in
-  let results,source=if file stored then E.value (E.read stored),"results.json"
+  let results,source=if Retained_file.exists stored then metadata stored,"results.json"
     else Collect_service.to_json (Collect_service.collect ~context ?synthesis_state run_dir),"collected in memory" in
   let results=match get results "resource_evidence" with
     | `Null -> results
@@ -265,21 +291,34 @@ let run ?context ?synthesis_state run_dir =
       (match Resource_evidence.validate evidence with Ok _ -> () | Error e -> invalid_arg ("malformed stored resource evidence: "^e));
       match Resource_evidence.verify_sources ~context ~run_dir evidence with
       | Ok () -> results
-      | Error e -> let errors=match get results "errors" with `List xs -> xs | _ -> [] in
+       | Error e -> if strict_sources then invalid_arg e;
+         let errors=match get results "errors" with `List xs -> xs | _ -> [] in
         `Assoc (("errors",`List (errors@[`String e]))::List.remove_assoc "errors" (match results with `Assoc xs -> xs | _ -> invalid_arg "results object required")) in
   let has_resource_inventory=match Resource_evidence.inventory_available ~run_dir with Ok b -> b | Error e -> invalid_arg e in
   let results=if has_resource_inventory then (
     let fresh=Resource_evidence.collect ~context ~run_dir () in
     `Assoc (["resource_evidence",fresh;"resource_evidence_unavailable_reason",`Null] @
       List.remove_assoc "resource_evidence_unavailable_reason" (List.remove_assoc "resource_evidence" (match results with `Assoc xs -> xs | _ -> invalid_arg "results object required")))) else results in
-   let manifest_path=Filename.concat run_dir "project/manifest.json" in
-   let has_pt7=get context "timing_intent_expected"=`Bool true ||
-     (file manifest_path && Timing_intent_flow.expected (E.value (E.read manifest_path))) in
+    let manifest_path=Filename.concat run_dir "project/manifest.json" in
+    let manifest=if Retained_file.exists manifest_path then metadata manifest_path else `Null in
+     let has_pt7=get context "timing_intent_expected"=`Bool true || get context "timing_physical_expected"=`Bool true ||
+      (manifest<>`Null && Timing_intent_flow.expected manifest) in
    let results=if has_pt7 then (
      let evidence=match Timing_intent_flow.inspect ~run_dir () with Ok e -> e | Error message ->
        `Assoc ["status",`String "invalid";"reason",`String message] in
-     `Assoc (("timing_intent",evidence)::List.remove_assoc "timing_intent" (match results with `Assoc xs -> xs | _ -> invalid_arg "results object required"))) else results in
+      `Assoc (("timing_intent",evidence)::List.remove_assoc "timing_intent" (match results with `Assoc xs -> xs | _ -> invalid_arg "results object required"))) else results in
+   let has_timing_models=get context "timing_physical_expected"=`Bool true ||
+      (manifest<>`Null && Timing_physical_flow.enabled manifest) in
+   let results=if has_timing_models then (
+     (* Stored acceptance must not outlive its functional-view sources or hide a
+        later failed postcheck. Reuse collection's read-only source validation. *)
+     let fresh=Collect_service.to_json (Collect_service.collect ~context ?synthesis_state run_dir) in
+     let errors value=match get value "errors" with `List xs -> xs | _ -> [] in
+     let fields=match results with `Assoc fields -> fields | _ -> invalid_arg "results object required" in
+     `Assoc (["postchecks",get fresh "postchecks";"errors",`List (List.sort_uniq compare (errors results @ errors fresh))] @
+       List.remove_assoc "postchecks" (List.remove_assoc "errors" fields))) else results in
    let source=if has_resource_inventory then source^" + read-only resource reconciliation" else source in
+   let source=if has_timing_models then source^" + read-only functional-model source validation" else source in
   let verdict=evaluate ~context results in
-  let human=render ~run_dir ~context ~results ~source verdict in
-  {results; source; verdict; human}
+   let human=if render_human then render ~run_dir ~context ~results ~source verdict else "" in
+   {results; source; verdict; human; metadata_sources= !metadata_sources}

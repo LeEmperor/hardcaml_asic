@@ -35,6 +35,7 @@ How to use behavior that is implemented now.
 | [Stage quickstart](guides/stage-quickstart.md) | Explicit six-stage runs, checkpoints, restart, live watch and reporting |
 | [OCaml stage recipes](guides/ocaml-stage-recipes.md) | Typed `Flow.Stage` / `Flow.Recipe` declarations and schema-3 Python interoperability |
 | [Named flows](guides/named-flows.md) | Project flow catalogs and parameter profiles: discover, describe, preview, run, observe, report |
+| [Hardware variants and comparisons](guides/variant-comparison.md) | Checked project parameters, identity-covered factory binding and read-only evidence-aware pair comparisons |
 
 ## References
 
@@ -65,6 +66,9 @@ to the phase plan for current status.
 
 **Observation and output**
 
+- [PT.8 variants/comparison slice](development/pt8-variant-plan.md): schema/factory
+  association, per-metric comparison policy, example conformance and review fixes.
+
 - [PT.7 timing-intent implementation](development/pt7-timing-intent.md): bounded
   declaration/SDC/evidence contract, example native acceptance and independent reviews.
 - [PT.7c native/coarse-flow implementation](development/pt7c-native-flow.md): native
@@ -73,6 +77,9 @@ to the phase plan for current status.
 - [PT.7 named synthesis integration](development/pt7-named-synthesis.md): exact
   methodology/occurrence/checkpoint association, required analysis lifecycle,
   path-bound source inventory and reviewed area/delay acceptance.
+- [Physical timing qualification](development/timing-physical-qualification.md):
+  explicit physical resolver, all-corner synthesis, routed closure with five original
+  stages, normal physical/functional checks and portable verified source evidence.
 
 - [Default flow journal and foreground watch](development/flow-journal.md)
 - [Journal event timing and live observation](development/journal-event-timing.md)

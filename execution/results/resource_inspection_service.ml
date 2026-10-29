@@ -45,6 +45,36 @@ let inventory_manifest manifest =
    | Ok () -> () | Error _ -> invalid_arg "invalid bundle manifest identity");
   if not (List.mem_assoc "resources" (fields manifest) || List.mem_assoc "resource_snapshot" (fields manifest))
   then None else Some (snd (Resource_evidence.inventory manifest))
+(* Bundle/source metadata is not authority until it agrees with the inventoried
+   copies whose actual bytes [bundle] verifies. This is structured inventory
+   validation, shared by bundle and coarse comparison; no tool-report parser. *)
+let validate_bundle_inventory manifest =
+  let files=list (get manifest "files") in
+  let names=List.map (fun f -> text (get f "path")) files in
+  let unique label xs=if List.length xs<>List.length (List.sort_uniq String.compare xs) then invalid_arg ("duplicate "^label) in
+  unique "bundle member" names;
+  List.iter (fun key ->
+    let declared=List.map text (list (get manifest key)) in
+    unique key declared;
+    List.iter (fun name -> if not (List.mem name names) then invalid_arg (key^" is outside bundle inventory")) declared)
+    ["synthesis_sources";"simulation_sources"];
+  match List.assoc_opt "source_inputs" (fields manifest) with
+  | None -> () (* Historical absence is not a reconstructed source inventory. *)
+  | Some (`List inputs) ->
+    if List.length inputs>512 then invalid_arg "source input count exceeds 512";
+    let copies=List.map (fun input ->
+      let source=text (get input "path") and copy=text (get input "copy") in
+      if not (Filename.is_relative source) || List.exists (fun p -> List.mem p ["";".";".."]) (String.split_on_char '/' source)
+        || String.contains source '\\' || String.contains source '\000' then invalid_arg "unsafe declared source path";
+      if copy<>"inputs/"^source then invalid_arg "source input copy/path mismatch";
+      let member=match List.find_opt (fun f -> get f "path"=s copy) files with
+        | Some f -> f | None -> invalid_arg "declared source copy absent from bundle inventory" in
+      if get member "sha256"<>get input "sha256" then invalid_arg "source input/copy hash mismatch";
+      copy) inputs in
+    unique "source input copy" copies;
+    let actual=List.filter (String.starts_with ~prefix:"inputs/") names in
+    if List.sort String.compare copies<>List.sort String.compare actual then invalid_arg "source input copy inventory mismatch"
+  | Some _ -> invalid_arg "source_inputs must be an array"
 type source = { root:string; inventory:E.t list; inventory_status:string; inventory_reason:E.t;
   evidence:E.t; provenance:E.t; refs:E.t list; binding:E.t }
 let bundle root =
@@ -56,6 +86,7 @@ let bundle root =
   let inventory=Option.value inventory ~default:[] in
   let files=list (get manifest "files") in
   if List.length files>512 then invalid_arg "bundle member count exceeds 512";
+  validate_bundle_inventory manifest;
   let total=ref 0 in
   let refs=List.map (fun f ->
     let path=text (get f "path") in
@@ -384,3 +415,40 @@ let inspect target ?query ?resource_id ?section ?expected_digest ?artifact_id ?o
   let kind,target=match target with Bundle p -> "bundle",p | Coarse_run p -> "coarse_run",p
     | Execution p -> "execution",p | Finalization p -> "finalization",p in
   run ~kind ~target ?query ?resource_id ?section ?expected_digest ?artifact_id ?offset ?limit ()
+
+let comparison_snapshot target () =
+  try
+    let kind,path=match target with Bundle p -> "bundle",p | Coarse_run p -> "coarse_run",p
+      | Execution p -> "execution",p | Finalization _ -> invalid_arg "comparison does not support finalization" in
+    let path=Unix.realpath path in
+    let before=checked (run ~kind ~target:path ()) in
+    let source=source kind path in
+    let middle_digest=digest (obj ["kind",s kind;"target",s path;"binding",source.binding;"refs",arr source.refs]) in
+    if get before "source_digest"<>s middle_digest then invalid_arg "resource generation differs from snapshot index";
+    let manifest,bundle_sources=match kind with
+      | "bundle" -> source.binding,source.refs
+      | "execution" -> get source.binding "manifest",[]
+      | _ ->
+        (match List.find_opt (fun r -> List.mem (get r "path")
+          [s "project/manifest.json";s "manifest.json";s "bundle/manifest.json"]) source.refs with
+         | None -> `Null,[]
+         | Some r ->
+           let manifest_path=verify_ref source.root r in
+           let frozen=bundle (Filename.dirname manifest_path) in
+           let frozen_manifest=List.hd frozen.refs in
+           if get frozen_manifest "sha256"<>get r "sha256" then invalid_arg "coarse frozen bundle generation changed";
+           let prefix=Filename.dirname (text (get r "path")) in
+           frozen.binding,List.map (fun ref_ -> obj (("path",s (if prefix="." then text (get ref_ "path")
+             else prefix^"/"^text (get ref_ "path")))::List.remove_assoc "path" (fields ref_))) frozen.refs) in
+    if manifest<>`Null then ignore (inventory_manifest manifest);
+    if List.length source.inventory>4096 then invalid_arg "comparison inventory bound";
+    List.iter (fun r -> ignore (verify_ref source.root r)) source.refs;
+    List.iter (fun r -> ignore (verify_ref source.root r)) bundle_sources;
+    let after=checked (run ~kind ~target:path ()) in
+    if canonical before<>canonical after then invalid_arg "resource generation changed during snapshot";
+    Ok (obj ["index",before;"manifest",manifest;"inventory",arr source.inventory;
+      "measurements",arr (measurements source);"evidence",source.evidence;
+      "sources",arr source.refs;"bundle_sources",arr bundle_sources])
+  with Invalid_argument e | Failure e | Sys_error e -> Error e
+    | End_of_file -> Error "truncated comparison resource source"
+    | Unix.Unix_error (e,f,p) -> Error (f^" "^p^": "^Unix.error_message e)

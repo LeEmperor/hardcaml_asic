@@ -11,3 +11,11 @@ val inspect :
   top:string -> resolved:Evidence_json.t list -> native_sdc:string -> native_data:string ->
   native_checks:string -> native_endpoints:string ->
   (Evidence_json.t, string) result
+
+(** Physical audit only: requires exactly one serialized propagated primary clk
+    collection. Literal-list wrapping is supported; commented/absent/repeated
+    propagation cannot establish stored clock state. Historical inspect stays strict. *)
+val inspect_with_clock_policy :
+  allow_propagated:bool -> top:string -> resolved:Evidence_json.t list ->
+  native_sdc:string -> native_data:string -> native_checks:string ->
+  native_endpoints:string -> (Evidence_json.t, string) result

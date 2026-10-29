@@ -200,7 +200,7 @@ let timing_derate = function
     then fail "unsupported timing derate factor/range"
   | _ -> fail "unsupported timing derate scope/options"
 module Relations = Set.Make(struct type t=string*string let compare=compare end)
-let relation_set ~top native_sdc =
+let relation_set ~allow_propagated ~top native_sdc =
   ignore (name top);
   let body=match commands native_sdc with
     | (Literal "current_design"::[Literal design])::body ->
@@ -208,7 +208,7 @@ let relation_set ~top native_sdc =
       if design<>top then fail "native current_design differs from manifest top";
       body
     | _ -> fail "missing leading native current_design" in
-  let relations=ref Relations.empty and expanded=ref 0 in
+  let relations=ref Relations.empty and expanded=ref 0 and propagated=ref 0 in
   List.iter (function
     | Literal "set_false_path"::args ->
       let rec options from targets = function
@@ -221,11 +221,15 @@ let relation_set ~top native_sdc =
       List.iter (fun f -> List.iter (fun t ->
         incr expanded;if !expanded>65536 then fail "expanded relation budget";
         relations:=Relations.add (f,t) !relations) targets) from
-    | Literal "set_timing_derate"::args -> timing_derate args
+     | Literal "set_timing_derate"::args -> timing_derate args
+      | [Literal "set_propagated_clock"; selector] when allow_propagated ->
+        if selectors "get_clocks" selector<>["clk"] then fail "unsupported propagated clock collection (qualified primary clk only)";
+        incr propagated
     | Literal "current_design"::_ -> fail "repeated/ambiguous current_design selection"
     | Literal command::args when List.mem command base_commands && args<>[] -> List.iter base_word args
     | Literal command::_ -> fail ("unsupported native SDC command: "^command)
     | _ -> fail "invalid native SDC command") body;
+  if allow_propagated && !propagated<>1 then fail "missing/repeated serialized propagated primary clk";
   !relations
 let expected_set resolved =
   if List.length resolved>256 then fail "resolved inventory budget";
@@ -241,10 +245,10 @@ let relation_json relations =
     "source",s from;"target",s target;"min_max",s "both";
     "source_transition",s "both";"target_transition",s "both"])
 
-let inspect ~top ~resolved ~native_sdc ~native_data ~native_checks ~native_endpoints =
+let inspect_with_clock_policy ~allow_propagated ~top ~resolved ~native_sdc ~native_data ~native_checks ~native_endpoints =
   try
     List.iter bounded [native_sdc;native_data;native_checks;native_endpoints];
-    let actual=relation_set ~top native_sdc and expected=expected_set resolved in
+    let actual=relation_set ~allow_propagated ~top native_sdc and expected=expected_set resolved in
     if not (Relations.is_empty (Relations.diff expected actual)) then fail "missing exception relations";
     if not (Relations.is_empty (Relations.diff actual expected)) then fail "extra exception relations";
     let data=strict native_data in
@@ -293,7 +297,7 @@ let inspect ~top ~resolved ~native_sdc ~native_data ~native_checks ~native_endpo
       | line::rest -> endpoint_lines (nonempty (strict line)::acc) rest
       | _ -> fail "missing endpoint report completion" in
     if endpoint_lines [] lines<>endpoints then fail "native endpoint report differs from inventory";
-    Ok (obj ["status",s "interpreted_supported_dimensions";
+    Ok (obj (["status",s "interpreted_supported_dimensions";
       "profile",s profile;
       "native_design",s top;
       "stored_exception_scope",obj ["status",s "matched";"method",s "native_write_sdc";
@@ -301,6 +305,9 @@ let inspect ~top ~resolved ~native_sdc ~native_data ~native_checks ~native_endpo
       "diagnostics",obj ["status",s "complete_returned_native_groups";"categories",arr cats];
       "endpoints",obj ["status",s "complete_native_inventory";"count",`Int (List.length endpoints);"pins",arr (List.map s endpoints)];
       "per_check_analysis",s "unavailable";"exhaustive_exception_effect",s "unavailable";
-      "timing_closure",s "not_established"])
+      "timing_closure",s "not_established"] @
+      (if allow_propagated then ["stored_clock_propagation",obj ["status",s "matched";"method",s "native_write_sdc";"clocks",arr [s "clk"]]] else [])))
   with Invalid_argument e | Failure e -> Error e
-     | Yojson.Json_error e -> Error ("native coverage: invalid JSON: "^e)
+      | Yojson.Json_error e -> Error ("native coverage: invalid JSON: "^e)
+
+let inspect = inspect_with_clock_policy ~allow_propagated:false

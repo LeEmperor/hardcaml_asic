@@ -4,7 +4,7 @@ type t = { command : string; query : string; values : (string,string) Hashtbl.t;
 exception Usage of string
 let error s = raise (Usage s)
 let commands = ["provision";"preflight";"run";"postcheck";"collect";"report";"archive";
-  "execute";"stages";"finalize";"finalization-inspect";"checkpoint-inspect";"observation";"inspect";"preparation-inspect";"resources-inspect";"resource-inspect";"timing-intent-inspect"]
+  "execute";"stages";"finalize";"finalization-inspect";"checkpoint-inspect";"observation";"inspect";"preparation-inspect";"resources-inspect";"resource-inspect";"timing-intent-inspect";"compare"]
 let tools = ["toolchain";"support-tools";"pdk-root"]
 let identity = ["dependency-lock";"waiver"]
 let grammar command query = match command with
@@ -15,6 +15,7 @@ let grammar command query = match command with
   | "postcheck" -> tools @ identity @ ["precheck-python";"testbench";"testbench-top";"replay-trace";"timeout"], [], "run-dir"
   | "collect" -> ["output"], ["stdout"], "run-dir"
   | "report" -> [], [], "target"
+  | "compare" -> ["left-kind";"left";"right-kind";"right";"axis"], [], ""
   | "resources-inspect" -> [], [], "run-dir"
   | "timing-intent-inspect" -> ["kind"], [], "target"
   | "resource-inspect" -> ["kind";"query";"resource-id";"section";"expected-digest";"artifact-id";"offset";"limit"], [], "target"
@@ -51,6 +52,7 @@ let help command query =
   else (let values,flags,pos = grammar command query in
     if pos<>"" then Printf.printf "required argument: %s\n" (if command="report" then "TARGET" else pos);
     if command="report" then print_endline "TARGET: coarse run, stage checkpoint, stage workspace, or explicit execution JSON";
+     if command="compare" then print_endline "Read-only pair comparison: explicit --left-kind/--left and --right-kind/--right, required --axis hardware|resource_policy|flow_configuration|descriptive. Whole JSON <=1MiB; no pagination. Exit0 is readability, not acceptance or a winner.";
      if command="inspect" then print_endline "Read-only retained evidence: --domain timing|clocks|physical|routing --stage synthesis|floorplan|placement|cts|routing|timing|signoff. --expected-digest alone pins a timing_analysis1 source; with --row-id it pins the index for detail. JSON contract: hardcaml-asic.inspection schema 1.";
      if command="preparation-inspect" then print_endline "Read-only retained Elaborate & Resolve Resources preparation. --current-identity compares an explicit preparation identity; absent comparison does not reconstruct current sources. JSON contract: hardcaml-asic.preparation-inspection schema 1.";
      if command="timing-intent-inspect" then print_endline "Read-only timing evidence. --kind execution requires an exact named execution JSON; --kind coarse_run selects ordinary linked synthesis evidence; default standalone preserves schema-1/2 audit inspection. Named evidence is path-bound; named archives/relocation unsupported. Exhaustive path-effect coverage remains unavailable.";
@@ -98,6 +100,7 @@ let parse argv =
           (String.length v>1 && (match v.[1] with '0'..'9' | '.' -> true | _ -> false)) in
         let v,xs=match inline,xs with Some v,_ -> v,xs | None,v::xs when argument v -> v,xs
           | _ -> error ("--"^key^" requires an argument") in
+        if command="compare" && Hashtbl.mem a.values key then error ("duplicate --"^key);
         if key="waiver" then a.waivers<-a.waivers@[v] else set a key v;
         local positional xs)
       else error ("unrecognized argument: "^s)

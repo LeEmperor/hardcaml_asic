@@ -81,6 +81,12 @@ let bundle_identity t = t.bundle_identity
 let recipe t = t.recipe
 let methodology_hash t = t.methodology_hash
 let plan_identity t = t.plan_identity
+let hardware_variant t =
+  match Yojson.Safe.from_string t.manifest with
+  | `Assoc fields ->
+    Option.map (List.Assoc.find fields "hardware_variant" ~equal:String.equal)
+      ~f:(fun j -> J.checked (Hardware_variant.of_yojson j))
+  | _ -> assert false
 
 let historical_stages = function
   | `Assoc xs ->
@@ -157,7 +163,7 @@ let verify_associations
   let snapshot_fields =
     match m with
     | `Assoc xs ->
-      List.filter [ "resource_snapshot"; "timing_intent"; "timing_native_coverage" ]
+      List.filter [ "resource_snapshot"; "timing_intent"; "timing_native_coverage"; "hardware_variant" ]
         ~f:(fun field -> List.Assoc.mem xs field ~equal:String.equal)
     | _ -> []
   in

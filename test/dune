@@ -1,5 +1,8 @@
 ; P0 lifecycle, registration and selection tests.
 
+; PT.8 B isolated pure/read-only pair comparison tests (no nested builds or EDA).
+(alias (name variant-comparison) (deps (alias variant_comparison/runtest)))
+
 (executable
  (name resource_evidence_consumer)
  (modules resource_evidence_consumer)

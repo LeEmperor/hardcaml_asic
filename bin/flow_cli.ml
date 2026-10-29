@@ -9,6 +9,11 @@ let exclusive a keys required =
 let choice a k choices = Option.iter (fun v -> if not (List.mem v choices) then error ("invalid --"^k^": "^v)) (get a k)
 let validate a =
   let c=a.command in
+  if c="compare" then (
+    require a ["left-kind";"left";"right-kind";"right";"axis"];
+    List.iter (fun key -> choice a key ["bundle";"coarse_run";"execution"]) ["left-kind";"right-kind"];
+    choice a "axis" ["hardware";"resource_policy";"flow_configuration";"descriptive"];
+    List.iter (fun k -> if String.trim (value a k)="" then error "comparison requires nonempty paths") ["left";"right"]);
   if c="timing-intent-inspect" then choice a "kind" ["standalone";"coarse_run";"execution"];
   if c="preparation-inspect" then (
     if String.trim (value a "attempt")="" then error "expected a nonempty attempt path";
@@ -61,7 +66,7 @@ let validate a =
   List.iter (fun k -> Option.iter (fun s -> if String.trim s="" then error "expected a nonempty path") (get a k)) nonempty
 let resolve a =
   let c=a.command in
-  let paths=["target";"bundle";"run-dir";"runs";"results-root";"output";"archive";"testbench";"replay-trace";"dependency-lock";"toolchain";"support-tools";"pdk-root";
+  let paths=["left";"right";"target";"bundle";"run-dir";"runs";"results-root";"output";"archive";"testbench";"replay-trace";"dependency-lock";"toolchain";"support-tools";"pdk-root";
     "workspace";"checkpoint-store";"checkpoint";"plan";"methodology-plan";"observation-store";"execution";"operation-store";"attempt";"compatibility"] in
   List.iter (fun k -> Option.iter (fun v -> set a k (Flow_cli_paths.absolute (if v="" then "." else v))) (get a k)) paths;
   List.iter (fun k -> Option.iter (fun v -> set a k (Flow_cli_paths.lexical (if v="" then "." else v))) (get a k)) ["python";"precheck-python"];
@@ -121,6 +126,7 @@ let route a request =
      | "postcheck" -> c,["--public-cli4"] @ resources @ fields ["run-dir";"support-tools";"pdk-root";"precheck-python";"testbench";"testbench-top";"replay-trace";"timeout"] @ presentation
     | "collect" -> c,fields ["run-dir"] @ (if flag a "stdout" then ["--stdout"] else fields ["output"]) @ presentation
      | "report" -> c,fields ["target"] @ presentation
+     | "compare" -> c,fields ["left-kind";"left";"right-kind";"right";"axis"] @ presentation
        | "resources-inspect" -> c,fields ["run-dir"] @ presentation
        | "timing-intent-inspect" -> c,[value a "target"] @ fields ["kind"] @ presentation
       | "resource-inspect" -> c,fields ["target";"kind";"query";"resource-id";"section";"expected-digest";"artifact-id";"offset";"limit"] @ presentation

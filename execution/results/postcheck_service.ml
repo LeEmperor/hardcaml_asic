@@ -60,13 +60,27 @@ let run ~run_dir ~support_tools ~pdk_root ~precheck_python ~testbench ~testbench
   let flow=text (get (get run "outputs") "flow") in
   let flow=if Filename.is_relative flow then Filename.concat run_dir flow else flow in
   let manifest=json (run_dir^"/project/manifest.json") in
+  Manifest_metadata.validate (Yojson.Safe.from_string (J.canonical manifest));
    Macro_contract.require_full manifest;
-   let physical=Macro_contract.physical manifest in
-   let timeout=if physical && timeout=None then Some 1800. else timeout in
-   let workers=if physical then 6 else 20 in
+    let physical=Macro_contract.physical manifest in
+     let timing=Timing_physical_flow.enabled (Yojson.Safe.from_string (J.canonical manifest)) in
+     let timing_evidence=if timing then (
+       let m=Timing_intent_linked.read (run_dir^"/project/manifest.json") in
+       Timing_intent_evidence.validate_qualification m;
+       (match Hardcaml_asic.Elaboration.Bundle.verify_manifest_identity m with Ok () -> () | Error _ -> invalid_arg "invalid timing postcheck bundle identity");
+       match Timing_intent_flow.inspect ~run_dir () with
+       | Ok evidence when Timing_intent_linked.get evidence "status"=`String "completed" && Timing_intent_linked.get evidence "stage"=`String "post_pnr" -> Some evidence
+       | _ -> invalid_arg "timing postcheck requires intact completed native post-PNR evidence") else None in
+     let bounded=physical || timing in
+    let timeout=if bounded && timeout=None then Some 1800. else timeout in
+    let workers=if bounded then 6 else 20 in
    let budget=string_of_int workers in
-   let verify_physical_inputs () = if physical then (
-     let project=resolve (run_dir ^ "/project") in
+    let verify_physical_inputs () = if bounded then (
+      let project=resolve (run_dir ^ "/project") in
+      Option.iter (fun evidence ->
+        let get=Timing_intent_linked.get in
+        if get (get evidence "provenance") "manifest_sha256"<>`String (hash (project^"/manifest.json")) then
+          invalid_arg "timing postcheck manifest changed from native implementation") timing_evidence;
      List.iter (fun entry -> let relative=text (get entry "path") in
        let path=resolve (project ^ "/" ^ relative) in
        if not (Filename.is_relative relative) || not (String.starts_with ~prefix:(project ^ "/") path) ||
@@ -82,7 +96,11 @@ let run ~run_dir ~support_tools ~pdk_root ~precheck_python ~testbench ~testbench
         | _ -> invalid_arg "physical postcheck requires intact completed physical checking evidence")
      | _ -> invalid_arg "physical checking evidence missing");
   let top=text (get manifest "top_module") in
-  let gds=flow^"/final/gds/"^top^".gds" and netlist=flow^"/final/nl/"^top^".nl.v" in
+   let gds=flow^"/final/gds/"^top^".gds" and netlist=flow^"/final/nl/"^top^".nl.v" in
+   Option.iter (fun evidence ->
+     let get=Timing_intent_linked.get in
+     if get (get (get evidence "implementation") "netlist") "sha256"<>`String (hash netlist) then
+       invalid_arg "final functional replay netlist differs from native physical timing input") timing_evidence;
   List.iter (fun p -> if not (try (Unix.stat p).Unix.st_kind=Unix.S_REG with _ -> false) then
     invalid_arg ("missing postcheck input: "^p))
     ([gds;netlist;testbench;precheck_python;support_tools^"/precheck/default.nix"] @ Option.to_list replay_trace);
@@ -173,7 +191,7 @@ let run ~run_dir ~support_tools ~pdk_root ~precheck_python ~testbench ~testbench
     let re=Str.regexp "fetchTarball[ \n\r\t]*\"\\([^\"]+\\)\"" in
     (try ignore (Str.search_forward re nix 0); env_set "NIX_PATH" ("nixpkgs="^Str.matched_group 1 nix) with Not_found -> ());
      let nix_shell=Runtime_probe.find_executable ~environment:!env "nix-shell" in
-     let nix_command=[nix_shell] @ (if physical then ["--max-jobs";"1";"--cores";"6"] else []) in
+     let nix_command=[nix_shell] @ (if bounded then ["--max-jobs";"1";"--cores";"6"] else []) in
      let actual=probe ~cwd (nix_command @ ["default.nix";"--run";"klayout -v"]) in
     put "tools" "klayout" (s actual); put "tools" "klayout_requested" (s pin); save ();
     if actual<>"KLayout "^pin then failwith ("precheck KLayout "^actual^"; requested "^pin);
@@ -204,7 +222,11 @@ let run ~run_dir ~support_tools ~pdk_root ~precheck_python ~testbench ~testbench
         ~repo_digests:[] ~os:"linux" ~architecture:"historical-unrecorded" ~flags:T.Bytecode_disabled () with T.Docker d -> d | _ -> assert false) in
      let iverilog=probe ~docker ~cwd:check_dir ["iverilog";"-V"] in
      put "tools" "iverilog" (s (List.hd (String.split_on_char '\n' iverilog))); save ();
-     let helper=check_dir ^ "/physical-runtime.py" in
+      let helper=check_dir ^ "/physical-runtime.py" in
+      if timing then (
+        let resources=Option.value resources ~default:(Stage_preparation.installed_resources ~executable:Sys.executable_name) in
+        copy (resources ^ "/physical_runtime.py") helper;
+        put "inputs" "physical_runtime_sha256" (s (hash helper)); save ());
      if physical then (
        let resources=Option.value resources ~default:(Stage_preparation.installed_resources ~executable:Sys.executable_name) in
        copy (resources ^ "/physical_runtime.py") helper;
@@ -216,9 +238,17 @@ let run ~run_dir ~support_tools ~pdk_root ~precheck_python ~testbench ~testbench
      let ok,_=launch ~logged:true ~cwd (nix_command @ ["default.nix";"--run";shell]) in
     put "checks" "precheck" (s (if ok then "pass" else "fail")); save ();
     let cells=pdk_root^"/ihp-sg13cmos5l/libs.ref/sg13cmos5l_stdcell/verilog/" in
-     let models=if physical then (
+      let models=if bounded then (
        ignore (probe ~docker ~cwd:check_dir ["python3";helper;"models";run_dir ^ "/project";pdk_root;netlist;check_dir]);
-       let inventory=json (check_dir ^ "/replay-models.json") in
+        let inventory=json (check_dir ^ "/replay-models.json") in
+        if timing then (
+          if get inventory "schema_version"<>codec (J.integer "2") || get inventory "profile"<>s "cmos5l_physical_timing_used_cells_v1" ||
+             get inventory "claim"<>s "zero_delay_digital_functional_only_not_vendor_timing_or_sdf_conformance" ||
+             get inventory "netlist_sha256"<>s (hash netlist) || get inventory "manifest_sha256"<>s (hash (run_dir^"/project/manifest.json")) ||
+             get inventory "preflight_sha256"<>s (hash (run_dir^"/preflight.json")) then failwith "timing replay model provenance/profile mismatch";
+          if get inventory "models"<>J.array (List.map s [check_dir^"/model-0.v";check_dir^"/stdcell-functional.v"]) then failwith "timing replay model source list mismatch";
+          put "inputs" "replay_models_sha256" (s (hash (check_dir^"/replay-models.json")));
+          put "tools" "replay_profile" (get inventory "profile"));
        put "tools" "replay_scope" (s "zero_delay_gate_functional_not_timing_conformance"); save ();
        List.map text (array (get inventory "models"))) else
        [pdk_root^"/ihp-sg13cmos5l/libs.ref/sg13cmos5l_io/verilog/sg13cmos5l_io.v";cells^"sg13cmos5l_udp.v";cells^"sg13cmos5l_stdcell.v"] in
@@ -229,17 +259,23 @@ let run ~run_dir ~support_tools ~pdk_root ~precheck_python ~testbench ~testbench
     let executable=check_dir^"/gate.out" in
     let compiled,_=launch ~logged:true ~docker ~cwd:check_dir (["iverilog";"-g2012";"-DFUNCTIONAL";"-DSIM";"-s";testbench_top;"-o";executable]@models@[netlist;tb]) in
       let replayed=if not compiled then false else fst (launch ~logged:true ~docker ~cwd:check_dir (["vvp";executable]@simulation_args)) in
-      if physical then (
-        verify_physical_inputs ();
+       if bounded then (
+         verify_physical_inputs ();
+         if timing && (get (List.assoc "inputs" !fields) "replay_models_sha256"<>s (hash (check_dir^"/replay-models.json")) ||
+           get (List.assoc "inputs" !fields) "physical_runtime_sha256"<>s (hash helper)) then failwith "timing replay producer/inventory changed during functional replay";
        List.iter (fun (key,path) -> if get (List.assoc "inputs" !fields) key<>s (hash path)
          then failwith ("physical postcheck input changed: " ^ path))
          ["gds_sha256",gds;"netlist_sha256",netlist;"testbench_sha256",testbench];
        let inventory=json (check_dir ^ "/replay-models.json") in
        (match get inventory "source_hashes" with J.Object xs -> List.iter (fun (path,digest) ->
          if digest<>s (hash path) then failwith ("postcheck model changed: " ^ path)) xs | _ -> failwith "model source hashes missing");
-       (match get inventory "retained_hashes" with J.Object xs -> List.iter (fun (name,digest) ->
-         if Filename.basename name<>name || digest<>s (hash (check_dir ^ "/" ^ name)) then failwith ("retained replay model changed: " ^ name)) xs
-         | _ -> failwith "retained model hashes missing");
+        (match get inventory "retained_hashes" with J.Object xs -> List.iter (fun (name,digest) ->
+          if Filename.basename name<>name || digest<>s (hash (check_dir ^ "/" ^ name)) then failwith ("retained replay model changed: " ^ name)) xs
+          | _ -> failwith "retained model hashes missing");
+        Option.iter (fun initial -> match Timing_intent_flow.inspect ~run_dir () with
+          | Ok current when Timing_intent_linked.get current "status"=`String "completed" &&
+              Timing_intent_linked.get current "source_digest"=Timing_intent_linked.get initial "source_digest" -> ()
+          | _ -> failwith "native physical timing evidence changed during functional replay") timing_evidence;
        let names=Array.to_list (Sys.readdir check_dir) |> List.filter (fun name ->
          String.starts_with ~prefix:"model-" name || List.mem name ["stdcell-functional.v";"stdcell-vendor.v";"replay-models.json";"physical-runtime.py";"tt-adaptation.json";"replay-trace.txt"]) in
        set "artifacts" (obj (List.map (fun name -> name,s (hash (check_dir ^ "/" ^ name))) names)); save ());

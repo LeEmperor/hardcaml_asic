@@ -42,6 +42,7 @@ val clocks : t -> Platform.Clock.t list
 val pinout : t -> Platform.Pinout.t
 val timing : t -> Platform.Timing.t
 val timing_stages : t -> (Platform.Timing.Stage.t * Signal.t) list
+val hardware_variant : t -> Hardware_variant.t option
 
 (** Ordered by {!Resource.Id.compare}, independent of registration order. *)
 val resources : t -> Resource.Record.t list
@@ -50,6 +51,8 @@ val resources : t -> Resource.Record.t list
 val circuit : t -> Circuit.t
 
 module Private : sig
+  (** Project-owned propagation only; not a semantic-use attestation. *)
+  val with_hardware_variant : t -> Hardware_variant.t option -> t
   val with_timing_stages : t -> (Platform.Timing.Stage.t * Signal.t) list -> t
   (** Only {!Project.elaborate} should call this, after
       {!Context.Private.finalize} succeeded. It performs no validation. *)

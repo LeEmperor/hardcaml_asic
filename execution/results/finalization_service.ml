@@ -161,6 +161,7 @@ let run ~execution ~store ~environment ?(accept=false) ?support_tools ?precheck_
     ignore (Segment_service.verify_reply request);checked (Runtime_probe.verify probe binding);verify_resources ();check_cancel ();
     set "runtime_validation" (s "completed");
     let manifest=json (project^"/manifest.json") in
+    Manifest_metadata.validate (Yojson.Safe.from_string (J.canonical manifest));
     if get manifest "identity"<>get c "bundle_identity" then invalid_arg "retained project manifest identity mismatch";
     let target=directory^"/project" and flow=directory^"/evidence" in Unix.mkdir target 0o777;Unix.mkdir flow 0o777;
     copy (project^"/manifest.json") (target^"/manifest.json");copy_tree (project^"/constraints") (target^"/constraints");

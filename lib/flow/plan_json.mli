@@ -23,3 +23,8 @@ val string : Yojson.Safe.t -> string
 val array : Yojson.Safe.t -> Yojson.Safe.t list
 val envelope : Yojson.Safe.t -> contract:string -> fields:string list -> unit
 val equal : Yojson.Safe.t -> Yojson.Safe.t -> bool
+
+(** Standard JSON grammar admission before Yojson decoding: no comments,
+    extensions, trailing input, malformed UTF-8/surrogates or nesting over 256.
+    Does not canonicalize or change any existing identity algorithm. *)
+val parse : (Yojson.Safe.t -> 'a Or_error.t) -> string -> 'a Or_error.t

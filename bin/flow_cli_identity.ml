@@ -21,13 +21,22 @@ let describe () =
         "runs",`String "<results-root>/runs";"stage_observations",`String "<resolved-workspace-parent>/observations"];
       "capabilities",`Assoc [
          "namedflow1",`Bool true;
+         "variant_comparison1",`Assoc ["schema_version",`Int 1;"read_only",`Bool true;
+           "max_response_bytes",`Int (1024*1024);"target_kinds",strings ["bundle";"coarse_run";"execution"];
+           "axes",strings ["hardware";"resource_policy";"flow_configuration";"descriptive"]];
          "preparation1",`Bool true;
          "inspection1",`Bool true;
           "resource_evidence1",`Bool true;
            "resource_evidence2",`Bool true;
            "resource_inspection1",`Bool true;
           "resource_evidence_schemas",`Assoc ["write",`Int 2;"read",`List [`Int 1;`Int 2]];
-         "timing_analysis1",`Bool true;
+          "timing_analysis1",`Bool true;
+          "timing_intent_physical2",`Assoc ["kind",`String "coarse_run";"macro_free",`Bool true;
+            "functional_postcheck",`String "cmos5l_physical_timing_used_cells_v1";
+            "source_closure",`String "extracted_state_views_retained_filter_v2";
+            "audit_schema",`Int 3;"companion_schema",`Int 2;"all_configured_synthesis",`Bool true;
+            "full",`Bool true;"named_physical",`Bool false;"native_qualification",`String "pending";
+            "workers",`Int 6;"sta_threads",`Int 1;"native_path_effect_coverage",`String "unavailable"];
          "timing_intent_evidence1",`Assoc ["read_only",`Bool true;"scope",`String "standalone_synthesized_netlist_sta";"native_path_effect_coverage",`String "unavailable"];
          "timing_intent_evidence2",`Assoc ["read_only",`Bool true;"profile",`String "opensta-2.7-native-state-v2";"native_data_schema",`Int 2;"native_path_effect_coverage",`String "unavailable"];
           "timing_intent_flow1",`Assoc ["kind",`String "coarse_run";"stage",`String "synthesized_netlist";"native_path_effect_coverage",`String "unavailable";"named_execution",`Bool false];
@@ -36,7 +45,7 @@ let describe () =
              "outer_inventory",`Assoc ["max_sources",`Int 4096;"max_source_bytes",`Int (128*1024*1024);"max_total_bytes",`Int (512*1024*1024)]];
         "timing_stage1",`Bool true;
         "json_commands",strings ["preflight";"run";"postcheck";"collect";"report";"inspect";"execute";"archive";"stages";"checkpoint-inspect";
-             "observation describe";"observation inspect";"observation read-updates";"observation watch";"finalize";"finalization-inspect";"preparation-inspect";"resources-inspect";"resource-inspect";"timing-intent-inspect"];
+              "observation describe";"observation inspect";"observation read-updates";"observation watch";"finalize";"finalization-inspect";"preparation-inspect";"resources-inspect";"resource-inspect";"timing-intent-inspect";"compare"];
         "json_lines_commands",strings ["stages";"finalize";"observation watch"];
         "observation_watch",`Assoc ["incremental",`Bool true;"interval_seconds",`Float 0.5;
           "envelopes",strings ["updates";"status"];"records_flushed",`Bool true;

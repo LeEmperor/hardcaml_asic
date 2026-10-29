@@ -1,0 +1,15 @@
+(test
+ (name schema_tests)
+ (modules schema_tests)
+ (libraries core hardcaml_asic yojson)
+ (preprocess (pps ppx_jane)))
+
+(executable
+ (name integration)
+ (modules integration)
+ (libraries core hardcaml hardcaml_asic unix yojson)
+ (preprocess (pps ppx_jane)))
+
+(rule
+ (alias runtest)
+ (action (run %{exe:integration.exe})))

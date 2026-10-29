@@ -1,0 +1,12 @@
+(executable
+ (name emit)
+ (libraries core hardcaml hardcaml_asic)
+ (preprocess (pps ppx_jane ppx_hardcaml)))
+
+(rule
+ (alias runtest)
+ (deps check.py fixture.tcl native_probe.tcl ../timing_intent/fixtures.tcl ../../dune-project)
+ (action
+  (run python3 -B %{dep:check.py} %{exe:emit.exe}
+   %{dep:../timing_intent/fixtures.tcl} %{dep:fixture.tcl} %{workspace_root}
+   %{dep:native_probe.tcl})))

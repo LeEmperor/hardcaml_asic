@@ -153,8 +153,9 @@ it does not re-elaborate the project or run Floorplan/P&R. The normal flow recip
 and checkpoint stages are unchanged.
 
 The first supported runtime is the qualified LibreLane 3.1.0.dev3 / OpenSTA 2.7.0
-container. Unsupported native/full/macro combinations reject before synthesis.
-The linked analysis selects only `DEFAULT_CORNER`, explicitly recording the
+container. Without the explicit physical opt-in below, full execution is unsupported;
+native/macro combinations also remain outside this timing-evidence route.
+The default linked analysis selects only `DEFAULT_CORNER`, explicitly recording the
 original configured corner list and effective delta. It does not claim all-corner
 coverage. Synthesis/transport ceilings are six workers; STA is serialized and
 single-threaded.
@@ -183,6 +184,70 @@ closure. Use `collect --stdout` for read-only collection of historical evidence.
 
 Archives replay with the original PDK/source/provider checkout hidden, using retained
 bytes and a compatible installed reader. See the flow handoff for restoration layout.
+
+## Opt-in all-corner synthesis and coarse physical qualification
+
+`Bundle.render ~timing_physical_qualification:true` explicitly emits an
+identity-covered physical-v2 resolution policy and all-configured analysis request.
+Use a resolved Synthesis project for the pre-PNR baseline and a resolved Hardening
+project for full execution. Default rendering, including default Hardening rendering,
+does not silently enable this contract. The independent public consumer is
+[`physical_timing/`](../../../hardcaml_asic_example/physical_timing/).
+
+Physical-v2 preserves direct architectural declarations while accepting up to eight
+checked noninverting buffer/delay hops on supported physical connections, including
+interstage data and moved anchors. Supported exact cells/pins are qualified across
+the three cell libraries; the resolver verifies the entire sequential inventory
+equals the declared stages. Unknown logic, extra registers, merged stages,
+inversion, cycles or wrong roots reject before applying exceptions. Witnesses use
+the same checked endpoint map. No blanket Q-net protection obstructs hold repair.
+
+```sh
+hardcaml-asic-flow run "$SYNTH_BUNDLE" --stage synthesis --toolchain "$TOOLS" --json
+hardcaml-asic-flow run "$HARDENING_BUNDLE" --stage full --toolchain "$TOOLS" --json
+# Use the exact completed full RUN. Run normal external checks before acceptance.
+hardcaml-asic-flow postcheck "$RUN" --toolchain "$TOOLS" \
+  --testbench "$TESTBENCH" --testbench-top "$TB_TOP" --timeout 1800 --json
+hardcaml-asic-flow timing-intent-inspect "$RUN" --kind coarse_run --json
+hardcaml-asic-flow collect "$RUN" --stdout --json
+hardcaml-asic-flow report "$RUN" --json
+hardcaml-asic-flow archive "$RUN" --output "$NEW_ARCHIVE_DIRECTORY" --json
+```
+
+The supported physical route is fresh, macro-free **coarse full** under the
+qualified runtime. Named physical/restart and arbitrary macro profiles remain
+unsupported. Configured/requested/executed corners are distinct. Physical audit3
+identifies `post_pnr` / extracted scope, consumes the original STAPostPNR **input
+State**, and verifies the routed netlist, RCX/SPEF/ODB chain, actual loaded libraries,
+annotation filter/input, native serialized propagated clock and enclosing processes.
+It is a separately identified linked analysis, not the original in-flow STA process.
+
+The separate all-corner timing goal requires actual per-corner valid-unit native
+log/State results, nonnegative setup/hold and zero required violation counts. Missing
+or malformed metrics cannot pass. Native stored-scope/diagnostic coverage remains
+distinct: inspection still exits1 for unavailable exhaustive exception effects,
+even when the **separate timing-closure goal passes**. Normal full report additionally
+requires physical/electrical/external acceptance; a successful process is insufficient.
+
+Macro-free final replay uses the reviewed used-cell zero-delay functional view,
+retaining unchanged vendor/UDP inputs and derivation provenance. It establishes
+digital behavior, not timed-model conformance or metastability adequacy.
+Public archives retain all advertised physical reports and native source closure.
+
+The accepted first full run closes setup/hold at fast/typical/slow **cell-PVT corners
+using one nominal extracted RC view**. Five flops remain; native post-CTS repair
+added nine delay cells. Worst hold is +0.102353 / +0.276686 / +0.590927 ns, with
+unchanged 20 ns clock, 0.25 ns uncertainty, derates and I/O budgets. Physical checks,
+nine TT checks, 512 functional observations and hidden-original-source archive replay
+pass. [Actual result](../../../hardcaml_asic_example/docs/timing_physical_full_result.md),
+[implementation/limits](../development/timing-physical-qualification.md),
+[independent review](../development/timing-physical-final-review.md).
+
+The executed six-worker allocation was respected. Dedicated all-corner/linked STA
+used one thread; three repeated mid-PNR OpenROAD STA occurrences requested six.
+A tested forward fix sets those dedicated aliases to one thread while retaining
+six for physical repair; it was not executed in the accepted run. Historical thread
+records and provider identities are preserved, not overwritten by the correction.
 
 ## Named synthesis integration
 
@@ -251,7 +316,11 @@ executions, unchanged checkpoints and exact report/inspection parity. Each retai
 [reader correction](../../../hardcaml_asic_example/docs/pt7named_reader_r4_final.md)
 replays both unchanged runs with frozen external pins enforced.
 
-Exhaustive effects/per-check coverage, named archives/physical execution, other corners,
-post-PNR preservation, reset-effect qualification and consumer-specific review remain in the
+The separate coarse physical follow-up above now qualifies this exact example at
+the three supported cell-PVT corners and nominal RC view; original negative
+synthesis/named reports remain historical failures, not relabelled physical results.
+
+Exhaustive effects/per-check coverage, named archives/physical execution, other RC
+views/designs, reset-effect/adequacy qualification and consumer-specific review remain in the
 [PT.7 queue](../phase_plan.md#pt7--synchronizerreset-aware-timing-declarations).
 No historical SRAM run proves these new declarations were applied.

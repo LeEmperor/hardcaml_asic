@@ -171,6 +171,7 @@ let inspect_impl ?named ~run_dir ~context () =
   let context=normalize context in
   let root=Unix.realpath run_dir in
   let m=manifest ~root context in
+  Manifest_metadata.validate m;
   if not (expected m) then (
     require (get context "timing_intent_expected"<>`Bool true) "new run's advertised producer declaration is missing";
     `Assoc ["status",`String "unavailable";

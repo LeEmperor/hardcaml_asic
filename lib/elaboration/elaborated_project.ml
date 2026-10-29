@@ -46,6 +46,7 @@ type t =
   ; resources    : Resource.Record.t list
   ; circuit      : Circuit.t
   ; timing_stages : (Platform.Timing.Stage.t * Signal.t) list
+  ; hardware_variant : Hardware_variant.t option
   }
 
 (* Hand written instead of derived, because Circuit.t has no useful sexp; the circuit is
@@ -54,9 +55,9 @@ type t =
    Careful: the field order here is the order the lifecycle expect test prints, [top] sits
    right after [project_name]. Reordering is harmless but shows up as an expect diff.
 *)
-let sexp_of_t { project_name; metadata; mode; target; flow; clocks; pinout; timing; resources; circuit; timing_stages = _ } =
+let sexp_of_t { project_name; metadata; mode; target; flow; clocks; pinout; timing; resources; circuit; timing_stages = _; hardware_variant } =
   let top = Circuit.name circuit in
-  [%sexp
+  let declaration = [%sexp
     { project_name : string
     ; top          : string
     ; metadata     : Metadata.t
@@ -67,7 +68,12 @@ let sexp_of_t { project_name; metadata; mode; target; flow; clocks; pinout; timi
     ; pinout       : Platform.Pinout.t
     ; timing       : Platform.Timing.t
     ; resources    : Resource.Record.t list
-    }]
+    }] in
+  match hardware_variant, declaration with
+  | None, _ -> declaration
+  | Some variant, Sexp.List fields ->
+    Sexp.List (fields @ [Sexp.List [Sexp.Atom "hardware_variant"; Hardware_variant.sexp_of_t variant]])
+  | Some _, Sexp.Atom _ -> assert false
 ;;
 
 (* grab the project name out of an elaborated project *)
@@ -90,6 +96,7 @@ let clocks t = t.clocks
 let pinout t = t.pinout
 let timing t = t.timing
 let timing_stages t = t.timing_stages
+let hardware_variant t = t.hardware_variant
 
 (* grab the resource inventory; already sorted by identity, see [Private.create] *)
 let resources t = t.resources
@@ -126,8 +133,9 @@ module Private = struct
       List.sort resources ~compare:(fun (a : Resource.Record.t) b ->
         Resource.Id.compare a.id b.id)
     in
-    { project_name; metadata; mode; target; flow; clocks; pinout; timing; resources; circuit; timing_stages = [] }
+    { project_name; metadata; mode; target; flow; clocks; pinout; timing; resources; circuit; timing_stages = []; hardware_variant = None }
   ;;
   let with_timing_stages t timing_stages = { t with timing_stages }
+  let with_hardware_variant t hardware_variant = { t with hardware_variant }
 end
 [@@@ocamlformat "enable"]

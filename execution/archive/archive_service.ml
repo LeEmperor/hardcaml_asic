@@ -7,6 +7,18 @@ let optional x k = match x with `Assoc xs -> Option.value (List.assoc_opt k xs) 
 let text = function `String s -> s | _ -> fail "expected path string"
 let array = function `List xs -> xs | _ -> fail "expected array"
 let read p = E.value (E.read p)
+let read_manifest p =
+  let document=E.read_regular p in
+  let manifest=E.value document and raw=E.raw_bytes document in
+  (* Preserve genuine historical evidence decoding when the optional field is
+     absent. Presence requires strict ORIGINAL bytes: last-wins decoding cannot
+     establish duplicate-free top-level or nested hardware metadata. *)
+  (match manifest with
+   | `Assoc xs when List.mem_assoc "hardware_variant" xs ->
+     (match Identity_json.parse raw with Ok _ -> () | Error e -> fail (Identity_json.error_message e));
+     Manifest_metadata.validate manifest
+   | _ -> ());
+  manifest,Identity_json.sha256_bytes raw
 let join root p = if Filename.is_relative p then Filename.concat root p else p
 let resolve p =
   let rec walk current left = function
@@ -48,6 +60,7 @@ let relative root path =
   if not (String.starts_with ~prefix path) then fail (path^" is not in the selected run directory");
   safe (String.sub path (String.length prefix) (String.length path-String.length prefix)) "archive path"
 let inventory manifest =
+  Manifest_metadata.validate manifest;
   let files=List.map (fun x -> let name=safe (text (get x "path")) "bundle path" in
     if name="manifest.json" then fail "manifest.json must not list itself";
     name,text (get x "sha256")) (array (get manifest "files")) in
@@ -75,8 +88,8 @@ let inventory manifest =
   List.sort (fun (a,_) (b,_) -> String.compare a b) files
 let validate_bundle root record =
   let path=root^"/manifest.json" in regular path "bundle path is a symlink";
-  if hash path<>text (get record "manifest_sha256") then fail ("bundle manifest does not match the run record: "^path);
-  let manifest=read path in
+  let manifest,manifest_sha256=read_manifest path in
+  if manifest_sha256<>text (get record "manifest_sha256") then fail ("bundle manifest does not match the run record: "^path);
   if not (List.mem (get manifest "schema_version") [`Int 1;`Intlit "1"]) || get manifest "adapter"<>`String "LibreLane" then fail ("unsupported bundle schema or adapter: "^path);
   if get manifest "identity"<>get record "build_identity" then fail ("bundle identity does not match the run record: "^path);
   let files=List.map (fun (name,sha256) -> let path=root^"/"^name in regular path "bundle path is a symlink";
@@ -99,9 +112,8 @@ let checks run = check_dirs run |> List.filter_map (fun d -> let p=d^"/postcheck
 let verify run record checks =
   let manifest=join run (text (get (get record "outputs") "project"))^"/manifest.json" in
   regular manifest "staged manifest is a symlink";
-  let digest=hash manifest in
+  let m,digest=read_manifest manifest in
   if digest<>text (get record "manifest_sha256") then fail ("staged manifest does not match the run record; archive the run that produced it, not a modified copy ("^manifest^")");
-  let m=read manifest in
   if get m "identity"<>get record "build_identity" then fail "staged manifest identity does not match the run record";
   let flow=join run (text (get (get record "outputs") "flow")) and top=text (get m "top_module") in
   let verified=ref ["manifest_sha256",`String digest] in
@@ -124,7 +136,120 @@ let verify run record checks =
 type inspection = { run_dir:string; reports:Evidence_tar.source list; omitted:string list;
   report_bytes:int64; bundle_source:string; bundle_root:string; bundle_files:Evidence_tar.source list }
 type snapshot = { inspection:inspection; record:E.t; manifest:E.t; verified:E.t;
-  records:Evidence_tar.source list; record_omissions:string list }
+  records:Evidence_tar.source list; record_omissions:string list;
+  authoritative_reports:Evidence_tar.source list }
+
+(* Complete the explicit timing-full report closure from the same shallow native
+   report namespace advertised by collection. Never turn a stored raw_artifacts
+   string into filesystem authority or recursively walk an arbitrary directory. *)
+let authoritative_reports ~run_dir ~flow =
+  let bounded_children path =
+    let d=Unix.opendir path in
+    Fun.protect ~finally:(fun () -> Unix.closedir d) (fun () ->
+      let rec loop count acc = match Unix.readdir d with
+        | "." | ".." -> loop count acc
+        | name -> if count>=1024 then fail "authoritative report directory exceeds1024 entries";
+          loop (count+1) (name::acc)
+        | exception End_of_file -> List.sort String.compare acc in
+      loop 0 []) in
+  let flow_path=join run_dir flow in
+  let flow_relative=relative run_dir flow_path in
+  no_links flow_path "authoritative report flow is a symlink";
+  if not (directory flow_path) then fail "authoritative report flow is missing";
+  let sources=Hashtbl.create 64 and total=ref 0L in
+  let admit ~limit path =
+    let name=relative run_dir path in
+    regular path "authoritative report source is missing or a symlink";
+    let size=(Unix.LargeFile.stat path).st_size in
+    if size>limit then fail ("authoritative report source byte bound: "^name);
+    if not (Hashtbl.mem sources name) then (
+      if Hashtbl.length sources>=4096 then fail "authoritative report inventory exceeds4096 sources";
+      total:=Int64.add !total size;
+      if !total>268435456L then fail "authoritative report inventory exceeds256MiB");
+    name,size in
+  let retain name path digest =
+    let source={Evidence_tar.path;name;sha256=Some digest} in
+    (match Hashtbl.find_opt sources name with
+     | Some old when old.Evidence_tar.sha256<>source.sha256 -> fail ("authoritative report source changed: "^name)
+     | _ -> Hashtbl.replace sources name source);
+    `Assoc ["path",`String name;"sha256",`String digest] in
+  let metadata path =
+    let name,size=admit ~limit:8388608L path in
+    let ic=open_in_bin path in
+    let raw=Fun.protect ~finally:(fun () -> close_in_noerr ic) (fun () -> really_input_string ic (Int64.to_int size)) in
+    let digest=Identity_json.sha256_bytes raw in
+    if hash path<>digest then fail ("authoritative report metadata changed: "^name);
+    raw,retain name path digest in
+  let json raw=match E.parse ~reject_duplicates:true raw with Ok j -> E.value j | Error e -> fail e in
+  let module M=Hardcaml_asic_flow_domain.Backends.Librelane.Mapping in
+  let known=List.map (fun (o:M.occurrence) -> o.step.implementation) M.all |> List.sort_uniq String.compare in
+  let positive raw=raw<>"" && String.for_all (function '0'..'9' -> true | _ -> false) raw &&
+    (match int_of_string_opt raw with Some n -> n>0 | None -> false) in
+  let reports=ref [] in
+  List.iter (fun step_name ->
+    let step=flow_path^"/"^step_name in
+    (match stat step with
+     | Some st when st.Unix.LargeFile.st_kind=Unix.S_LNK ->
+       (match String.index_opt step_name '-' with
+        | Some i when positive (String.sub step_name 0 i) -> fail "authoritative report producer is a symlink"
+        | _ -> ())
+     | Some st when st.Unix.LargeFile.st_kind=Unix.S_DIR ->
+       let report_dir=step^"/reports" in
+       (match stat report_dir with
+        | None -> ()
+        | Some st when st.Unix.LargeFile.st_kind=Unix.S_DIR ->
+          let names=bounded_children report_dir |> List.filter (fun name -> Filename.check_suffix name ".rpt" || Filename.check_suffix name ".json") in
+          if names<>[] then (
+            let slug=match String.index_opt step_name '-' with
+              | Some i when positive (String.sub step_name 0 i) -> String.sub step_name (i+1) (String.length step_name-i-1)
+              | _ -> fail ("unsupported authoritative report producer: "^step_name) in
+            let config_raw,config_ref=metadata (step^"/config.json") in
+            let meta=get (json config_raw) "meta" in
+            let cls=text (get meta "step") in
+            if get meta "librelane_version"<>`String "3.1.0.dev3" || not (List.mem cls known) then
+              fail ("unsupported authoritative report metadata: "^step_name);
+            let stem=String.lowercase_ascii (String.map (function '.' -> '-' | c -> c) cls) in
+            if slug<>stem && not (String.starts_with ~prefix:(stem^"-") slug && positive (String.sub slug (String.length stem+1) (String.length slug-String.length stem-1))) then
+              fail ("authoritative report producer/metadata mismatch: "^step_name);
+            let state_raw,state_ref=metadata (step^"/state_out.json") in
+            (match Backend_state.parse state_raw with Ok _ -> () | Error e -> fail ("incomplete authoritative report State: "^e));
+            let runtime_raw,runtime_ref=metadata (step^"/runtime.txt") in
+            ignore (Timing_analysis.native_runtime_seconds runtime_raw);
+            List.iter (fun name ->
+              let path=report_dir^"/"^name in
+              let relative,size=admit ~limit:33554432L path in
+              let ref_=retain relative path (hash path) in
+              reports:=`Assoc ["source",ref_;"bytes",`Intlit (Int64.to_string size);
+                "producer",`Assoc ["class_id",`String cls;"directory",`String (flow_relative^"/"^step_name);
+                  "config",config_ref;"state_out",state_ref;"runtime",runtime_ref]]::!reports) names)
+        | Some _ -> fail "authoritative report directory is linked or not a directory")
+     | _ -> ())) (bounded_children flow_path);
+  let reports=List.rev !reports in
+  (* A cached advertisement can require a report to exist, but cannot authorize
+     another path, an absolute path, a symlink, or a directory traversal. *)
+  let cache=run_dir^"/results.json" in
+  if file cache then (
+    regular cache "advertised report inventory is a symlink";
+    if (Unix.LargeFile.stat cache).st_size>8388608L then fail "advertised report metadata exceeds8MiB";
+    match optional (read cache) "raw_artifacts" with
+    | `Null -> ()
+    | `List rows ->
+      if List.length rows>8192 then fail "advertised report inventory exceeds8192 entries";
+      List.iter (fun row ->
+        let name=safe (text row) "advertised raw artifact" in
+        let pre=flow_relative^"/" in
+        if String.starts_with ~prefix:pre name then (
+          let rest=String.sub name (String.length pre) (String.length name-String.length pre) in
+          match String.split_on_char '/' rest with
+          | [_;"reports";leaf] when Filename.check_suffix leaf ".rpt" || Filename.check_suffix leaf ".json" ->
+            if not (List.exists (fun r -> get (get r "source") "path"=`String name) reports) then
+              fail ("advertised authoritative report is missing or unsupported: "^name)
+          | _ -> ())) rows
+    | _ -> fail "malformed advertised raw artifact inventory");
+  let sources=Hashtbl.fold (fun _ source acc -> source::acc) sources [] |> List.sort (fun a b -> String.compare a.Evidence_tar.name b.name) in
+  sources,`Assoc ["schema_version",`Int 1;"profile",`String "librelane-native-direct-reports-v1";
+    "reports",`List reports;"source_count",`Int (List.length sources);"source_bytes",`Intlit (Int64.to_string !total)]
+
 let acquire ~verb ~include_records ~run_dir =
   let run_dir=resolve run_dir in
   regular (run_dir^"/run.json") "archive record is a symlink";
@@ -160,15 +285,20 @@ let acquire ~verb ~include_records ~run_dir =
          let name=safe (text (get ref_ "path")) "resource evidence path" in
          let path=join run_dir name in regular path "resource evidence is missing or a symlink";
          if `String (hash path)<>get ref_ "sha256" then fail ("resource evidence changed: "^name);path) in
-   let timing_files=if not (Timing_intent_flow.expected manifest || optional record "timing_intent_expected"=`Bool true) then [] else
+   let timing_files=if not (Timing_intent_flow.expected manifest || optional record "timing_intent_expected"=`Bool true || optional record "timing_physical_expected"=`Bool true) then [] else
      (match Timing_intent_flow.source_files ~context:record ~run_dir () with
       | Error e -> fail ("timing intent archive: "^e)
-      | Ok refs -> List.map (fun r -> join run_dir (text (get r "path"))) refs) in
+       | Ok refs -> List.map (fun r -> join run_dir (text (get r "path"))) refs) in
+   let report_sources,report_inventory=if Timing_physical_flow.enabled manifest && optional record "requested_stage"=`String "full" then
+     authoritative_reports ~run_dir ~flow else [],`Null in
+   let verified=if report_inventory=`Null then verified else match verified with
+     | `Assoc fields -> `Assoc (("authoritative_report_inventory",report_inventory)::fields)
+     | _ -> assert false in
    let candidates=List.map (join run_dir) (["execution.log";"project/src/config.json"] @
     List.map (fun p -> join flow p) ["final/metrics.csv";"final/metrics.json";"final/sdc";"final/gds";"final/nl";"06-yosys-synthesis";"55-openroad-stapostpnr"])
        @ physical_files @ resource_files @ timing_files
      @ List.concat_map (fun d -> List.map (Filename.concat d) (["postcheck.log";"testbench.v";"tt/precheck/reports"] @
-       if physical then List.filter (fun name -> String.starts_with ~prefix:"model-" name || List.mem name
+        if physical || Timing_physical_flow.enabled manifest then List.filter (fun name -> String.starts_with ~prefix:"model-" name || List.mem name
          ["stdcell-functional.v";"stdcell-vendor.v";"replay-models.json";"physical-runtime.py";"tt-adaptation.json";"replay-trace.txt"])
          (children d) else [])) (check_dirs run_dir) in
   let source path name = {Evidence_tar.path;name;sha256=Some (hash path)} in
@@ -183,7 +313,9 @@ let acquire ~verb ~include_records ~run_dir =
     selected @ List.map (fun p -> source p (relative run_dir p)) files,
      omitted @ if files=[] then [name] else []) ([],[]) candidates in
    let reports=List.fold_left (fun selected (source:Evidence_tar.source) ->
-      if List.exists (fun (prior:Evidence_tar.source) -> prior.name=source.name) selected then selected else selected@[source]) [] reports in
+      match List.find_opt (fun (prior:Evidence_tar.source) -> prior.name=source.name) selected with
+      | Some prior -> if prior.sha256<>source.sha256 then fail ("archive source changed during inventory: "^source.name);selected
+      | None -> selected@[source]) [] (reports @ report_sources) in
   let record_omissions=ref [] in
   let records=if not include_records then [] else List.filter_map (fun name -> let p=run_dir^"/"^name in
     if file p then (regular p "archive record is a symlink"; Some (source p name))
@@ -193,7 +325,7 @@ let acquire ~verb ~include_records ~run_dir =
   let records=List.map (fun (s:Evidence_tar.source) -> if s.name="run.json" then {s with sha256=Some run_hash} else s) records in
   let report_bytes=List.fold_left (fun n (s:Evidence_tar.source) -> Int64.add n (Unix.LargeFile.stat s.path).st_size) 0L reports in
   {inspection={run_dir;reports;omitted;report_bytes;bundle_source;bundle_root;bundle_files};
-   record;manifest;verified;records;record_omissions= !record_omissions}
+   record;manifest;verified;records;record_omissions= !record_omissions;authoritative_reports=report_sources}
 let inspect ~run_dir = (acquire ~verb:"list" ~include_records:false ~run_dir).inspection
 let rec mkdir p = try Unix.mkdir p 0o777 with
   | Unix.Unix_error (Unix.ENOENT,_,_) -> mkdir (Filename.dirname p); mkdir p
@@ -255,7 +387,11 @@ let publish ?(rename : string -> string -> unit = fun a b -> Unix.rename a b) ~r
       let limits={Evidence_tar.max_members=List.length members;max_member_bytes;
         max_tar_bytes;max_pax_bytes=1048576;max_name_bytes=1048576} in
       ignore (Archive_encoding.verify_input_bundle ~runtime ~limits ~manifest_sha256:(Option.get manifest_source.sha256) ~inventory input);
-      ignore (verify i.run_dir snap.record (checks i.run_dir));
+       ignore (verify i.run_dir snap.record (checks i.run_dir));
+       List.iter (fun (source:Evidence_tar.source) ->
+         regular source.path "authoritative report source changed during publication";
+         if Some (hash source.path)<>source.sha256 then fail ("authoritative report source changed during publication: "^source.name))
+         snap.authoritative_reports;
       let digest=hash input in
       Result_store.save_bytes (staging^"/input-bundle.sha256") (digest^"  input-bundle.tar.gz\n");
       let strings xs=`List (List.map (fun s -> `String s) xs) and str s=`String s in

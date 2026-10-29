@@ -1,0 +1,11 @@
+(executable
+ (name review_api)
+ (modules review_api)
+ (libraries hardcaml_asic.execution))
+
+; Review-only interposer: deterministic replacement at the actual libc openat
+; boundary, before or after descriptor acquisition. Never linked into production.
+(rule
+ (targets fence_open.so)
+ (deps fence_open.c)
+ (action (run cc -shared -fPIC -O2 %{dep:fence_open.c} -ldl -o %{targets})))

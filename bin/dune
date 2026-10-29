@@ -136,3 +136,10 @@
  (public_name hardcaml-asic-experimental-timing-intent-inspect)
  (package hardcaml_asic)
  (libraries hardcaml_asic.execution yojson))
+
+(executable
+ (name experimental_compare)
+ (modules experimental_compare)
+ (public_name hardcaml-asic-experimental-compare)
+ (package hardcaml_asic)
+ (libraries hardcaml_asic.execution yojson))

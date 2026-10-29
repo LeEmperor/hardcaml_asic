@@ -69,8 +69,8 @@ named owner and does not reuse that repository's phase IDs.
 | 5 | PT.4 — Resource-mapping inspection API | Existing records; PT.1–PT.2 for macro fields | Complete: CLI/library preparation and independent-example acceptance |
 | 6 | PT.5 — Requested-versus-realized resource checks | PT.2, PT.4 | Complete in supported retained-evidence scope: reconciliation, physical measurements and sampled resource timing |
 | 7 | PT.6 — Workbench resource inspector | PT.4; PT.5 for realized evidence | Delivered: bounded Resources inspector, exact sources, qualified comparison and declared controls |
-| 8 | PT.7 — Synchronizer/reset-aware timing declarations | Endpoint reference design; independent example acceptance | Bounded declarations/native-state/coarse and named synthesis accepted; exhaustive effects, other corners/post-PNR and consumer review pending |
-| 9 | PT.8 — Reproducible design-variant comparisons | PT.3–PT.5; PT.7 for final physical selection | Pending |
+| 8 | PT.7 — Synchronizer/reset-aware timing declarations | Endpoint reference design; independent example acceptance | Complete in agreed bounded library/example synthesis scope; physical qualification tracked separately |
+| 9 | PT.8 — Reproducible design-variant comparisons | PT.4–PT.7 for generic infrastructure; PT.3 for consumer selection | Bounded library/example declarations and checked pair comparison accepted; workload/consumer selection pending |
 
 This is the preferred execution order, not a requirement to serialize design
 work. PT.4 can begin against existing flop records; PT.7 can begin independently.
@@ -346,6 +346,51 @@ Started 2026-10-28: [bounded implementation plan and shared contract](developmen
 Generic library/example acceptance is independent of Protemu adoption. Consumer-specific
 protocol/reset/I/O review remains pending and is not authorized in this slice.
 
+**Closeout decision:** PT.7 is complete in its documented library/example synthesis
+scope. The original checklist requires implemented declarations, post-synthesis
+endpoint resolution and reviewable evidence; it does not require routed timing
+closure or exhaustive classification of every timing-check context. Existing
+coverage limitations and negative hold observations remain unchanged.
+
+Separate follow-up issue drafts (GitHub publication blocked by missing CLI authentication):
+
+- [All-corner pre-PNR timing qualification](development/ticket-all-corner-timing.md).
+- [Post-PNR preservation and timing closure](development/ticket-post-pnr-timing.md),
+  using the first ticket's reviewed corner/model policy.
+
+These are physical-qualification follow-ups, not additional PT.7 completion gates.
+**Physical follow-up accepted, 2026-10-29:**
+[bounded all-corner/physical qualification plan](development/timing-physical-qualification.md).
+One ordinary coarse full run of the unchanged five-register example closed setup,
+hold, slew and capacitance at fast/typical/slow cell-PVT corners using the nominal
+extracted RC view. Ordinary post-CTS repair added nine combinational delay cells,
+no registers or latency. The 20 ns period, 0.25 ns uncertainty and I/O environment
+remain unchanged. Named physical support remains deferred.
+
+Run `23a6954b852d4205b542d3815634d772`, build
+`ac513e0e7e9cfa935f73d697caebca8f601aeeb4ea62c2a2ccf61c10a10789cd`:
+
+| Cell corner, nominal RC | Worst setup ns | Worst hold ns | Setup/hold/slew/cap violations |
+| --- | ---: | ---: | --- |
+| Fast | +16.058595 | +0.102353 | All zero |
+| Typical | +15.729074 | +0.276686 | All zero |
+| Slow | +15.113664 | +0.590927 | All zero |
+
+Routing/Magic DRC, antenna and LVS pass; all nine TT checks and 512 final-netlist
+functional observations pass. Exact extracted inputs, clock propagation, qualified
+five-stage paths and separate native coverage/closure outcomes are retained.
+Corrected public archives restore all 423 raw artifacts with exact public response
+parity and original PDK/source hidden. [Actual evidence](../../hardcaml_asic_example/docs/timing_physical_full_result.md),
+[independent final review](development/timing-physical-final-review.md).
+This is this example/profile's physical timing acceptance, not arbitrary designs,
+all RC extremes, analog reset/CDC adequacy or Protemu qualification. Original
+synthesis hold failures remain unchanged historical evidence. Physical execution
+provider `4856e6af993642988c18c07f47a8c689` is distinct from archive correction
+provider `1ba205c2a11c4904b03d98b0e7a3f616`; no second P&R run was needed.
+Exhaustive per-check/effect instrumentation remains a documented limitation, to be
+promoted only for a concrete requirement. Consumer-specific review belongs to PT.3
+and the consumer's final physical-selection acceptance.
+
 **Owners: ASIC for declarations, validation/rendering and evidence; example for
 generic acceptance; Protemu for its separate circuit intent and consumer review.**
 
@@ -358,7 +403,7 @@ generic acceptance; Protemu for its separate circuit intent and consumer review.
   requested Yosys `keep=1` preserves five original stages in the tested mapping.
   All three sampled downstream setup/hold links remain timed. No automatic state
   insertion, general false paths, blanket chain exceptions or physical-preservation claim.
-- [ ] **PT.7c — Reviewable evidence.** Delivered identity-covered requested intent,
+- [x] **PT.7c — Reviewable evidence (bounded scope).** Delivered identity-covered requested intent,
   producer-reported resolution, command-completed application, hash-bound raw reports
   and strict read-only library/CLI inspection for standalone synthesized-netlist audits.
   **Accepted 2026-10-28:** [native-state/coarse-flow slice](development/pt7c-native-flow.md).
@@ -368,8 +413,8 @@ generic acceptance; Protemu for its separate circuit intent and consumer review.
   Ordinary macro-free coarse synthesis runs a separate linked STAPrePNR analysis;
   collect/report/inspection/archive replay bind exact run/build/synthesis/runtime/
   libraries/corner/producer sources, without rerender or current PDK lookup.
-  **Remaining:** exhaustive exception effects/per-check analysis and
-  post-PNR/other-corner acceptance. Current evidence proves stored
+  **Outside this completed scope:** exhaustive exception effects/per-check analysis
+  and separately tracked post-PNR/other-corner acceptance. Current evidence proves stored
   scope and bounded capture-witness suppression, not all affected paths or reset
   effect/adequacy. Overall inspection remains **exit 1 / unavailable**; ordinary
   synthesis report exit 0 is not a timing-closure verdict.
@@ -429,6 +474,37 @@ phase-sweep tests and ordinary STA do not establish analog metastability reliabi
 
 ## PT.8 — Reproducible design-variant comparisons
 
+Generic library/example first slice accepted 2026-10-29:
+[bounded variant/comparison plan](development/pt8-variant-plan.md).
+Hardware assignments remain distinct from resource policy and existing flow
+profiles. New declarations plus read-only evidence comparisons do not establish
+Protemu parameter conformance, workload equivalence or final configuration selection.
+Consumer-specific PT.8a–c obligations below stay pending independently.
+
+- [x] **Library/example foundation:** checked typed `Hardware_variant`,
+  `Project.of_variant` factory association, optional identity-covered manifest metadata
+  and historical absence semantics. Depth128/256 adapter behavior and a deliberate
+  ignored-depth failure are independently exercised; hashes alone are not conformance.
+- [x] **Read-only pair comparison:** public library/CLI over explicit bundle/coarse/
+  execution targets, declared axis, exact source identities/differences/outcomes,
+  per-metric comparable/confounded/unavailable reasons and eligible right-minus-left
+  deltas. Existing parsers/source replay are reused; no winner or tool execution.
+- [ ] **Workload/result contract:** verified logical workload, exact variant-specific
+  artifacts and producer/measurement semantics for firmware size, fetch counts,
+  latency and throughput. These metrics remain unavailable in comparison schema1.
+
+Corrected installed provider `f205e0d66f8d4f2b8d1e5f098171bb21`, source snapshot
+`1f5ac45882b29c7d577937b4ba2eb8960a899bd2221eaae5b3e115a111de3213`.
+204 example assertions and18 targeted correction cases pass. Six functional
+simulations include five positives and an ignored-depth conformance failure;
+no EDA. Independent reviews corrected unchecked coarse input copies, unsafe stored
+metadata reads, missing raw-generation fencing and duplicate-field loss before
+archive validation. Existing named-macro preparation remains unsupported.
+[Guide](guides/variant-comparison.md),
+[corrected acceptance](../../hardcaml_asic_example/docs/pt8_corrected_final.md),
+[variant review](development/pt8-variant-review.md),
+[comparison review](development/pt8-comparison-review.md).
+
 **Owners: Protemu for variants/workloads; ASIC for identities/results;
 Workbench for optional launch and comparison views.**
 
@@ -455,8 +531,9 @@ profiles are reused rather than rebuilt as a second experiment system.
    an exact SRAM through the ordinary flow, with backend/system acceptance.
 2. **Inspectable mappings:** PT.4–PT.6 complete; Workbench and headless clients
    show requested, selected and realized resources with provenance.
-3. **Physical selection ready:** PT.7–PT.8 complete; reviewed constraints and
-   comparable workload/physical evidence support the selected configuration.
+3. **Physical selection ready:** bounded PT.7, PT.8, separately qualified all-corner/
+   post-PNR timing and consumer review support the selected configuration. Bounded
+   PT.7 completion alone is not physical timing acceptance.
 
 Automatic banking/shape adaptation, automatic floorplan optimization, SRAM-backed
 tiny FIFOs/register files, new targets and general flow scheduling are outside this

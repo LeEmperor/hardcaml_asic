@@ -31,6 +31,7 @@ type t =
   ; timing    : Platform.Timing.t
   ; policy    : Resource.Policy.t
   ; source_inputs : string list
+  ; hardware_variant : Hardware_variant.t option
   }
 
 let create
@@ -87,17 +88,27 @@ let create
   ; timing
   ; policy
   ; source_inputs
+  ; hardware_variant = None
   }
 ;;
 
 let name t = t.name
 let source_inputs t = t.source_inputs
+let hardware_variant t = t.hardware_variant
+
+let of_variant ~variant ~create =
+  let open Or_error.Let_syntax in
+  let%bind project = Or_error.try_with (fun () -> create variant) |> Or_error.join in
+  if Option.is_some project.hardware_variant then
+    Or_error.error_string "project already has a hardware variant (repeated/conflicting attachment)"
+  else Ok { project with hardware_variant = Some variant }
+;;
 
 (* Local declaration inspection only, not a Workbench observation protocol:
    unpacking does not run D.create, resolve a target, or read files/Git/PDKs. *)
 let describe t =
   let (module D) = t.design in
-  [%sexp
+  let declaration = [%sexp
     { project_name = (t.name : string)
     ; top = (D.name : string)
     ; metadata = (t.metadata : Elaboration.Metadata.t)
@@ -108,7 +119,12 @@ let describe t =
     ; pinout = (t.pinout : Platform.Pinout.t)
     ; timing = (t.timing : Platform.Timing.t)
     ; policy = (t.policy : Resource.Policy.t)
-    }]
+    }] in
+  match t.hardware_variant, declaration with
+  | None, _ -> declaration
+  | Some variant, Sexp.List fields ->
+    Sexp.List (fields @ [Sexp.List [Sexp.Atom "hardware_variant"; Hardware_variant.sexp_of_t variant]])
+  | Some _, Sexp.Atom _ -> assert false
 ;;
 
 (* Runs the user's design once, and returns the Elaborated_project.t object *)
@@ -179,7 +195,9 @@ let elaborate_with_phases t ~mode ~on_phase =
       ~resources
       ~circuit
     |> fun project -> Elaboration.Elaborated_project.Private.with_timing_stages project
-         (Elaboration.Context.Private.timing_stages context)
+          (Elaboration.Context.Private.timing_stages context)
+    |> fun project -> Elaboration.Elaborated_project.Private.with_hardware_variant project
+          t.hardware_variant
 
   (* Elaborated_project.Private.create and Elaboration.Context.Private are exposed
      conventional internal APIs intended for Project.elaborate. This naming convention

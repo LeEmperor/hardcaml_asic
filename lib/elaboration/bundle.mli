@@ -52,11 +52,18 @@ type t
     path is absolute or contains an empty, ["."] or [".."] component, if any input is missing, a
     directory, or resolves outside [source_root], or if git fails. *)
 val render
-  :  ?simulation_project:Elaborated_project.t
+   :  ?simulation_project:Elaborated_project.t
+   -> ?timing_physical_qualification:bool
   -> source_root:string
   -> input_paths:string list
   -> Resolved.t
-  -> t Or_error.t
+   -> t Or_error.t
+
+(** [timing_physical_qualification=true] explicitly emits physical resolution v2
+    and requests all-configured-corner synthesis/post-PNR qualification. Requires
+    macro-free timing intent. Native resolution requires the complete sequential
+    inventory to equal the declared stages. Default rendering remains v1; this
+    flag is a qualification request, not evidence of native acceptance. *)
 
 (** Write a bundle under [output_dir], creating it and its parents when missing. Does not
     invoke any EDA tool or access the PDK.
@@ -105,6 +112,7 @@ val identity : t -> string
 (** Pure verification using the existing order-sensitive bundle identity algorithm.
     When [resource_snapshot] is present, strictly checks its resolved implementation
     schema and association with project, top, resource and macro inventories.
-    Historical absence remains supported without rewriting the manifest.
+     Present [hardware_variant] is strictly decoded including its inner identity;
+     null is invalid. Historical absence remains supported without rewriting the manifest.
     This verifies the manifest assertion, not files on disk or a source stamp. *)
 val verify_manifest_identity : Yojson.Safe.t -> unit Or_error.t

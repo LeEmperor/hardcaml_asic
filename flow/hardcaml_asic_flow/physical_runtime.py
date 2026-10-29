@@ -679,12 +679,73 @@ def check(project, pdk_root):
     return evidence
 
 
+def reviewed_timing_cell(name, module):
+    """Only bridge the reviewed undriven specify reference wires.
+
+    The four supplied reset-flop functional bodies are structurally identical
+    across drive strengths. Compare the entire non-timing body, not a name prefix
+    or merely the presence of three delayed_* strings. Other cells keep their
+    supplied structural logic and may not hide procedural/delayed behavior.
+    """
+    clean = re.sub(r"/\*.*?\*/|//[^\n]*", "", module, flags=re.S)
+    specify_count = len(re.findall(r"\bspecify\b", clean))
+    require(specify_count == len(re.findall(r"\bendspecify\b", clean)) and specify_count <= 1,
+            "unsupported specify structure: " + name)
+    functional = re.sub(r"\bspecify\b.*?\bendspecify\b", "", clean, flags=re.S)
+    delayed = sorted(set(re.findall(r"\bdelayed_(\w+)\b", functional)))
+    flops = {"sg13cmos5l_dfrbpq_1", "sg13cmos5l_dfrbpq_2", "sg13cmos5l_dfrbp_1", "sg13cmos5l_dfrbp_2"}
+    if name in flops:
+        dual = name in {"sg13cmos5l_dfrbp_1", "sg13cmos5l_dfrbp_2"}
+        ports = "Q, Q_N, CLK, D, RESET_B" if dual else "Q, CLK, D, RESET_B"
+        wires = "wire int_fwire_IQ, int_fwire_IQN, int_fwire_r; wire xcr_0;" if dual else "wire int_fwire_IQ, int_fwire_r, xcr_0;"
+        expected = f"""module {name} ({ports});
+          output {"Q, Q_N" if dual else "Q"}; input CLK, D, RESET_B;
+          reg notifier; wire delayed_D, delayed_RESET_B, delayed_CLK;
+          {wires}
+          not (int_fwire_r, delayed_RESET_B); buf (xcr_0, 0);
+          ihp_dff_r (int_fwire_IQ, notifier, delayed_CLK, delayed_D, int_fwire_r, xcr_0);
+          buf (Q, int_fwire_IQ);
+          {"not (int_fwire_IQN, int_fwire_IQ); buf (Q_N, int_fwire_IQN);" if dual else ""}
+          endmodule"""
+        normalize = lambda value: re.sub(r"\s+", "", value)
+        require(normalize(functional) == normalize(expected), "unreviewed reset-flop functional body: " + name)
+        require(delayed == ["CLK", "D", "RESET_B"], "unreviewed delayed reference pins: " + name)
+    else:
+        require(not delayed and not re.search(r"\b(?:reg|always|initial|notifier|ihp_\w+)\b|[$#`\"]", functional),
+                "unreviewed nonstructural/delayed-reference cell: " + name)
+    # Strip only the original specify region; preserve the supplied function text.
+    # Current qualified module bodies contain no string literals or preprocessor
+    # directives; comment words cannot impersonate timing delimiters.
+    mask = re.sub(r"/\*.*?\*/|//[^\n]*", lambda m: re.sub(r"[^\n]", " ", m.group()), module, flags=re.S)
+    regions = list(re.finditer(r"\bspecify\b.*?\bendspecify\b", mask, re.S))
+    require(len(regions) == specify_count, "unbalanced specify regions: " + name)
+    body = module
+    for region in reversed(regions):
+        body = body[:region.start()] + body[region.end():]
+    bypass = "\n".join("assign delayed_" + pin + " = " + pin + ";" for pin in delayed)
+    return body.replace("endmodule", bypass + "\nendmodule"), delayed
+
+
 def replay_models(project, pdk_root, netlist, output):
     """Derive only reviewed zero-delay cells; never rewrite the netlist or PDK."""
     project, pdk_root, output = Path(project), Path(pdk_root), Path(output)
     manifest = load(project / "manifest.json")
-    contract = manifest["macro_contract"]["implementation_simulation"]
-    require(contract["defines"] == ["FUNCTIONAL"], "functional SRAM model contract")
+    timing = "timing_physical_qualification" in manifest and "macro_contract" not in manifest
+    if timing:
+        expected = dict(schema_version=1, resolution_policy="scalar-q-driver-cmos5l-physical-v2",
+            analysis_corners="all_configured", analysis_stages=["synthesized_netlist", "post_pnr"],
+            sequential_inventory="exact_declared_stages", max_buffer_hops=8,
+            endpoint_map="::hc_pt7::checked_endpoints", trace_inventory="::hc_pt7::checked_traces")
+        require(manifest["timing_physical_qualification"] == expected and
+                manifest.get("timing_intent", {}).get("resolution_policy") == expected["resolution_policy"] and
+                manifest.get("operation") == "Hardening" and manifest.get("target", {}).get("technology") == "ihp-sg13cmos5l",
+                "unsupported macro-free timing replay profile")
+        require(Path(netlist).resolve() == (project / "runs/asic/final/nl" / (manifest["top_module"] + ".nl.v")).resolve(),
+                "timing replay requires the unchanged final implementation netlist")
+        contract = {"models": []}
+    else:
+        contract = manifest["macro_contract"]["implementation_simulation"]
+        require(contract["defines"] == ["FUNCTIONAL"], "functional SRAM model contract")
     pdk = pdk_root / "ihp-sg13cmos5l"
     sources = []
     for ref in contract["models"]:
@@ -698,19 +759,46 @@ def replay_models(project, pdk_root, netlist, output):
         require(recorded.get(ref) == sha(path), "run-bound macro model changed: " + ref)
     vendor = pdk / "libs.ref/sg13cmos5l_stdcell/verilog/sg13cmos5l_stdcell.v"
     udp = vendor.with_name("sg13cmos5l_udp.v")
+    if timing:
+        require(all(path.resolve().is_relative_to(pdk_root.resolve()) for path in (vendor, udp)), "timing model source escapes pinned PDK")
+        require(all(path.is_file() and path.stat().st_size <= 32 * 1024 * 1024 for path in
+                    (vendor, udp, Path(netlist), project / "manifest.json", project.parent / "preflight.json")),
+                "timing replay source exceeds32MiB or is missing")
     recorded_paths = {str(Path(r["path"]).resolve()): r["sha256"] for r in references if "path" in r}
     for path in (vendor, udp):
         require(recorded_paths.get(str(path.resolve())) == sha(path), "run-bound standard-cell model changed: " + str(path))
-    rtl = Path(netlist).read_text()
-    used = sorted(set(re.findall(r"\b(sg13cmos5l_\w+)\s+(?:\\\S+|\w+)\s*\(", rtl)))
+    before = {str(path): sha(path) for path in [project / "manifest.json", project.parent / "preflight.json", Path(netlist), vendor, udp] + sources}
+    snapshots = {}
+    if timing:
+        snapshots = {path: Path(path).read_bytes() for path in before}
+        require(all(hashlib.sha256(data).hexdigest() == before[path] for path, data in snapshots.items()),
+                "timing replay source changed while snapshotting")
+        require(json.loads(snapshots[str(project / "manifest.json")]) == manifest and
+                json.loads(snapshots[str(project.parent / "preflight.json")])["references"] == references,
+                "timing replay source metadata changed while snapshotting")
+        require(all(hashlib.sha256(snapshots[str(path)]).hexdigest() == recorded_paths.get(str(path.resolve()))
+                    for path in (vendor, udp)), "timing replay snapshot differs from run-bound supplied source")
+        require(not any((output / name).exists() for name in ("stdcell-functional.v", "stdcell-vendor.v", "replay-models.json", "model-0.v")),
+                "fresh timing replay output required")
+    rtl = snapshots[str(Path(netlist))].decode("utf-8") if timing else Path(netlist).read_text()
+    selection_rtl = re.sub(r"/\*.*?\*/|//[^\n]*", "", rtl, flags=re.S) if timing else rtl
+    used = sorted(set(re.findall(r"\b(sg13cmos5l_\w+)\s+(?:\\\S+|\w+)\s*\(", selection_rtl)))
     require(used, "no mapped standard cells found")
-    text = vendor.read_text()
+    require(not timing or len(used) <= 4096, "timing replay used-cell bound exceeded")
+    text = snapshots[str(vendor)].decode("utf-8") if timing else vendor.read_text()
     preamble = text[:text.index("// type:")] if "// type:" in text else ""
     transformed = [preamble, "`timescale 1ns/1ps\n// Reviewed zero-delay functional view; not SDF/timing evidence.\n"]
     adaptations = {}
+    module_sources = {}
     for name in used:
         matches = re.findall(r"\bmodule\s+" + re.escape(name) + r"\s*\(.*?\bendmodule", text, re.S)
         require(len(matches) == 1, "unknown/nonunique vendor cell: " + name)
+        if timing:
+            body, delayed = reviewed_timing_cell(name, matches[0])
+            transformed.append(body)
+            adaptations[name] = delayed
+            module_sources[name] = hashlib.sha256(matches[0].encode()).hexdigest()
+            continue
         body = re.sub(r"\bspecify\b.*?\bendspecify\b", "", matches[0], flags=re.S)
         delayed = sorted(set(re.findall(r"\bdelayed_(\w+)\b", body)))
         if delayed:
@@ -724,13 +812,21 @@ def replay_models(project, pdk_root, netlist, output):
     retained = []
     for i, source in enumerate(sources + [udp]):
         target = output / ("model-" + str(i) + ".v")
-        target.write_bytes(source.read_bytes())
+        target.write_bytes(snapshots[str(source)] if timing else source.read_bytes())
         retained.append(str(target))
-    (output / "stdcell-vendor.v").write_bytes(vendor.read_bytes())
-    write(output / "replay-models.json", {"scope": "zero_delay_gate_functional", "models": retained + [str(functional)],
-          "vendor_sha256": sha(vendor), "functional_sha256": sha(functional), "adaptations": adaptations,
-          "source_hashes": {str(p): sha(p) for p in sources + [udp, vendor]},
-          "retained_hashes": {Path(p).name: sha(p) for p in retained + [str(functional), str(output / "stdcell-vendor.v")]}})
+    (output / "stdcell-vendor.v").write_bytes(snapshots[str(vendor)] if timing else vendor.read_bytes())
+    inventory = {"scope": "zero_delay_gate_functional", "models": retained + [str(functional)],
+          "vendor_sha256": before[str(vendor)] if timing else sha(vendor), "functional_sha256": sha(functional), "adaptations": adaptations,
+          "source_hashes": {str(p): before[str(p)] if timing else sha(p) for p in sources + [udp, vendor]},
+          "retained_hashes": {Path(p).name: sha(p) for p in retained + [str(functional), str(output / "stdcell-vendor.v")]}}
+    if timing:
+        inventory.update(schema_version=2, profile="cmos5l_physical_timing_used_cells_v1",
+            claim="zero_delay_digital_functional_only_not_vendor_timing_or_sdf_conformance",
+            manifest_sha256=before[str(project / "manifest.json")], netlist_sha256=before[str(Path(netlist))],
+            preflight_sha256=before[str(project.parent / "preflight.json")], vendor_module_sha256=module_sources,
+            defines=["FUNCTIONAL", "SIM"])
+        require(all(sha(path) == digest for path, digest in before.items()), "timing replay supplied source changed during adaptation")
+    write(output / "replay-models.json", inventory)
 
 
 def prepare_tt(work):

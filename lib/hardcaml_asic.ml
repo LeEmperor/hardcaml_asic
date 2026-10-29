@@ -27,6 +27,7 @@ end
 (** {1 Consumer entry points} *)
 
 module Project = Project
+module Hardware_variant = Hardware_variant
 module Resource_preparation = Resource_preparation
 module Resource_snapshot = Elaboration.Resource_snapshot
 module Source_snapshot = Elaboration.Source_snapshot

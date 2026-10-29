@@ -17,8 +17,15 @@ type result = private {
   source : string;
   verdict : verdict;
   human : string;
+  (** Exact raw identities of metadata actually consumed by [run], including
+      stored results when present. Not a digest of only normalized results. *)
+  metadata_sources : Evidence_json.t list;
 }
 
 (** Prefer stored results.json; otherwise collect in memory, without publishing.
-    Optional context/state support the next native finalization service. *)
-val run : ?context:Evidence_json.t -> ?synthesis_state:string -> string -> result
+     Metadata reads are bounded/nonblocking, descriptor-bound regular reads with
+     no symlink traversal. [render_human=false] skips unused supplementary human
+     report reads. [strict_sources=true] rejects corrupt stored resource assertions
+     before fresh reconciliation; genuine recorded failed evidence stays readable.
+     Defaults retain historical report verdict/rendering behavior. *)
+val run : ?context:Evidence_json.t -> ?synthesis_state:string -> ?render_human:bool -> ?strict_sources:bool -> string -> result

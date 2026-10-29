@@ -63,11 +63,21 @@ let identifier j =
   if not (letter x.[0]) || not (String.for_all (fun c -> letter c || (c>='0' && c<='9')) x)
   then invalid_arg "invalid timing intent identifier";x
 let integer = function `Int n when n>=0 && n<=256 -> n | _ -> invalid_arg "invalid bounded timing intent count/index"
+let physical manifest = get manifest "timing_physical_qualification"<>`Null
+let validate_physical manifest =
+  if physical manifest then (
+    let expected=obj ["schema_version",`Int 1;"resolution_policy",s "scalar-q-driver-cmos5l-physical-v2";
+      "analysis_corners",s "all_configured";"analysis_stages",arr [s "synthesized_netlist";s "post_pnr"];
+      "sequential_inventory",s "exact_declared_stages";"max_buffer_hops",`Int 8;
+      "endpoint_map",s "::hc_pt7::checked_endpoints";"trace_inventory",s "::hc_pt7::checked_traces"] in
+    if not (equal (get manifest "timing_physical_qualification") expected) || get manifest "macro_contract"<>`Null then
+      invalid_arg "unsupported physical timing qualification contract")
 let requested manifest =
+  validate_physical manifest;
   let intent=get manifest "timing_intent" in
   exact intent ["contract";"schema_version";"resolution_policy";"stages";"exceptions";"sdc"];
   if get intent "contract"<>s "hardcaml-asic.timing-intent" || get intent "schema_version"<>`Int 1 ||
-     get intent "resolution_policy"<>s "scalar-q-driver-cmos5l-v1" || get intent "sdc"<>s "constraints/top.sdc"
+      get intent "resolution_policy"<>s (if physical manifest then "scalar-q-driver-cmos5l-physical-v2" else "scalar-q-driver-cmos5l-v1") || get intent "sdc"<>s "constraints/top.sdc"
   then invalid_arg "unsupported timing intent contract";
   let stages=list (get intent "stages") and exceptions=list (get intent "exceptions") in
   if stages=[] || List.length stages>256 || List.length exceptions>256 then invalid_arg "missing/bounded timing intent inventory";
@@ -113,6 +123,7 @@ let requested manifest =
     | _ -> invalid_arg "unsupported timing exception kind/scope") exceptions;
   intent,stages,exceptions
 
+let validate_qualification manifest = ignore (requested manifest)
 let wire_prefix="HC_ASIC_TIMING_V1\t"
 let iter_lines ~max_lines raw f =
   let length=String.length raw in
@@ -189,21 +200,64 @@ let replay ~manifest ~resolution ~log_wire =
   let count_event name =
     let j=take name ["stage_count";"exception_count"] in
     if get j "stage_count"<>`Int (List.length stages) || get j "exception_count"<>`Int (List.length exceptions)
-    then invalid_arg "timing audit inventory counts mismatch" in
-  count_event "begin";
-  let resolved_stages=List.map (fun stage ->
-    let j=take "stage" ["id";"anchor";"cell";"master";"q_pin";"data_pin";"async_pin"] in
+     then invalid_arg "timing audit inventory counts mismatch" in
+   let trace label root sink =
+     let j=take "trace" ["label";"root";"sink";"nets";"hops"] in
+     if get j "label"<>s label || get j "sink"<>s sink then invalid_arg "physical trace label/sink mismatch";
+     let actual_root=text (get j "root") in
+     Option.iter (fun root -> if actual_root<>root then invalid_arg "physical trace root mismatch") root;
+     let nets=list (get j "nets") |> List.map text and hops=list (get j "hops") in
+     if List.length hops>8 || List.length nets<>List.length hops+1 then invalid_arg "physical trace hop/net bounds";
+     unique "physical trace net" nets;
+     List.iter (fun hop ->
+       exact hop ["cell";"master";"input";"output"];
+       let cell=text (get hop "cell") in
+       if not (List.mem (text (get hop "master"))
+         ["sg13cmos5l_buf_1";"sg13cmos5l_buf_2";"sg13cmos5l_buf_4";"sg13cmos5l_buf_8";"sg13cmos5l_buf_16";
+          "sg13cmos5l_dlygate4sd1_1";"sg13cmos5l_dlygate4sd2_1";"sg13cmos5l_dlygate4sd3_1"]) ||
+         get hop "input"<>s (cell^"/A") || get hop "output"<>s (cell^"/X") then invalid_arg "unsupported physical trace transform") hops;
+     unique "physical trace cell" (List.map (fun hop -> text (get hop "cell")) hops);
+     actual_root in
+   count_event "begin";
+   let resolved_stages=List.map (fun stage ->
+     let id=text (get stage "id") in
+     let root=if physical manifest then Some (trace ("anchor for "^id) None (text (get stage "anchor"))) else None in
+     let clock=if physical manifest then (
+       match !cursor with
+       | j::_ -> let sink=text (get j "sink") in ignore (trace ("clock for "^id) (Some "clk") sink);Some sink
+       | [] -> invalid_arg "missing physical clock trace") else None in
+     let j=take "stage" ["id";"anchor";"cell";"master";"q_pin";"data_pin";"async_pin"] in
     List.iter (fun k -> if get j k<>get stage k then invalid_arg ("mapped stage differs from intent: "^k)) ["id";"anchor"];
-    let cell=text (get j "cell") and master=text (get j "master") in
+     let cell=text (get j "cell") and master=text (get j "master") in
+     Option.iter (fun root -> if root<>cell^"/Q" then invalid_arg "physical anchor/Q mismatch") root;
+     Option.iter (fun clock -> if clock<>cell^"/CLK" then invalid_arg "physical clock endpoint mismatch") clock;
     if get j "q_pin"<>s (cell^"/Q") || get j "data_pin"<>s (cell^"/D") then invalid_arg "mapped stage Q/data pin role mismatch";
     let async=match master with
       | "sg13cmos5l_dfrbpq_1" | "sg13cmos5l_dfrbpq_2"
       | "sg13cmos5l_dfrbp_1" | "sg13cmos5l_dfrbp_2" -> s (cell^"/RESET_B")
       | _ -> invalid_arg "unsupported mapped sequential master" in
     if get j "async_pin"<>`Null && get j "async_pin"<>async then invalid_arg "mapped stage async pin role mismatch";j) stages in
-  unique "mapped stage cell" (List.map (fun stage -> text (get stage "cell")) resolved_stages);
-  let resolved=List.map (fun ex ->
-    let j=take "resolved" ["id";"kind";"source";"targets"] in
+   unique "mapped stage cell" (List.map (fun stage -> text (get stage "cell")) resolved_stages);
+   if physical manifest then (
+     let inventory=take "inventory" ["cells"] in
+     let cells=List.map (fun row -> get row "cell") resolved_stages |> List.sort compare in
+     if get inventory "cells"<>arr cells then invalid_arg "physical sequential inventory mismatch";
+     List.iter2 (fun stage mapped ->
+       let index=integer (get stage "index") in
+       if index>0 then (
+         let previous=List.find (fun other -> get other "chain"=get stage "chain" && get other "index"=`Int (index-1)) stages in
+         let previous=List.find (fun other -> get other "id"=get previous "id") resolved_stages in
+         ignore (trace ("interstage for "^text (get stage "id")) (Some (text (get previous "q_pin"))) (text (get mapped "data_pin"))))) stages resolved_stages);
+   let resolved=List.map (fun ex ->
+     if physical manifest then (
+       let source=get ex "source" in
+       let port=text (get source "port") in
+       let port=match get source "bit" with `Null -> port | `Int n -> port^"["^string_of_int n^"]" | _ -> assert false in
+       List.iter (fun id ->
+         let stage=List.find (fun stage -> get stage "id"=id) resolved_stages in
+         let pin=if get ex "kind"=s "async_capture" then "data_pin" else "async_pin" in
+         ignore (trace (text (get ex "kind")^" for "^text id) (Some port) (text (get stage pin)))) (list (get ex "targets")));
+     let j=take "resolved" ["id";"kind";"source";"targets"] in
     List.iter (fun k -> if get j k<>get ex k then invalid_arg ("resolved exception differs from request: "^k)) ["id";"kind"];
     let source=get ex "source" in
     let port=text (get source "port") in
@@ -220,7 +274,11 @@ let replay ~manifest ~resolution ~log_wire =
     List.iter (fun k -> if get j k<>get resolved k then invalid_arg ("applied/resolved mismatch: "^k)) ["id";"kind";"source";"targets"];j) resolved in
   count_event "complete";
   if !cursor<>[] then invalid_arg "extra/repeated timing audit block";
-  intent,resolved_stages,resolved,applied
+   let topology=if physical manifest then Some (obj ["status",s "producer_reported_checked_traces";
+     "traces",arr (List.filter (fun event -> get event "event"=s "trace") events);
+     "sequential_inventory",get (List.find (fun event -> get event "event"=s "inventory") events) "cells"])
+     else None in
+   intent,resolved_stages,resolved,applied,topology
 
 (* Replay the library-owned serializer rather than duplicating a Tcl parser.
    async presence is not in the manifest; the reported stage inventory supplies
@@ -244,6 +302,7 @@ let replay_sdc ~intent ~resolved_stages ~sdc =
   if not (String.ends_with ~suffix:expected sdc) then invalid_arg "SDC timing intent differs from library serializer replay"
 
 let manifest_envelope manifest =
+  Manifest_metadata.validate manifest;
   let fields=["identity";"schema_version";"project";"top_module";"source_revision";"source_inputs";
     "files";"synthesis_sources";"simulation_sources";"resources";"resource_snapshot";
     "simulation_resources";"timing_intent";"target";"adapter";"operation";"resolved_settings";
@@ -251,7 +310,10 @@ let manifest_envelope manifest =
   let has_macro=get manifest "macro_contract"<>`Null in
   let has_native=get manifest "timing_native_coverage"<>`Null in
   exact manifest (fields@(if has_macro then ["macro_contract"] else [])@
-    (if has_native then ["timing_native_coverage"] else []));
+    (if has_native then ["timing_native_coverage"] else [])@
+    (if physical manifest then ["timing_physical_qualification"] else [])@
+    (match manifest with `Assoc xs when List.mem_assoc "hardware_variant" xs -> ["hardware_variant"] | _ -> []));
+  validate_physical manifest;
   if has_native then (
     let native=get manifest "timing_native_coverage" in
     exact native ["contract";"schema";"profile";"producer"];
@@ -352,9 +414,11 @@ let inspect_impl ~directory () =
   let audit_raw=read ~total ~limit:(1024*1024) (member root "audit.json") in
   let audit=strict audit_raw in
   exact audit ["schema";"kind";"scope";"build_identity";"audit_id";"stage";"producer";"corner";"sources"];
-  let native=get audit "schema"=`Int 2 in
-  if not (List.mem (get audit "schema") [`Int 1;`Int 2]) || get audit "kind"<>s "hardcaml-asic.timing-intent-audit" ||
-     get audit "scope"<>s "standalone_synthesized_netlist_sta" || get audit "stage"<>s "synthesized_netlist"
+   let extracted=get audit "schema"=`Int 3 in
+   let native=List.mem (get audit "schema") [`Int 2;`Int 3] in
+   if not (List.mem (get audit "schema") [`Int 1;`Int 2;`Int 3]) || get audit "kind"<>s "hardcaml-asic.timing-intent-audit" ||
+      get audit "scope"<>s (if extracted then "standalone_extracted_netlist_sta" else "standalone_synthesized_netlist_sta") ||
+      get audit "stage"<>s (if extracted then "post_pnr" else "synthesized_netlist")
   then invalid_arg "unsupported timing-intent audit schema/scope/stage";
   ignore (digest (get audit "build_identity"));
   List.iter (fun k -> ignore (text (get audit k))) ["audit_id";"corner"];
@@ -365,8 +429,8 @@ let inspect_impl ~directory () =
   ignore (text (get producer "version"));
   let sources=list (get audit "sources") in
   if List.length sources>64 then invalid_arg "audit exceeds 64 sources";
-  let required_roles=roles@(if native then native_roles else []) in
-  let receipt_roles=input_roles@(if native then ["native_producer"] else []) in
+   let required_roles=roles@(if native then native_roles else [])@(if extracted then ["spef";"parasitic_annotation";"clock_state"] else []) in
+   let receipt_roles=input_roles@(if native then ["native_producer"] else [])@(if extracted then ["spef"] else []) in
   let loaded=List.map (fun source ->
     exact source ["role";"path";"sha256"];
     let role=text (get source "role") and path=text (get source "path") in
@@ -405,7 +469,8 @@ let inspect_impl ~directory () =
   List.iter (fun arg -> ignore (text arg)) argv;
   let log=scan_log ~native (raw "log") in
   if not (equal log.logged_receipt receipt) then invalid_arg "log/receipt mismatch";
-  let manifest=strict (raw "manifest") in
+   let manifest=strict (raw "manifest") in
+   if extracted && not (physical manifest) then invalid_arg "physical audit requires explicit physical timing contract";
   let sdc_file=manifest_envelope manifest in
   (match Hardcaml_asic.Elaboration.Bundle.verify_manifest_identity manifest with
    | Ok () -> () | Error _ -> invalid_arg "invalid bundle manifest identity");
@@ -413,7 +478,7 @@ let inspect_impl ~directory () =
   (* Check the complete retained SDC bytes, independently of the supplementary
      PT7 suffix replay. Altering any prefix cannot retain this bundle identity. *)
   if digest (get sdc_file "sha256")<>Identity_json.sha256_bytes (raw "sdc") then invalid_arg "audit SDC differs from emitted bundle";
-  let intent,resolved_stages,resolved,applied=replay ~manifest ~resolution:(raw "resolution") ~log_wire:log.wire in
+   let intent,resolved_stages,resolved,applied,topology=replay ~manifest ~resolution:(raw "resolution") ~log_wire:log.wire in
   let native_coverage=if native then (
     let contract=get manifest "timing_native_coverage" in
     if contract=`Null then invalid_arg "schema2 requires identity-covered native producer contract";
@@ -421,23 +486,32 @@ let inspect_impl ~directory () =
     let file=singleton "native producer bundle member" (List.filter (fun file -> get file "path"=s producer_path) (list (get manifest "files"))) in
     if digest (get file "sha256")<>Identity_json.sha256_bytes (raw "native_producer")
     then invalid_arg "retained native producer differs from emitted bundle";
-    match Timing_native_coverage.inspect ~top:(text (get manifest "top_module")) ~resolved ~native_sdc:(raw "native_sdc")
+     match Timing_native_coverage.inspect_with_clock_policy ~allow_propagated:extracted ~top:(text (get manifest "top_module")) ~resolved ~native_sdc:(raw "native_sdc")
       ~native_data:(raw "native_data") ~native_checks:(raw "native_checks")
       ~native_endpoints:(raw "native_endpoints") with
-    | Ok j -> Some j | Error e -> invalid_arg e)
+    | Ok j ->
+      if extracted then (
+        let clocks=strict (raw "clock_state") in
+        exact clocks ["schema";"all_propagated";"clocks"];
+        if get clocks "schema"<>`Int 1 || get clocks "all_propagated"<>`Int 1 ||
+           get clocks "clocks"<>get (get j "stored_clock_propagation") "clocks" then
+          invalid_arg "native clock observation contradicts serialized propagated clock state");
+      Some j
+    | Error e -> invalid_arg e)
   else (replay_sdc ~intent ~resolved_stages ~sdc:(raw "sdc");None) in
-  audit,sources,audit_raw,intent,resolved_stages,resolved,applied,process,native_coverage
+   audit,sources,audit_raw,intent,resolved_stages,resolved,applied,process,native_coverage,topology
 
 let inspect ~directory () =
   try
-    let audit,sources,audit_raw,intent,resolved_stages,resolved,applied,process,native_coverage=inspect_impl ~directory () in
+    let audit,sources,audit_raw,intent,resolved_stages,resolved,applied,process,native_coverage,topology=inspect_impl ~directory () in
     Ok (obj ["schema",get audit "schema";"kind",s "hardcaml-asic.timing-intent-evidence";
       "scope",get audit "scope";"verdict",s "unavailable";
       "provenance",audit;"audit_sha256",s (Identity_json.sha256_bytes audit_raw);
       "sources",arr sources;
       "process",process;
       "requested",intent;
-      "resolved",obj ["status",s "producer_reported";"stages",arr resolved_stages;"exceptions",arr resolved];
+      "resolved",obj (["status",s "producer_reported";"stages",arr resolved_stages;"exceptions",arr resolved]@
+        (match topology with None -> [] | Some j -> ["physical_topology",j]));
       "applied",obj ["status",s "command_completed";"exceptions",arr applied;
         "meaning",s "set_false_path returned; not native path-effect proof"];
       "source_authentication",s "hash_checked_retained_producer_assertions_not_authenticated_execution";

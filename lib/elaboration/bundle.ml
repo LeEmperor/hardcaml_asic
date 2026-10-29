@@ -154,7 +154,9 @@ let verify_manifest_identity manifest =
       let payload = `Assoc (List.filter fields ~f:(fun (k, _) -> not (String.equal k "identity"))) in
       if not (String.equal identity (sha256 (Yojson.Safe.to_string payload)))
       then invalid_arg "bundle manifest identity mismatch";
-      verify_resource_snapshot manifest
+      verify_resource_snapshot manifest;
+      Option.iter (List.Assoc.find fields "hardware_variant" ~equal:String.equal)
+        ~f:(fun j -> ignore (Hardware_variant.of_yojson j |> Or_error.ok_exn : Hardware_variant.t))
     | _ -> invalid_arg "expected bundle manifest object")
 ;;
 
@@ -303,7 +305,7 @@ let read_input ~source_root path =
    MAX_TRANSITION_CONSTRAINT and MAX_CAPACITANCE_CONSTRAINT unset, so base.sdc would not
    have written them either, and the Liberty's own limits apply.
 *)
-let sdc (resolved : Resolved.t) =
+let sdc ~timing_physical_qualification (resolved : Resolved.t) =
 
   let number value = Printf.sprintf "%.17g" value in
   let constraints = resolved.target.constraints in
@@ -369,7 +371,7 @@ let sdc (resolved : Resolved.t) =
         (ports outputs)
     ; List.map resolved.input_delays_ns ~f:(delay "input") |> String.concat
     ; List.map resolved.output_delays_ns ~f:(delay "output") |> String.concat
-    ; Option.value_map resolved.timing_intent ~default:"" ~f:Timing_intent.sdc
+    ; Option.value_map resolved.timing_intent ~default:"" ~f:(Timing_intent.sdc ~physical:timing_physical_qualification)
     ]
 ;;
 
@@ -615,6 +617,7 @@ let macro_stub =
 *)
 let render
     ?simulation_project (* a separate Simulation elaboration of the same project; *)
+    ?(timing_physical_qualification = false)
     ~source_root (* git checkout that [input_paths] are relative to; *)
     ~input_paths (* generator sources to copy and hash; order and repeats ignored; *)
     (resolved : Resolved.t)
@@ -622,6 +625,13 @@ let render
   let elaborated_project = resolved.elaborated_project in
   let top = Circuit.name (Elaborated_project.circuit elaborated_project) in
   let source_name = top ^ ".v" in
+
+  let%bind.Or_error () =
+    if timing_physical_qualification
+       && (Option.is_none resolved.timing_intent || not (List.is_empty resolved.macros))
+    then Or_error.error_string "physical timing qualification requires declared timing stages and no macros"
+    else Ok ()
+  in
 
   (* The simulation project must describe the same design, or the two RTL sets disagree *)
   let%bind.Or_error () =
@@ -632,11 +642,14 @@ let render
          && String.equal
               (Elaborated_project.project_name simulation)
               (Elaborated_project.project_name elaborated_project)
-         && String.equal (Circuit.name (Elaborated_project.circuit simulation)) top
+          && String.equal (Circuit.name (Elaborated_project.circuit simulation)) top
+          && Option.equal (fun a b -> String.equal (Hardware_variant.identity a) (Hardware_variant.identity b))
+               (Elaborated_project.hardware_variant simulation)
+               (Elaborated_project.hardware_variant elaborated_project)
       then Ok ()
       else
         Or_error.error_string
-           "simulation project must have Simulation mode and the same project and top"
+            "simulation project must have Simulation mode and the same project, top and hardware variant"
   in
 
   (* Synthesis RTL, one file holding the full module hierarchy *)
@@ -699,7 +712,7 @@ let render
   let produced =
     [ "src/" ^ source_name, rtl
     ; "src/config.json", json flow_configuration
-    ; "constraints/top.sdc", sdc resolved
+    ; "constraints/top.sdc", sdc ~timing_physical_qualification resolved
      ; "info.yaml", info_yaml resolved source_name
      ]
       @ (if List.is_empty resolved.macros then [] else [macro_stub_path, macro_stub])
@@ -769,9 +782,13 @@ let render
       ; ( "simulation_resources"
         , Option.value_map simulation_project ~default:(`List []) ~f:(fun simulation ->
              list resource_json (Elaborated_project.resources simulation)) )
-       ] @ Option.value_map resolved.timing_intent ~default:[] ~f:(fun intent ->
-            ["timing_intent", Timing_intent.to_json intent;
-             "timing_native_coverage", Timing_coverage_tcl.manifest ()])
+        ] @ Option.value_map (Elaborated_project.hardware_variant elaborated_project) ~default:[]
+              ~f:(fun variant -> ["hardware_variant", Hardware_variant.to_yojson variant])
+          @ Option.value_map resolved.timing_intent ~default:[] ~f:(fun intent ->
+             ["timing_intent", Timing_intent.to_json ~physical:timing_physical_qualification intent;
+              "timing_native_coverage", Timing_coverage_tcl.manifest ()])
+        @ (if timing_physical_qualification then
+             ["timing_physical_qualification", Timing_intent.physical_manifest ()] else [])
         @ (if List.is_empty resolved.macros then [] else
        [ "macro_contract", assoc
             ([ "schema_version", `Int (if Option.is_some resolved.physical_plan then 2 else 1)

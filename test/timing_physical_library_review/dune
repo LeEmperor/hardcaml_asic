@@ -1,0 +1,5 @@
+(executable
+ (name review_emit)
+ (modules review_emit)
+ (libraries core hardcaml hardcaml_asic yojson)
+ (preprocess (pps ppx_jane ppx_hardcaml)))

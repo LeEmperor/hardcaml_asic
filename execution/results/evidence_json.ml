@@ -87,6 +87,8 @@ let read path =
   let bytes = Fun.protect ~finally:(fun () -> close_in_noerr ic)
     (fun () -> really_input_string ic (in_channel_length ic)) in
   match parse bytes with Ok d -> d | Error s -> invalid_arg s
+let read_regular path =
+  match parse (Retained_file.read path) with Ok d -> d | Error s -> invalid_arg s
 let scalar = function
   | `Float f when Float.is_nan f -> "NaN"
   | `Float f when not (Float.is_finite f) -> if f < 0. then "-Infinity" else "Infinity"

@@ -45,7 +45,7 @@ Workbench application integration, and source-artifact stamping (ASIC P6.5a).
 | Hardware library `hardcaml_asic` (`lib/`) | Resource semantics, project declarations, validated design intent and input emission. Qualified groups `Resource`, `Flow`, `Platform` and `Elaboration`; `lib/hardcaml_asic.ml` is the curated public surface (see the [namespace reorganization record](development/lib-namespace-reorganization.md)) |
 | Flow domain `hardcaml_asic.flow_domain` (`flow_domain/`) | Stage/operation contracts, standard compositions, checked LibreLane mapping, catalogs, methodologies, profiles and parameters |
 | Execution library `hardcaml_asic.execution` (`execution/`) and native commands (`bin/`) | Public CLI parsing, defaults, identity, routing and rendering; all computation services, supervision, publication, records, observation and watch |
-| Installed Python runtime (`flow/hardcaml_asic_flow/`) | Twelve modules (`__init__`, `backend_protocol`, `librelane_bridge`, `stage_metadata_probe`, `probe`, `runtime_observation`, `runtime_contract`, `managed_python`, `paths`, `macro_flow`, `physical_runtime`, `timing_intent_runtime`) plus four data files. Calls the official LibreLane API, probes runtimes, provisions, and implements checked physical-macro and linked pre-PNR timing adaptations |
+| Installed Python runtime (`flow/hardcaml_asic_flow/`) | Thirteen modules (`__init__`, `backend_protocol`, `librelane_bridge`, `stage_metadata_probe`, `probe`, `runtime_observation`, `runtime_contract`, `managed_python`, `paths`, `macro_flow`, `physical_runtime`, `timing_intent_runtime`, `timing_physical_runtime`) plus four data files. Calls the official LibreLane API, probes runtimes, provisions, and implements checked physical-macro and linked pre/post-PNR timing adaptations |
 | Retired Python sources | Sixteen former service modules kept in the checkout only as references and test oracles. Their installed imports are a deliberate Python API break |
 | Hardware project (e.g. the example) | Design and wrapper semantics, testbenches, declaration, flow catalog, dependency pin and chosen evidence stores |
 | Workbench ASIC adapter | Consumes the project's public provider interface and translates it into feature data |
@@ -249,6 +249,14 @@ framework is a blanket prerequisite for other work.
 ## 6. Configuration ownership and constraints
 
 The project declaration owns target, clock, resources and supported timing intent.
+Optional checked `Hardware_variant` assignments pass through `Project.of_variant`
+to the factory and into existing bundle/plan identity. They are distinct from resource
+policy and backend flow profiles. Identity establishes declared association, not
+semantic parameter use or compiled-source attestation. The headless
+`Variant_comparison` service reuses verified bundle/run/execution evidence, reports
+domain differences and per-metric eligibility, and never launches experiments or
+selects a winner. Workload/performance association remains unimplemented in this
+first slice; see the [variant/comparison guide](guides/variant-comparison.md).
 Derived source lists, target geometry, clock facts, SDC and resource collateral
 are protected from conflicting overrides. LibreLane escape-hatch values carry
 nonempty reasons. `Tt_cmos5l` supplies overridable template defaults with
@@ -270,8 +278,13 @@ Fresh macro-free named synthesis now binds required linked analysis to the exact
 frozen methodology, attempt, occurrence and promoted checkpoint State, with early
 expectation persistence and shared report/inspection validation. Checkpoints remain
 unchanged and named evidence remains path-bound; named archives/physical endpoints
-are unsupported. Exhaustive effects/per-check coverage and post-PNR qualification
-remain open. See the [PT.7c contract](development/pt7c-native-flow.md) and
+are unsupported. Explicit physical opt-in separately supports fresh macro-free coarse
+full execution, checked combinational repair transforms, all-configured cell corners
+and linked extracted post-PNR evidence. The five-stage example closes routed timing
+with normal physical/postchecks under the recorded nominal-RC profile; exhaustive
+effects/per-check and analog consumer qualification remain open. See the
+[physical qualification](development/timing-physical-qualification.md),
+[PT.7c contract](development/pt7c-native-flow.md) and
 [named synthesis contract](development/pt7-named-synthesis.md).
 Resolved target constraints include drive/load and timing margins. Expose those
 facts and the emitted constraint identity to observers rather than creating a

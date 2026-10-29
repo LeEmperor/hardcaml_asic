@@ -83,6 +83,18 @@ val create
 (* Of a type t, retrieve a string to be used as a name; *)
 val name : t -> string
 
+(** Calls the factory exactly once with this checked immutable assignment, then
+    attaches it to the returned project. Factory errors and exceptions return an
+    error; existing values are unchanged. Rejects any prior attachment, including
+    an equal assignment. This does not elaborate hardware or prove parameter use:
+    consumer adapters must validate supported tuples and test semantic conformance. *)
+val of_variant
+  :  variant:Hardware_variant.t
+  -> create:(Hardware_variant.t -> t Or_error.t)
+  -> t Or_error.t
+
+val hardware_variant : t -> Hardware_variant.t option
+
 (** Declared source inventory, unchanged; defaults to []. Paths are relative to the
     source root supplied to [emit_bundle]. Creation does not read or validate files. *)
 val source_inputs : t -> string list

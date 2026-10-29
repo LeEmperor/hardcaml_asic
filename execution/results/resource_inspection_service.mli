@@ -8,6 +8,12 @@ val inspect : target -> ?query:string -> ?resource_id:string
   -> ?section:string -> ?expected_digest:string -> ?artifact_id:string
   -> ?offset:int -> ?limit:int -> unit -> (Evidence_json.t, string) result
 
+(** Structured retained projection for pair comparison. Uses the same source
+    validation/classification as inspection, without display-string round trips.
+    Includes manifest, inventory, measurements, provenance and source references.
+    Source closures remain subject to the existing admission limits. *)
+val comparison_snapshot : target -> unit -> (Evidence_json.t, string) result
+
 (** CLI compatibility shim; rejects unknown kind strings. *)
 val run : kind:string -> target:string -> ?query:string -> ?resource_id:string
   -> ?section:string -> ?expected_digest:string -> ?artifact_id:string

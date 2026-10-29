@@ -18,11 +18,17 @@
     exhaustive exception effect and overall coverage remain unavailable.
     Schema 2 requires native profile/data version 2 with category-bound raw
     diagnostics and a leading native current_design matching the manifest top.
-    Older native-v1 schema-2 captures reject explicitly as unsupported and require
-    recapture; they are never relabelled as category-bound profile-2 evidence.
+     Older native-v1 schema-2 captures reject explicitly as unsupported and require
+     recapture; they are never relabelled as category-bound profile-2 evidence.
+
+     Schema 3 is explicitly extracted-netlist/post_pnr scoped, requires the
+     identity-covered physical policy and SPEF receipt input, and retains native
+     annotation/clock evidence. Coarse provenance and timing/electrical verdicts
+     belong to Timing_intent_flow, not this inner native-scope audit reader.
 
     Producer contracts are [docs/development/pt7-evidence-handoff.md] and
     [docs/development/pt7c-native-handoff.md]. Sources
     must not be mutated concurrently with inspection. Receipts are source-replayed
     producer assertions, not authenticated execution attestations. *)
 val inspect : directory:string -> unit -> (Evidence_json.t, string) result
+val validate_qualification : Evidence_json.t -> unit

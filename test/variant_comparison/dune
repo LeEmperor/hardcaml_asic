@@ -1,0 +1,23 @@
+(executable
+ (name consumer)
+ (modules consumer)
+ (libraries hardcaml_asic.execution yojson core))
+
+; Independent B review of A; opt-in, no edits to A's implementation/test files.
+(executable
+ (name variant_review_probe)
+ (modules variant_review_probe)
+ (libraries hardcaml_asic.execution hardcaml core unix yojson))
+
+(rule
+ (alias runtest)
+ (deps check.py ../check_resource_evidence.py ../check_stage_report.py
+   ../../bin/experimental_compare.exe)
+ (action (run python3 -B %{dep:check.py}
+   --consumer %{exe:consumer.exe} --cli %{exe:../../bin/flow_cli.exe})))
+
+(rule
+ (alias runtest)
+ (deps admission.py ../check_resource_evidence.py ../../bin/experimental_compare.exe)
+ (action (run python3 -B %{dep:admission.py}
+   --consumer %{exe:consumer.exe} --cli %{exe:../../bin/flow_cli.exe})))

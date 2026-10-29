@@ -87,6 +87,7 @@ let sexp_field k j = match sexp j with
     | [v] -> v | _ -> invalid_arg ("missing/duplicate legacy selection "^k))
   | _ -> invalid_arg "invalid legacy resource record"
 let inventory manifest =
+  Manifest_metadata.validate manifest;
   (match get manifest "macro_contract" with `Null -> () | c ->
     if not (List.mem (get c "schema_version") [`Int 1;`Int 2]) then invalid_arg "unsupported macro contract coverage");
   match get manifest "resource_snapshot" with
@@ -697,6 +698,7 @@ let inventory_available ~run_dir = protect (fun () ->
   let r={root=Unix.realpath run_dir;refs=[];bytes=0} in
   match first r manifest_paths with None -> false | Some path ->
     let manifest,_=json r path in
+    Manifest_metadata.validate manifest;
     List.exists (fun key -> get manifest key<>`Null) ["resources";"resource_snapshot";"macro_contract"])
 let collect ?context ~run_dir () = let evidence=run ?context ~run_dir () in ignore (evaluate evidence);evidence
 let inspect ~run_dir = protect (fun () -> collect ~run_dir ())

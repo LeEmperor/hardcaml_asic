@@ -22,9 +22,11 @@ let capture ?(timeout=600.) ~run_dir ~context ~binding ~pdk_root ~resources ~env
   checked (verify_runtime ());
   let dir=run_dir^"/timing-intent" in
   Unix.mkdir dir 0o700;
-  let helper=resources^"/timing_intent_runtime.py" in
+  let qualified=match context with J.Object fields -> List.assoc_opt "timing_physical_expected" fields=Some (J.bool true) | _ -> false in
+  let helper_name=if qualified then "timing_physical_runtime.py" else "timing_intent_runtime.py" in
+  let helper=resources^"/"^helper_name in
   let helper_hash=hash helper in
-  let staged=dir^"/timing_intent_runtime.py" in
+  let staged=dir^"/"^helper_name in
   let ic=open_in_bin helper in
   Fun.protect ~finally:(fun () -> close_in_noerr ic) (fun () ->
     let oc=open_out_bin staged in
@@ -32,12 +34,23 @@ let capture ?(timeout=600.) ~run_dir ~context ~binding ~pdk_root ~resources ~env
       let b=Bytes.create 65536 in
       let rec copy ()=let n=input ic b 0 (Bytes.length b) in if n>0 then (output oc b 0 n;copy ()) in copy ()));
   if hash staged<>helper_hash || hash helper<>helper_hash then failwith "PT7 runtime helper changed while staging";
-  let request=obj ["schema",int 1;"run_id",get context "run_id";"build_identity",get context "build_identity";
+  let base_hash=if qualified then (
+    let source=run_dir^"/project/timing_intent_runtime.py" and dest=dir^"/timing_intent_runtime.py" in
+    let ic=open_in_bin source in
+    Fun.protect ~finally:(fun () -> close_in_noerr ic) (fun () ->
+      let oc=open_out_bin dest in Fun.protect ~finally:(fun () -> close_out_noerr oc) (fun () ->
+        let buffer=Bytes.create 65536 in let rec loop ()=let n=input ic buffer 0 65536 in if n>0 then (output oc buffer 0 n;loop ()) in loop ()));
+    let h=hash source in if hash dest<>h then failwith "base timing helper changed during staging";Some h) else None in
+  let physical=qualified && get context "requested_stage"=s "full" in
+  let request=obj (["schema",int (if qualified then 2 else 1);"run_id",get context "run_id";"build_identity",get context "build_identity";
     "manifest_sha256",get context "manifest_sha256";"analysis_id",get context "run_id";
-     "synthesis_process",get context "synthesis_process";
-    "execution_root",s run_dir;"host_uid",int (Unix.getuid ());"host_gid",int (Unix.getgid ());
-    "binding",T.to_json binding;"pdk_root",s pdk_root;"helper_sha256",s helper_hash;
-    "producer_sha256",s (hash (run_dir^"/project/constraints/pt7-native-coverage.tcl"))] in
+     "execution_root",s run_dir;"host_uid",int (Unix.getuid ());"host_gid",int (Unix.getgid ());
+     "binding",T.to_json binding;"pdk_root",s pdk_root;"helper_sha256",s helper_hash;
+     "producer_sha256",s (hash (run_dir^"/project/constraints/pt7-native-coverage.tcl"))] @
+     if qualified then ["stage",s (if physical then "post_pnr" else "synthesized_netlist");
+       "implementation_process",get context "implementation_process";
+       "base_helper_sha256",s (Option.get base_hash)] else ["synthesis_process",get context "synthesis_process"]) in
+  let request=if qualified then match request with J.Object fields -> obj (("analysis_id",s (match get context "run_id" with J.String id -> id^"/"^(if physical then "post-pnr-sta" else "pre-pnr-sta") | _ -> assert false))::List.remove_assoc "analysis_id" fields) | _ -> assert false else request in
   let request_path=dir^"/request.json" in
   Result_store.save_json request_path request;
   let request_hash=hash request_path in
@@ -57,11 +70,26 @@ let capture ?(timeout=600.) ~run_dir ~context ~binding ~pdk_root ~resources ~env
   Result_store.save_json (dir^"/transport-result.json") (obj ["request_sha256",s request_hash;
     "succeeded",J.bool (T.succeeded result);"outcome",s outcome;"code",code;
     "cleanup_error",(match cleanup_errors with [] -> J.null | xs -> s (String.concat "; " xs))]);
-  let intact=hash helper=helper_hash && hash staged=helper_hash && hash request_path=request_hash in
+   let intact=hash helper=helper_hash && hash staged=helper_hash && hash request_path=request_hash &&
+     (match base_hash with None -> true | Some h -> hash (dir^"/timing_intent_runtime.py")=h && hash (run_dir^"/project/timing_intent_runtime.py")=h) in
   let verified=if T.succeeded result && intact then verify_runtime () else Error "linked STA transport/input failure" in
-  let success=T.succeeded result && intact && verified=Ok () in
-  let context=Yojson.Safe.from_string (J.canonical context) in
-  Timing_intent_flow.publish ~run_dir ~context ~succeeded:success ();
+   let success=T.succeeded result && intact && verified=Ok () in
+   let context=Yojson.Safe.from_string (J.canonical context) in
+   let publication_error=if qualified then (
+     try Timing_intent_flow.publish ~run_dir ~context ~succeeded:success ();None
+     with exn -> Some ("required timing companion publication failed: "^Printexc.to_string exn))
+     else (Timing_intent_flow.publish ~run_dir ~context ~succeeded:success ();None) in
+   if qualified && not success then (
+     let secondary=cleanup_errors @ Option.to_list publication_error in
+     let reason=match verified with Error e -> e | Ok () -> "linked analysis process/input failure" in
+     let failure=match result.process.outcome with
+       | Cancelled n -> Runner.cancellation ~signal:(if n=Sys.sigint || n=2 then 2 else 15) ~secondary "required linked timing analysis interrupted"
+       | Timed_out -> Runner.failure ~exit_code:124 ~secondary "required linked timing analysis timed out"
+       | Exited n -> Runner.failure ~exit_code:(if n=0 then 1 else n) ~secondary reason
+       | Signaled n -> Runner.failure ~exit_code:(128+posix_signal n) ~secondary "required linked timing analysis signaled"
+       | Failed message -> Runner.failure ~secondary message in
+     raise (Runner.Callback_error failure));
+   Option.iter failwith publication_error;
   if not success then (
     match result.process.outcome with
     | Cancelled n -> raise (Runner.Callback_error (Runner.cancellation ~signal:(if n=Sys.sigint || n=2 then 2 else 15) "PT7 linked STA interrupted"))

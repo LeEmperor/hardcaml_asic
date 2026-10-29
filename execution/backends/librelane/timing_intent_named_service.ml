@@ -44,6 +44,7 @@ let plan_expected plan =
 let profile = "opensta-2.7-native-state-v2"
 let validate_plan ~methodology ~initial_checkpoint ~plan manifest =
   if expected manifest then (
+    require (get manifest "timing_physical_qualification"=J.null) "physical timing qualification supports coarse execution only";
     require (Option.is_some methodology) "producer-bearing segmented execution requires a named methodology";
     require (initial_checkpoint=None) "fresh named synthesis only";
     require (get manifest "macro_contract"=J.null) "macro-free named synthesis only";

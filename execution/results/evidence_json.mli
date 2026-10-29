@@ -9,6 +9,10 @@ type document
     supplementary evidence can opt into rejection after decoding escaped keys. *)
 val parse : ?reject_duplicates:bool -> string -> (document, string) result
 val read : string -> document
+(* Bounded no-symlink/nonblocking regular-file admission. Retains exact raw bytes
+   and historical evidence numeric/duplicate semantics; stricter record codecs
+   must validate those original bytes before relying on optional new metadata. *)
+val read_regular : string -> document
 val value : document -> t
 val raw_bytes : document -> string
 val record_bytes : t -> string

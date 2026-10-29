@@ -167,6 +167,7 @@ let prepare ~bundle ~support_tools ~pdk_root ~python ~docker ~git ~resources ~wo
       | Some _ -> ignore (directory workspace));
     let manifest_path = bundle ^ "/manifest.json" in
      let manifest_hash = hash manifest_path and manifest = read manifest_path in
+     Manifest_metadata.validate (Yojson.Safe.from_string (J.canonical manifest));
      Timing_intent_named_service.validate_plan ~methodology ~initial_checkpoint ~plan manifest;
     if Macro_contract.active manifest then
       failwith "SRAM segmented checkpoints are unsupported; use run --stage synthesis (fresh coarse synthesis)";

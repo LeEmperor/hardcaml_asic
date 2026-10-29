@@ -138,9 +138,18 @@ let resolve ~circuit ~(timing : T.t) ~registrations = Or_error.try_with (fun () 
 ;;
 
 let str s = `String s
-let to_json t =
+let physical_policy = "scalar-q-driver-cmos5l-physical-v2"
+let physical_manifest () =
+  `Assoc ["schema_version", `Int 1; "resolution_policy", str physical_policy;
+    "analysis_corners", str "all_configured";
+    "analysis_stages", `List [str "synthesized_netlist"; str "post_pnr"];
+    "sequential_inventory", str "exact_declared_stages"; "max_buffer_hops", `Int 8;
+    "endpoint_map", str "::hc_pt7::checked_endpoints";
+    "trace_inventory", str "::hc_pt7::checked_traces"]
+;;
+let to_json ?(physical = false) t =
   `Assoc [ "contract", str "hardcaml-asic.timing-intent"; "schema_version", `Int 1;
-    "resolution_policy", str "scalar-q-driver-cmos5l-v1";
+    "resolution_policy", str (if physical then physical_policy else "scalar-q-driver-cmos5l-v1");
     "stages", `List (List.map t.stages ~f:(fun s -> `Assoc [
       "id", str s.declaration.id; "chain", str s.declaration.chain; "index", `Int s.declaration.index;
       "anchor", str s.anchor; "preservation", str "yosys_keep_1"]));
@@ -152,6 +161,7 @@ let to_json t =
     "sdc", str "constraints/top.sdc" ]
 ;;
 
-let sdc t = Timing_tcl.render
+let sdc ?(physical = false) t =
+  (if physical then Timing_tcl.render_physical else Timing_tcl.render)
   ~stages:(List.map t.stages ~f:(fun s -> s.declaration, s.anchor, s.has_async))
   ~exceptions:t.exceptions

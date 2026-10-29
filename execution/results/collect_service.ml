@@ -71,6 +71,7 @@ let collect ?context ?synthesis_state run_dir =
      Sys_error s -> error (relative metrics^": "^s); [] in
    let manifest_path=Filename.concat run_dir "project/manifest.json" in
    let manifest=if file manifest_path then read manifest_path else `Assoc [] in
+   Manifest_metadata.validate manifest;
    let physical_profile=match get manifest "macro_contract" with `Assoc xs -> List.assoc_opt "execution" xs=Some (`String "fresh_full") | _ -> false in
    let physical_evidence=if physical_profile then optional (run_dir ^ "/physical-checks.json") (fun () ->
      let hash p=match Checkpoint.file_record p with Ok r -> r.sha256 | Error e -> invalid_arg e in
@@ -205,7 +206,7 @@ let collect ?context ?synthesis_state run_dir =
    let postchecks=children (Filename.concat run_dir "checks") |> List.map (fun p -> Filename.concat p "postcheck.json")
      |> List.filter Sys.file_exists |> List.map (fun path ->
        let check=read path in
-       if physical_profile then (try
+        if physical_profile || Timing_physical_flow.enabled manifest then (try
          let hash p=match Checkpoint.file_record p with Ok r -> `String r.sha256 | Error e -> invalid_arg e in
          let directory=Filename.dirname path in
          List.iter (fun (key,p) -> if get (get check "inputs") key<>hash p then invalid_arg ("postcheck input changed: " ^ key))
@@ -214,7 +215,14 @@ let collect ?context ?synthesis_state run_dir =
             "testbench_sha256",directory ^ "/testbench.v"];
          List.iter (fun (name,digest) ->
            if Filename.basename name<>name || digest<>hash (directory ^ "/" ^ name) then invalid_arg ("postcheck artifact changed: " ^ name))
-           (fields (get check "artifacts"))
+            (fields (get check "artifacts"));
+          if Timing_physical_flow.enabled manifest && get check "status"=`String "completed" then (
+            List.iter (fun name -> if get (get check "artifacts") name=`Null then invalid_arg ("timing postcheck artifact missing: "^name))
+              ["stdcell-functional.v";"stdcell-vendor.v";"model-0.v";"replay-models.json";"physical-runtime.py"];
+            if get (get check "tools") "replay_profile"<>`String "cmos5l_physical_timing_used_cells_v1" ||
+               get (get check "tools") "replay_scope"<>`String "zero_delay_gate_functional_not_timing_conformance" ||
+               get (get check "inputs") "replay_models_sha256"<>hash (directory^"/replay-models.json") then
+              invalid_arg "timing postcheck functional-only provenance missing or changed")
          with Invalid_argument message -> error message);
        check) in
    let has_resource_inventory=get manifest "resources"<>`Null || get manifest "resource_snapshot"<>`Null || get manifest "macro_contract"<>`Null in
@@ -225,7 +233,7 @@ let collect ?context ?synthesis_state run_dir =
      | End_of_file -> error "resource evidence: truncated input";`Null in
    let resource_artifacts=match resource_evidence with `Assoc _ -> (match get resource_evidence "evidence_refs" with `List refs -> List.map (fun r -> get r "path") refs | _ -> []) | _ -> [] in
     let artifacts=List.sort_uniq compare (artifacts@resource_artifacts) in
-    let timing_intent=if not (Timing_intent_flow.expected manifest || get record "timing_intent_expected"=`Bool true) then `Null
+    let timing_intent=if not (Timing_intent_flow.expected manifest || get record "timing_intent_expected"=`Bool true || get record "timing_physical_expected"=`Bool true) then `Null
       else match Timing_intent_flow.inspect ~run_dir () with
       | Ok evidence -> evidence
       | Error message -> error ("timing intent evidence: "^message);
