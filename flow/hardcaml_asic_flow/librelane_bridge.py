@@ -315,6 +315,12 @@ def main():
 
 
 def execute(request):
+    # Same official executor API used by LibreLane's --jobs option. No recipe or
+    # Step substitution; resource overrides are resolved identically for execute
+    # and publication validation.
+    from concurrent.futures import ThreadPoolExecutor
+    from librelane.common import set_tpe
+    set_tpe(ThreadPoolExecutor(max_workers=6))
     project, pdk = Path(request["project"]), Path(request["pdk_root"])
     candidate = Path(request["candidate"])
     boundary = request["boundary"]
@@ -325,7 +331,9 @@ def execute(request):
     if not validating:
         candidate.mkdir()  # fresh output only, never read a stale success file
     classic = Flow.factory.get("Classic")
-    flow = classic(str(project / "src/config.json"), pdk_root=str(pdk))
+    flow = classic(str(project / "src/config.json"), pdk_root=str(pdk),
+                   config_override_strings=["OPENROAD_THREADS=6", "STA_THREADS=1",
+                                            "KLAYOUT_DRC_THREADS=6", "KLAYOUT_XOR_THREADS=6"])
     resolved = flow.config.dumps()
     dependencies = closure(flow.config, project, pdk)
     if validating:

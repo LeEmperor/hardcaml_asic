@@ -80,30 +80,149 @@ Hardcaml_asic_execution.Timing_intent_evidence.inspect ~directory ()
 (* (Evidence_json.t, string) result *)
 ```
 
-This is read-only inspection of a **standalone synthesized-netlist STA audit**, not
-an ordinary coarse run/checkpoint. It probes no PDK, runs no tools and rewrites no
-evidence. Capability: `timing_intent_evidence1`. The
-[schema-1 producer contract](../development/pt7-evidence-handoff.md) specifies all
-required retained inputs, process/version receipts, report roles and reader bounds.
+This reads a standalone per-corner audit. For an ordinary coarse run, use the
+explicit target kind:
+
+```sh
+hardcaml-asic-flow timing-intent-inspect "$RUN" --kind coarse_run --json
+```
+
+The corresponding API is
+`Hardcaml_asic_execution.Timing_intent_flow.inspect ~run_dir ()`.
+Both readers probe no PDK, run no tools and rewrite no evidence. Capabilities
+`timing_intent_evidence1`, `timing_intent_evidence2` and `timing_intent_flow1`
+advertise the supported boundaries. Named executions use the separate `execution`
+kind below; checkpoints are not inspection targets. Required sources and bounds are in
+the [original schema-1 contract](../development/pt7-evidence-handoff.md),
+[native contract](../development/pt7c-native-handoff.md) and
+[coarse integration contract](../development/pt7c-flow-handoff.md).
 
 Inspection verifies build identity, selected bundle-envelope cross-links, complete
-SDC hash, current generated Tcl replay, exact build/audit/stage/producer/corner and
-source hashes. It separates `requested`, `resolved` (`producer_reported`) and
+SDC hash, exact build/audit/stage/producer/corner and source hashes. It separates
+`requested`, `resolved` (`producer_reported`) and
 `applied` (`command_completed`). Recorded process provenance is not cryptographic
 producer authentication or proof of which source compiled a constructor.
 
-**Exit codes in this initial implementation:**
+**Inspection exit codes:**
 
-- **1:** structurally valid audit, but native coverage remains `unavailable`.
+- **1:** readable audit/companion, but overall coverage remains `unavailable`.
+  Inspect status: historical absence and retained failed analyses are not completed
+  successful native audits.
 - **2:** invalid query, missing/corrupt/inconsistent or unsupported evidence.
 - There is currently **no passing coverage outcome**. Do not turn exit 1 into pass.
 
-Native exception, unconstrained and downstream reports are retained/hash-checked
-but not interpreted as exhaustive coverage. The qualified OpenSTA 2.7.0 build lacks
-`report_exceptions`; its unsupported-command report remains visible. The current
-reader also replays its current Tcl serializer, so older development audits can
-reject after a renderer correction; use their immutable provider for historical
-inspection. Stable cross-renderer replay is not promised by schema 1.
+### Supported native coverage dimensions
+
+New outer audit schema2 uses native profile `opensta-2.7-native-state-v2`:
+
+- **Stored exception scope:** native `write_sdc` serialization matches the exact
+  source/target relation set, unrestricted transitions and both min/max scopes.
+  Missing/extra/broad/restricted relations and unsupported masking constructs reject.
+  Native `current_design` must match the verified manifest top.
+- **Diagnostic enumeration:** every group/message/detail returned for all seven
+  native categories is retained: missing input/output delays, multiple/no clocks,
+  unconstrained endpoints, loops and generated clocks. Fixed category framing binds
+  structured data to native printed reports. Empty complete groups mean no findings
+  from those algorithms, not that every possible timing-check context was analyzed.
+- **Endpoint inventory:** the complete returned native endpoint list, explicitly
+  separate from unconstrained diagnostic details and ranked timing reports.
+
+The reader never evaluates retained Tcl. Its qualified native SDC grammar is
+**LF-only**; CR/CRLF and continued comments reject rather than receiving guessed
+Tcl semantics. `report_checks -unconstrained` is not an unconstrained-only census.
+Selected before/after capture witnesses establish bounded suppression only.
+Per-check analysis and exhaustive exception effects stay unavailable; ordinary
+STA does not establish reset-release safety or metastability adequacy.
+
+The qualified OpenSTA 2.7.0 lacks `report_exceptions`; schema2 uses native serialized
+state instead. Schema2 verifies the retained producer member/profile/hash, not
+equality to today's renderer. Original audit schema1 retains current SDC suffix
+replay and its unavailable-native semantics. The intermediate native profile1 is
+explicitly unsupported by the corrected reader: inspect it with its immutable
+historical provider, or produce a fresh profile2 attempt. No historical record is
+rewritten or upgraded merely by inspecting it.
+
+## Ordinary synthesis integration
+
+New timing-intent bundles contain identity-covered
+`constraints/pt7-native-coverage.tcl`. For a **macro-free coarse synthesis** run,
+the provider automatically follows completed synthesis with a separate linked
+`OpenROAD.STAPrePNR` Step invocation. It consumes the exact retained synthesis
+state/netlist, resolved configuration, unmodified emitted SDC and native producer;
+it does not re-elaborate the project or run Floorplan/P&R. The normal flow recipe
+and checkpoint stages are unchanged.
+
+The first supported runtime is the qualified LibreLane 3.1.0.dev3 / OpenSTA 2.7.0
+container. Unsupported native/full/macro combinations reject before synthesis.
+The linked analysis selects only `DEFAULT_CORNER`, explicitly recording the
+original configured corner list and effective delta. It does not claim all-corner
+coverage. Synthesis/transport ceilings are six workers; STA is serialized and
+single-threaded.
+
+`RUN/timing-intent/analysis.json` and its source inventory bind ordinary run/build,
+synthesis producer/state, analysis attempt, actual process/cleanup/version, runtime
+image, ordered loaded libraries, configuration, SDC, producer and reports. A hook
+completion marker alone is insufficient. Source inspection requires consistent
+historical execution paths while permitting verified relocation for restoration.
+
+```sh
+hardcaml-asic-flow run "$BUNDLE" --stage synthesis --toolchain "$TOOLS" --json
+# Use the exact RUN returned by the command.
+hardcaml-asic-flow timing-intent-inspect "$RUN" --kind coarse_run --json
+hardcaml-asic-flow collect "$RUN" --stdout --json
+hardcaml-asic-flow report "$RUN" --json
+hardcaml-asic-flow archive "$RUN" --output "$NEW_ARCHIVE_DIRECTORY" --json
+```
+
+Collection/report include a `timing_intent` section, and archives retain its verified
+source closure. Missing advertised evidence or corrupt sources cannot downgrade to
+historical absence. Collection can exit 0 with explicit collected errors; report
+and inspection enforce their own validity rules. A valid ordinary **synthesis**
+report may exit 0 while timing inspection exits 1/unavailable: neither proves timing
+closure. Use `collect --stdout` for read-only collection of historical evidence.
+
+Archives replay with the original PDK/source/provider checkout hidden, using retained
+bytes and a compatible installed reader. See the flow handoff for restoration layout.
+
+## Named synthesis integration
+
+Fresh macro-free named **synthesis-only** plans run required linked STA after
+publishing the exact synthesis checkpoint. The expectation is persisted before
+preflight/input validation; Runner durably retains the checkpoint before analysis.
+Failure/cancellation stops execution while preserving the promoted checkpoint and
+primary/secondary diagnostics. Analysis consumes published State without changing
+checkpoint bytes or rerendering the bundle.
+
+```sh
+hardcaml-asic-flow stages "$BUNDLE" --methodology-plan "$PLAN" \
+  --expected-plan-identity "$PLAN_ID" --support-tools "$TT" \
+  --pdk-root "$PDK" --python "$PYTHON" --workspace "$WORKSPACE" \
+  --checkpoint-store "$WORKSPACE/checkpoints" --timeout 600 --json
+# Use the exact execution_file returned above, never the latest directory.
+hardcaml-asic-flow timing-intent-inspect "$EXECUTION_JSON" --kind execution --json
+hardcaml-asic-flow report "$EXECUTION_JSON" --json
+```
+
+APIs: `Timing_intent_execution.inspect ~execution ()` and
+`Timing_intent_execution.source_files ~execution ()` in `Hardcaml_asic_execution`.
+Capability: `timing_intent_execution1`. Report/inspection share a checked snapshot
+and timing value. Valid inspection remains exit1/unavailable; report-query success
+is not timing closure. Missing required or contradictory evidence rejects; legacy
+absence and pre-analysis failure are explicit. Named physical endpoints, restart
+and macro combinations are not qualified by this slice.
+
+Sources bind frozen manifest members/input copies/external pins, exact methodology/
+attempt/occurrence, execute transport, publication and native producer position.
+The complete conservative checkpoint closure is retained: named outer limits are
+4096 sources, 128 MiB/source, 512 MiB total; coarse/inner-native limits are unchanged.
+Declared external aliases have explicit path/target/root/hash/size proofs; retargets
+reject even with identical bytes. Metadata/native evidence remain strict regular
+files. Hashing is bounded and streaming; aliases retain separate accounting.
+
+**Named evidence remains path-bound.** The source inventory does not establish named
+archive/export or relocated runnable checkpoints. Readers recheck recorded paths,
+without discovering a replacement PDK. See the
+[named contract](../development/pt7-named-synthesis.md).
 
 ## Accepted boundary
 
@@ -115,7 +234,24 @@ remain timed, with setup **+19.432287 ns** and hold **−0.044244 ns (violated)*
 This is sampled timing preservation, not closure. Graph and provenance negatives
 have passing positive controls and retained intended diagnostics.
 
-Ordinary-flow evidence integration, interpreted native coverage, other corners,
-post-PNR preservation, and consumer-specific review remain in the
+The [PT.7c native-v2 coarse acceptance](../../../hardcaml_asic_example/docs/pt7c_native_v2_final.md)
+adds actual ordinary-flow production, native stored-state/diagnostic interpretation,
+and public archive/restore. The
+[final reader correction](../../../hardcaml_asic_example/docs/pt7c_reader_r1b_final.md)
+replays those unchanged products with a separately identified corrected inspector.
+[Independent review](../development/pt7c-final-review.md) verifies exact inputs,
+processes, library associations, native controls and hidden-source replay. The five
+original flops, six stored relations, seven categories and 12 endpoints are explicit.
+Downstream hold remains −0.044244 ns; other native min samples reach −0.243063 ns.
+
+The [named area/delay acceptance](../../../hardcaml_asic_example/docs/pt7named_native_final.md)
+and [independent review](../development/pt7-named-final-review.md) add two real named
+executions, unchanged checkpoints and exact report/inspection parity. Each retains
+1584 sources and 1062 alias proofs. A final
+[reader correction](../../../hardcaml_asic_example/docs/pt7named_reader_r4_final.md)
+replays both unchanged runs with frozen external pins enforced.
+
+Exhaustive effects/per-check coverage, named archives/physical execution, other corners,
+post-PNR preservation, reset-effect qualification and consumer-specific review remain in the
 [PT.7 queue](../phase_plan.md#pt7--synchronizerreset-aware-timing-declarations).
 No historical SRAM run proves these new declarations were applied.

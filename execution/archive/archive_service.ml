@@ -160,9 +160,13 @@ let acquire ~verb ~include_records ~run_dir =
          let name=safe (text (get ref_ "path")) "resource evidence path" in
          let path=join run_dir name in regular path "resource evidence is missing or a symlink";
          if `String (hash path)<>get ref_ "sha256" then fail ("resource evidence changed: "^name);path) in
+   let timing_files=if not (Timing_intent_flow.expected manifest || optional record "timing_intent_expected"=`Bool true) then [] else
+     (match Timing_intent_flow.source_files ~context:record ~run_dir () with
+      | Error e -> fail ("timing intent archive: "^e)
+      | Ok refs -> List.map (fun r -> join run_dir (text (get r "path"))) refs) in
    let candidates=List.map (join run_dir) (["execution.log";"project/src/config.json"] @
     List.map (fun p -> join flow p) ["final/metrics.csv";"final/metrics.json";"final/sdc";"final/gds";"final/nl";"06-yosys-synthesis";"55-openroad-stapostpnr"])
-      @ physical_files @ resource_files
+       @ physical_files @ resource_files @ timing_files
      @ List.concat_map (fun d -> List.map (Filename.concat d) (["postcheck.log";"testbench.v";"tt/precheck/reports"] @
        if physical then List.filter (fun name -> String.starts_with ~prefix:"model-" name || List.mem name
          ["stdcell-functional.v";"stdcell-vendor.v";"replay-models.json";"physical-runtime.py";"tt-adaptation.json";"replay-trace.txt"])

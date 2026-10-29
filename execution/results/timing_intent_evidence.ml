@@ -55,6 +55,7 @@ let read ~total ~limit path =
 let singleton label = function [x] -> x | _ -> invalid_arg ("missing/ambiguous audit "^label)
 let input_roles=["manifest";"sdc";"netlist";"liberty";"driver"]
 let roles=input_roles@["receipt";"log";"resolution";"exceptions";"unconstrained";"downstream_min";"downstream_max";"process_result";"producer_version"]
+let native_roles=["native_producer";"native_sdc";"native_data";"native_checks";"native_endpoints"]
 
 let identifier j =
   let x=text j in
@@ -142,9 +143,9 @@ let fatal line =
   List.exists (fun prefix -> String.starts_with ~prefix line)
     ["Error:";"Error ";"PT7_ERROR";"[ERROR ";"[ERROR]";"[FATAL ";"[FATAL]"] || line="Error"
 type log_scan = { wire : string list; logged_receipt : E.t }
-let scan_log raw =
+let scan_log ?(native=false) raw =
   let wire=ref [] and wire_count=ref 0 and wire_bytes=ref 0 in
-  let receipt=ref None and completion=ref None and first=ref None and last=ref 0 in
+  let receipt=ref None and completion=ref None and first=ref None and last=ref 0 and native_completion=ref None in
   iter_lines ~max_lines:65536 raw (fun number line ->
     if fatal line then invalid_arg "retained STA error";
     if String.starts_with ~prefix:wire_prefix line then (
@@ -155,10 +156,16 @@ let scan_log raw =
       if !receipt<>None then invalid_arg "duplicate log receipt";
       let prefix=String.length "PT7_AUDIT_RECEIPT " in
       receipt:=Some (number,strict (String.sub line prefix (String.length line-prefix))))
+    else if native && line="HC_ASIC_NATIVE_V2_COMPLETE" then (
+      if !native_completion<>None then invalid_arg "duplicate native completion";
+      native_completion:=Some number)
     else if line="PT7_AUDIT_COMPLETE" then (
       if !completion<>None then invalid_arg "duplicate audit completion";completion:=Some number));
   match !receipt,!completion,!first with
-  | Some (r,logged_receipt),Some c,Some first when r<first && c> !last -> {wire=List.rev !wire;logged_receipt}
+  | Some (r,logged_receipt),Some c,Some first when r<first && c> !last ->
+    if native && not (match !native_completion with Some n -> n> !last && n<c | None -> false)
+    then invalid_arg "missing/reordered native producer completion";
+    {wire=List.rev !wire;logged_receipt}
   | _ -> invalid_arg "missing/reordered producer receipt/completion or timing block"
 let replay ~manifest ~resolution ~log_wire =
   let intent,stages,exceptions=requested manifest in
@@ -242,7 +249,17 @@ let manifest_envelope manifest =
     "simulation_resources";"timing_intent";"target";"adapter";"operation";"resolved_settings";
     "flow_configuration";"generated_settings";"requested_tools"] in
   let has_macro=get manifest "macro_contract"<>`Null in
-  exact manifest (fields@(if has_macro then ["macro_contract"] else []));
+  let has_native=get manifest "timing_native_coverage"<>`Null in
+  exact manifest (fields@(if has_macro then ["macro_contract"] else [])@
+    (if has_native then ["timing_native_coverage"] else []));
+  if has_native then (
+    let native=get manifest "timing_native_coverage" in
+    exact native ["contract";"schema";"profile";"producer"];
+    let version schema profile = obj ["contract",s "hardcaml-asic.timing-native-coverage";"schema",`Int schema;
+      "profile",s profile;"producer",s "constraints/pt7-native-coverage.tcl"] in
+    if not (List.exists (equal native)
+      [version 1 "opensta-2.7-native-state-v1";version 2 "opensta-2.7-native-state-v2"])
+    then invalid_arg "unsupported retained native producer contract");
   if get manifest "schema_version"<>`Int 1 || get manifest "adapter"<>s "LibreLane" ||
      not (List.mem (get manifest "operation") [s "Synthesis";s "Hardening"])
   then invalid_arg "unsupported bundle envelope/schema/adapter/operation";
@@ -335,23 +352,27 @@ let inspect_impl ~directory () =
   let audit_raw=read ~total ~limit:(1024*1024) (member root "audit.json") in
   let audit=strict audit_raw in
   exact audit ["schema";"kind";"scope";"build_identity";"audit_id";"stage";"producer";"corner";"sources"];
-  if get audit "schema"<>`Int 1 || get audit "kind"<>s "hardcaml-asic.timing-intent-audit" ||
+  let native=get audit "schema"=`Int 2 in
+  if not (List.mem (get audit "schema") [`Int 1;`Int 2]) || get audit "kind"<>s "hardcaml-asic.timing-intent-audit" ||
      get audit "scope"<>s "standalone_synthesized_netlist_sta" || get audit "stage"<>s "synthesized_netlist"
   then invalid_arg "unsupported timing-intent audit schema/scope/stage";
   ignore (digest (get audit "build_identity"));
   List.iter (fun k -> ignore (text (get audit k))) ["audit_id";"corner"];
   let producer=get audit "producer" in
   exact producer ["tool";"version"];
-  if get producer "tool"<>s "OpenSTA" then invalid_arg "unsupported audit producer";
+  if not (List.mem (get producer "tool") (if native then [s "OpenSTA";s "OpenROAD"] else [s "OpenSTA"]))
+  then invalid_arg "unsupported audit producer";
   ignore (text (get producer "version"));
   let sources=list (get audit "sources") in
   if List.length sources>64 then invalid_arg "audit exceeds 64 sources";
+  let required_roles=roles@(if native then native_roles else []) in
+  let receipt_roles=input_roles@(if native then ["native_producer"] else []) in
   let loaded=List.map (fun source ->
     exact source ["role";"path";"sha256"];
     let role=text (get source "role") and path=text (get source "path") in
-    if not (List.mem role roles) || path="audit.json" then invalid_arg "unsupported audit source role/path";
-    let limit=if List.mem role ["manifest";"receipt";"process_result";"producer_version"] then 1024*1024
-      else if List.mem role ["log";"resolution";"exceptions";"unconstrained";"downstream_min";"downstream_max";"driver";"sdc"] then 8*1024*1024
+    if not (List.mem role required_roles) || path="audit.json" then invalid_arg "unsupported audit source role/path";
+    let limit=if List.mem role ["manifest";"receipt";"process_result";"producer_version";"native_producer"] then 1024*1024
+      else if List.mem role (["log";"resolution";"exceptions";"unconstrained";"downstream_min";"downstream_max";"driver";"sdc"]@native_roles) then 8*1024*1024
       else 64*1024*1024 in
     let raw=read ~total ~limit (member root path) in
     if Identity_json.sha256_bytes raw<>digest (get source "sha256") then invalid_arg ("audit source hash mismatch: "^path);
@@ -359,15 +380,20 @@ let inspect_impl ~directory () =
   unique "audit source path" (List.map (fun source -> text (get source "path")) sources);
   List.iter (fun role -> let xs=List.filter (fun (r,_) -> role=r) loaded in
     if role="liberty" then (if xs=[] then invalid_arg "missing audit liberty")
-    else ignore (singleton role xs)) roles;
+    else ignore (singleton role xs)) required_roles;
   let source role=snd (singleton role (List.filter (fun (r,_) -> role=r) loaded)) in
   let raw role=snd (source role) in
+  if native then (
+    let declaration=get (strict (raw "manifest")) "timing_native_coverage" in
+    if declaration=`Null then invalid_arg "schema2 requires identity-covered native producer contract";
+    if get declaration "schema"<>`Int 2 || get declaration "profile"<>s "opensta-2.7-native-state-v2" then
+      invalid_arg "unsupported legacy native producer profile; recapture with category-bound native version 2");
   let receipt=strict (raw "receipt") in
   exact receipt ["schema";"build_identity";"audit_id";"stage";"producer";"corner";"inputs"];
   if get receipt "schema"<>`Int 1 then invalid_arg "unsupported receipt schema";
   List.iter (fun k -> if not (equal (get receipt k) (get audit k)) then invalid_arg ("audit/receipt mismatch: "^k))
     ["build_identity";"audit_id";"stage";"producer";"corner"];
-  let inputs=List.filter (fun source -> List.mem (text (get source "role")) input_roles) sources in
+  let inputs=List.filter (fun source -> List.mem (text (get source "role")) receipt_roles) sources in
   if not (equal (get receipt "inputs") (arr inputs)) then invalid_arg "receipt input closure mismatch";
   if String.trim (raw "producer_version")<>text (get producer "version") then invalid_arg "native producer version mismatch";
   let process=strict (raw "process_result") in
@@ -377,7 +403,7 @@ let inspect_impl ~directory () =
   let argv=list (get process "argv") in
   if argv=[] || List.length argv>256 then invalid_arg "missing/bounded STA argv";
   List.iter (fun arg -> ignore (text arg)) argv;
-  let log=scan_log (raw "log") in
+  let log=scan_log ~native (raw "log") in
   if not (equal log.logged_receipt receipt) then invalid_arg "log/receipt mismatch";
   let manifest=strict (raw "manifest") in
   let sdc_file=manifest_envelope manifest in
@@ -388,13 +414,24 @@ let inspect_impl ~directory () =
      PT7 suffix replay. Altering any prefix cannot retain this bundle identity. *)
   if digest (get sdc_file "sha256")<>Identity_json.sha256_bytes (raw "sdc") then invalid_arg "audit SDC differs from emitted bundle";
   let intent,resolved_stages,resolved,applied=replay ~manifest ~resolution:(raw "resolution") ~log_wire:log.wire in
-  replay_sdc ~intent ~resolved_stages ~sdc:(raw "sdc");
-  audit,sources,audit_raw,intent,resolved_stages,resolved,applied,process
+  let native_coverage=if native then (
+    let contract=get manifest "timing_native_coverage" in
+    if contract=`Null then invalid_arg "schema2 requires identity-covered native producer contract";
+    let producer_path=text (get contract "producer") in
+    let file=singleton "native producer bundle member" (List.filter (fun file -> get file "path"=s producer_path) (list (get manifest "files"))) in
+    if digest (get file "sha256")<>Identity_json.sha256_bytes (raw "native_producer")
+    then invalid_arg "retained native producer differs from emitted bundle";
+    match Timing_native_coverage.inspect ~top:(text (get manifest "top_module")) ~resolved ~native_sdc:(raw "native_sdc")
+      ~native_data:(raw "native_data") ~native_checks:(raw "native_checks")
+      ~native_endpoints:(raw "native_endpoints") with
+    | Ok j -> Some j | Error e -> invalid_arg e)
+  else (replay_sdc ~intent ~resolved_stages ~sdc:(raw "sdc");None) in
+  audit,sources,audit_raw,intent,resolved_stages,resolved,applied,process,native_coverage
 
 let inspect ~directory () =
   try
-    let audit,sources,audit_raw,intent,resolved_stages,resolved,applied,process=inspect_impl ~directory () in
-    Ok (obj ["schema",`Int 1;"kind",s "hardcaml-asic.timing-intent-evidence";
+    let audit,sources,audit_raw,intent,resolved_stages,resolved,applied,process,native_coverage=inspect_impl ~directory () in
+    Ok (obj ["schema",get audit "schema";"kind",s "hardcaml-asic.timing-intent-evidence";
       "scope",get audit "scope";"verdict",s "unavailable";
       "provenance",audit;"audit_sha256",s (Identity_json.sha256_bytes audit_raw);
       "sources",arr sources;
@@ -404,10 +441,13 @@ let inspect ~directory () =
       "applied",obj ["status",s "command_completed";"exceptions",arr applied;
         "meaning",s "set_false_path returned; not native path-effect proof"];
       "source_authentication",s "hash_checked_retained_producer_assertions_not_authenticated_execution";
-      "native_coverage",obj ["status",s "unavailable";"reason",s "native exception path-effect introspection is not supported";
-        "report",List.find (fun source -> get source "role"=s "exceptions") sources];
-      "unconstrained",obj ["status",s "retained_not_interpreted";"coverage",s "unavailable";
-        "report",List.find (fun source -> get source "role"=s "unconstrained") sources];
+      "native_coverage",Option.value native_coverage ~default:(obj ["status",s "unavailable";"reason",s "native exception path-effect introspection is not supported";
+        "report",List.find (fun source -> get source "role"=s "exceptions") sources]);
+      "unconstrained",(match native_coverage with
+        | Some j -> obj ["status",s "complete_returned_native_groups";"coverage",s "unavailable";
+          "diagnostics",get j "diagnostics";"endpoints",get j "endpoints"]
+        | None -> obj ["status",s "retained_not_interpreted";"coverage",s "unavailable";
+          "report",List.find (fun source -> get source "role"=s "unconstrained") sources]);
       "downstream",obj ["status",s "retained_not_interpreted";"coverage",s "unavailable";
         "reports",arr (List.filter (fun source -> List.mem (get source "role") [s "downstream_min";s "downstream_max"]) sources)]])
   with

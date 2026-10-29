@@ -20,7 +20,11 @@ type t = private
   ; summary_path : string
   ; diagnostics_path : string
    ; attempt_id : string
-   ; methodology : Methodology_execution_record.t option
+    ; methodology : Methodology_execution_record.t option
+    ; timing_intent : Identity_json.t option
+    ; cancel : unit -> int option
+    ; capture_timing : (Runner.occurrence -> Segment_service.segment ->
+        Segment_service.checkpoint Runner.publication -> unit) option
   }
 type error = private { cause : Runner.error; preflight_path : string option;
   methodology : Methodology_execution_record.t option }
@@ -33,7 +37,8 @@ val installed_resources : executable:string -> string
 val prepare : bundle:string -> support_tools:string -> pdk_root:string -> python:string
   -> docker:string -> git:string -> resources:string -> workspace:string
   -> checkpoint_store:string -> evidence_root:string -> environment:string list
-  -> ?timeout:float -> ?probe_timeout:float -> ?initial_checkpoint:string
+   -> ?timeout:float -> ?probe_timeout:float -> ?cancel:(unit -> int option)
+     -> ?initial_checkpoint:string
     -> ?observation:Observation_writer.t
      -> ?failure_exit_code:(Backend_protocol.operation -> Execution_transport.result -> int option)
      -> ?methodology:(string * Hardcaml_asic.Methodology_plan.t)
@@ -45,3 +50,14 @@ val execute : ?observation:Observation_writer.t -> t -> Execution_plan.t -> (uni
      probe timeout defaults to 20 seconds. Neither is a whole-plan deadline.
      Caller records planned/prepared/outcome. Execute connects only Runner hooks;
      terminal persistence precedes return and therefore the caller's outcome. *)
+(* Producer-bearing named bundles require a fresh schema4 synthesis-only plan.
+   A nonmutating allocation-authority guard first resolves existing path ancestors
+   and rejects overlapping metadata/workspace roots before any write. After typed
+   plan selection and owned metadata allocation, the optional versioned
+   expectation is persisted before bundle validation, cancellation or probes in
+   timing-intent-expectation.json and linked from pending/terminal preflight receipts
+   and reports as timing_intent/timing_intent_snapshot. At Published the
+   exact originating segment/publication launches required native STA, after the
+   promoted artifact is durably retained. Analysis failure stops execution without
+   checkpoint rollback; native coverage unavailable/negative timing is not itself
+   a process failure. All named probes/backend calls use at most6 workers, STA1. *)

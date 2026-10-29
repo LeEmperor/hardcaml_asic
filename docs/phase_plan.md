@@ -69,7 +69,7 @@ named owner and does not reuse that repository's phase IDs.
 | 5 | PT.4 — Resource-mapping inspection API | Existing records; PT.1–PT.2 for macro fields | Complete: CLI/library preparation and independent-example acceptance |
 | 6 | PT.5 — Requested-versus-realized resource checks | PT.2, PT.4 | Complete in supported retained-evidence scope: reconciliation, physical measurements and sampled resource timing |
 | 7 | PT.6 — Workbench resource inspector | PT.4; PT.5 for realized evidence | Delivered: bounded Resources inspector, exact sources, qualified comparison and declared controls |
-| 8 | PT.7 — Synchronizer/reset-aware timing declarations | Endpoint reference design; independent example acceptance | First bounded slice accepted: PT.7a/b scalar CMOS5L subset; PT.7c coverage/flow integration and consumer review pending |
+| 8 | PT.7 — Synchronizer/reset-aware timing declarations | Endpoint reference design; independent example acceptance | Bounded declarations/native-state/coarse and named synthesis accepted; exhaustive effects, other corners/post-PNR and consumer review pending |
 | 9 | PT.8 — Reproducible design-variant comparisons | PT.3–PT.5; PT.7 for final physical selection | Pending |
 
 This is the preferred execution order, not a requirement to serialize design
@@ -361,11 +361,23 @@ generic acceptance; Protemu for its separate circuit intent and consumer review.
 - [ ] **PT.7c — Reviewable evidence.** Delivered identity-covered requested intent,
   producer-reported resolution, command-completed application, hash-bound raw reports
   and strict read-only library/CLI inspection for standalone synthesized-netlist audits.
-  **Remaining:** interpreted native exception-effect/unconstrained coverage and ordinary
-  execution/collection integration with new stage/corner provenance; post-PNR acceptance
-  when that scope is implemented. Current OpenSTA lacks `report_exceptions`; valid
-  audits stay **exit 1 / unavailable**, never passing coverage. Sampled reports are
-  not exhaustive. Do not promote command completion to proof of all affected paths.
+  **Accepted 2026-10-28:** [native-state/coarse-flow slice](development/pt7c-native-flow.md).
+  New identity-covered producers collect native `write_sdc` state, seven category-bound
+  diagnostic groups and native endpoint inventory. The reader verifies exact stored
+  relations, native design and full returned diagnostics without executing Tcl.
+  Ordinary macro-free coarse synthesis runs a separate linked STAPrePNR analysis;
+  collect/report/inspection/archive replay bind exact run/build/synthesis/runtime/
+  libraries/corner/producer sources, without rerender or current PDK lookup.
+  **Remaining:** exhaustive exception effects/per-check analysis and
+  post-PNR/other-corner acceptance. Current evidence proves stored
+  scope and bounded capture-witness suppression, not all affected paths or reset
+  effect/adequacy. Overall inspection remains **exit 1 / unavailable**; ordinary
+  synthesis report exit 0 is not a timing-closure verdict.
+  **Named synthesis accepted:** [bounded integration and closeout](development/pt7-named-synthesis.md).
+  Fresh area/delay profiles bind exact frozen methodology, attempt, occurrence and
+  promoted checkpoint State to required linked STA; early expectation/failure evidence,
+  checkpoint preservation and public report/inspection parity are independently checked.
+  Named evidence remains path-bound; named archives and physical endpoints are unsupported.
 - [ ] **Consumer review (separate pending track).** Review Protemu's protocol inputs,
   sampled host link, reset and board/pad I/O assumptions, then rerun affected physical
   checks. No Protemu inspection, modification or timing-correctness claim in this slice.
@@ -381,6 +393,34 @@ all earlier failures remain retained.
 [Operating guide](guides/timing-intent.md),
 [actual example evidence](../../hardcaml_asic_example/docs/pt7_timing_final.md),
 [independent final review](development/pt7-final-review.md).
+
+PT.7c native-v2 coarse run `83a02bdcb4b34f22bbc03b0ec5223b41`, bundle
+`9d01f5c006c697dd103762c04038fd73e8322d3b546f2bf56dfcad0de19cc8c6`, retains five
+stages, six exact stored relations, seven explicit diagnostic categories and 12
+endpoints. Actual execution provider `4d4316e3a33942c2a577d6f55acaa34a` is separate
+from final corrected inspector `4c9ae1a7a50444179c8ab69469443c19`; the reader-only
+LF grammar fix replays the unchanged native artifacts. Native controls expose
+removed/restricted capture exceptions and missing delays/clocks. Declared downstream
+hold is still −0.044244 ns; broader native min samples reach −0.243063 ns. No timing
+closure or P&R is claimed. [Native evidence](../../hardcaml_asic_example/docs/pt7c_native_v2_final.md),
+[final reader qualification](../../hardcaml_asic_example/docs/pt7c_reader_r1b_final.md),
+[independent final review](development/pt7c-final-review.md).
+The intermediate native-v1 format is explicitly unsupported by the current reader;
+its frozen provider/history remain intact. Original standalone audit schema1 retains
+its original supported semantics.
+
+Named native attempts `cb5e7cd92dbf43b4a6c00a74b61c6d72` (area) and
+`9374823306a64897959e1b2295f52c84` (delay) each preserve five stages, six relations,
+seven categories and 12 endpoints. All seven checkpoint files remain unchanged;
+1584 verified sources include 1062 explicit declared-path/canonical-target alias
+proofs without dropping the conservative PDK closure. Provider generation
+`ce6be246fafa4d0dbe1dd00da980482b` produced both runs. The final external-pin
+validation correction was reader/publisher-only; current helpers replay both
+unchanged outputs, separately identified from their execution provider.
+[Native acceptance](../../hardcaml_asic_example/docs/pt7named_native_final.md),
+[corrected-reader receipt](../../hardcaml_asic_example/docs/pt7named_reader_r4_final.md),
+[independent review](development/pt7-named-final-review.md).
+Both profiles retain −0.044244 ns downstream hold violations. No P&R or closure claim.
 
 **Exit:** generic implemented hardware has reviewed, traceable constraints with
 explicit coverage and producer limitations. Protemu's final physical selection

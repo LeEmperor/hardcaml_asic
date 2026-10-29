@@ -64,13 +64,23 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
   let manifest_path = bundle ^ "/manifest.json" in
   let manifest = codec (R.read_json manifest_path) in
    if stage=Execution_plan.Coarse.Full then Macro_contract.require_full manifest;
-  let macro = Macro_contract.active manifest in
+   let macro = Macro_contract.active manifest in
+   let pt7 = Timing_intent_flow.expected (Yojson.Safe.from_string (J.canonical manifest)) in
+   if pt7 then (
+     let native=get manifest "timing_native_coverage" in
+     if get native "schema"<>codec (J.integer "2") || get native "profile"<>s "opensta-2.7-native-state-v2"
+     then invalid_arg "unsupported native producer profile; emit/capture native profile 2 before synthesis");
+   if pt7 && stage<>Execution_plan.Coarse.Synthesis then invalid_arg "PT7 native producer ordinary integration supports coarse synthesis only";
+   if pt7 && native then invalid_arg "PT7 native producer requires the qualified immutable Docker runtime";
+   if pt7 && macro then invalid_arg "PT7 linked analysis currently supports macro-free coarse synthesis only";
+   let bounded = macro || pt7 in
   let identity = get manifest "identity" in ignore (text identity);
   let manifest_sha256 = hash manifest_path in
   check_cancel ();
   let a = R.allocate runs in
-   let record = C.create a ~bundle ~build_identity:identity ~manifest_sha256 ~stage in
-   if macro then C.set record "resource_limits" (obj ["tool_workers",codec (J.integer "6");
+    let record = C.create a ~bundle ~build_identity:identity ~manifest_sha256 ~stage in
+   if pt7 then C.set record "timing_intent_expected" (J.bool true);
+    if bounded then C.set record "resource_limits" (obj ["tool_workers",codec (J.integer "6");
      "container_cpus",codec (J.integer "6");"sta_workers",codec (J.integer "1")]);
   let path = a.directory ^ "/run.json" and preflight_path = a.directory ^ "/preflight.json" in
   let save () = R.save_json path (C.to_json record) in
@@ -88,7 +98,10 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
       R.save_json preflight_path report; C.set record "environment" report;
       check_cancel ();
       if get report "ready" <> J.bool true then failwith (String.concat "; " (List.map text (array (get report "issues"))));
-      let binding = checked (T.of_json (get report "execution_binding")) in
+       let binding = checked (T.of_json (get report "execution_binding")) in
+       if pt7 then (match binding with
+         | T.Docker d when d.image_id=Hardcaml_asic_flow_domain.Backends.Librelane.Mapping.tested_image_id -> ()
+         | _ -> failwith "PT7 native producer requires the qualified immutable image");
       C.set record "execution_binding" (T.to_json binding);
       let project = a.directory ^ "/project" in copy_tree bundle project;
       List.iter (fun ref -> if get ref "source"=s "Support_tools" then (
@@ -110,15 +123,15 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
       let env = List.filter (fun x -> not (List.exists (fun key -> String.starts_with ~prefix:(key ^ "=") x)
         ["PATH";"PDK";"PDK_ROOT";"_OPENLANE_MAX_CORES";"OPENROAD_THREADS";"OMP_NUM_THREADS"])) env @
          ["PATH=" ^ Filename.dirname python ^ ":" ^ String.sub path_value 5 (String.length path_value-5);"PDK_ROOT=" ^ pdk_root;"PDK=" ^ technology;
-          "_OPENLANE_MAX_CORES=" ^ (if macro then "6" else "20");
-          "OPENROAD_THREADS=" ^ (if macro then "6" else "20");
-          "OMP_NUM_THREADS=" ^ (if macro then "6" else "20")] in
+           "_OPENLANE_MAX_CORES=" ^ (if bounded then "6" else "20");
+           "OPENROAD_THREADS=" ^ (if bounded then "6" else "20");
+           "OMP_NUM_THREADS=" ^ (if bounded then "6" else "20")] in
       C.status record C.Running; save (); check_cancel ();
        let arguments = (if physical_full then [project ^ "/macro-flow.py"] else ["-m";"librelane"]) @
          ["--pdk-root";pdk_root;"--pdk";technology;"--manual-pdk";
         "--run-tag";"asic";"--force-run-dir";"runs/asic"] @
         (if stage=Execution_plan.Coarse.Synthesis then ["--to";"Yosys.Synthesis"] else []) @
-         (if macro then ["--jobs";"6";"-c";"OPENROAD_THREADS=6";"-c";"STA_THREADS=1";
+          (if bounded then ["--jobs";"6";"-c";"OPENROAD_THREADS=6";"-c";"STA_THREADS=1";
            "-c";"KLAYOUT_DRC_THREADS=6";"-c";"KLAYOUT_XOR_THREADS=6"] else []) @
          (if Macro_contract.physical manifest then ["-c";"MAX_SLEW_VIOLATION_CORNERS=*";
            "-c";"MAX_CAP_VIOLATION_CORNERS=*";"-c";"ERROR_ON_MAGIC_DRC=false"] else []) @ ["src/config.json"] in
@@ -132,12 +145,22 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
             let probe = Runtime_probe.create_cancellable ~cancel ~directory ~environment ~timeout:20. in
             checked (Runtime_probe.verify probe binding);
             C.set record "execution_engine" (get (T.to_json binding) "engine_identity");
-             T.docker_invocation d ~project ~pdk_root ~pdk:technology ~workers:(if macro then 6 else 20) ~interpreter:true ~arguments ~cwd:project ~environment:env ~stdout:output ~stderr:output () in
+             T.docker_invocation d ~project ~pdk_root ~pdk:technology ~workers:(if bounded then 6 else 20) ~interpreter:true ~arguments ~cwd:project ~environment:env ~stdout:output ~stderr:output () in
         Option.iter (fun (_,name) -> C.set record "container_name" (s name)) (T.container invocation);
         C.set record "execution_mode" (s (if native then "native" else "dockerized"));
         let spec = T.process_specification invocation in C.command record spec.argv; save ();
         output_string log ("\n$ " ^ String.concat " " (List.map Filename.quote spec.argv) ^ "\n"); flush log;
-        T.run ~cancel invocation) in
+         T.run ~cancel invocation) in
+       if pt7 then (
+         let outcome,code=match result.process.outcome with
+           | Process_supervisor.Exited n -> "exited",codec (J.integer (string_of_int n))
+           | Process_supervisor.Cancelled _ -> "cancelled",J.null
+           | Process_supervisor.Signaled _ -> "signaled",J.null
+           | Process_supervisor.Timed_out -> "timed_out",J.null
+           | Process_supervisor.Failed _ -> "failed",J.null in
+         C.set record "synthesis_process" (obj ["outcome",s outcome;"code",code;
+           "argv",(match get (C.to_json record) "commands" with J.Array [command] -> command | _ -> failwith "PT7 synthesis command association missing");
+           "succeeded",J.bool (T.succeeded result)]); save ());
       Option.iter (fun (cleanup : T.cleanup) -> C.set record "container_cleanup" (J.array (List.map (fun (attempt : T.removal) ->
         obj (["status",s (if Process_supervisor.succeeded attempt.result then "removed-or-absent" else "failed")] @
         if Process_supervisor.succeeded attempt.result then [] else ["error",s attempt.diagnostic])) cleanup.attempts))) result.cleanup;
@@ -167,8 +190,9 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
          if not (T.succeeded (T.run ~cancel invocation)) then failwith "physical evidence validation failed; see physical-checks.log";
          copy (project ^ "/runs/asic/physical-checks.json") (a.directory ^ "/physical-checks.json");
          C.set record "physical_checks_sha256" (s (hash (a.directory ^ "/physical-checks.json"))));
-      if hash (project ^ "/manifest.json") <> manifest_sha256 || hash manifest_path <> manifest_sha256 then failwith "build manifest changed during execution";
-      if macro then (
+       let verify_inputs () =
+       if hash (project ^ "/manifest.json") <> manifest_sha256 || hash manifest_path <> manifest_sha256 then failwith "build manifest changed during execution";
+       if bounded then (
         List.iter (fun entry -> check_cancel ();
           let relative = text (get entry "path") and expected = text (get entry "sha256") in
           if hash (safe_child bundle relative) <> expected || hash (safe_child project relative) <> expected
@@ -181,8 +205,15 @@ let run ~bundle ~support_tools ~pdk_root ~python ~resources ~environment ~runs ~
             let relative = String.sub declared 9 (String.length declared - 9) in
             let current = safe_child pdk_root (technology ^ "/" ^ relative) in
             if current <> path then failwith ("macro collateral alias changed during execution: " ^ declared)))
-          (array (get report "references")));
-      C.set record "completed_stage" (s (if stage=Execution_plan.Coarse.Synthesis then "synthesis" else "full"));
+          (array (get report "references"))) in
+       verify_inputs ();
+       if pt7 then (
+         let probe_directory=a.directory^"/timing-runtime-verification" in Unix.mkdir probe_directory 0o700;
+         let probe=Runtime_probe.create_cancellable ~cancel ~directory:probe_directory ~environment ~timeout:20. in
+         Timing_intent_service.capture ~run_dir:a.directory ~context:(C.to_json record) ~binding ~pdk_root
+           ~resources ~environment:env ~cancel ~verify_runtime:(fun () -> Runtime_probe.verify probe binding) ();
+         check_cancel (); verify_inputs ());
+       C.set record "completed_stage" (s (if stage=Execution_plan.Coarse.Synthesis then "synthesis" else "full"));
       C.Completed,0,None,None
     with e ->
       let interruption name = String.concat "; " (("interrupted by " ^ name)::

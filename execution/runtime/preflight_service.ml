@@ -154,7 +154,8 @@ let probe_with_cancel ~cancel ~bundle ~support_tools ~pdk_root ~python ~resource
   attempt (fun () -> host := P.observe_host probe ~python ~payload;
     actual := ["python",get !host "python_version";"librelane",get !host "librelane_version"]);
   if not native then attempt (fun () ->
-     container := P.observe_container ~workers:(if Macro_contract.active manifest then 6 else 20) probe ~docker:(P.find_executable ~environment "docker") ~payload policy;
+     let pt7=Timing_intent_flow.expected (Yojson.Safe.from_string (J.canonical manifest)) in
+     container := P.observe_container ~workers:(if Macro_contract.active manifest || pt7 then 6 else 20) probe ~docker:(P.find_executable ~environment "docker") ~payload policy;
     actual := !actual @ ["docker_server",get (get !container "engine_identity") "server_version";
       "librelane_image",get (get !container "image_identity") "image_id";
       "container_python",get !container "python_version";"container_librelane",get !container "librelane_version";

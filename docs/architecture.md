@@ -45,7 +45,7 @@ Workbench application integration, and source-artifact stamping (ASIC P6.5a).
 | Hardware library `hardcaml_asic` (`lib/`) | Resource semantics, project declarations, validated design intent and input emission. Qualified groups `Resource`, `Flow`, `Platform` and `Elaboration`; `lib/hardcaml_asic.ml` is the curated public surface (see the [namespace reorganization record](development/lib-namespace-reorganization.md)) |
 | Flow domain `hardcaml_asic.flow_domain` (`flow_domain/`) | Stage/operation contracts, standard compositions, checked LibreLane mapping, catalogs, methodologies, profiles and parameters |
 | Execution library `hardcaml_asic.execution` (`execution/`) and native commands (`bin/`) | Public CLI parsing, defaults, identity, routing and rendering; all computation services, supervision, publication, records, observation and watch |
-| Installed Python runtime (`flow/hardcaml_asic_flow/`) | Exactly eleven modules (`__init__`, `backend_protocol`, `librelane_bridge`, `stage_metadata_probe`, `probe`, `runtime_observation`, `runtime_contract`, `managed_python`, `paths`, `macro_flow`, `physical_runtime`) plus four data files. Calls the official LibreLane API, probes runtimes, provisions, and implements checked physical-macro adaptations |
+| Installed Python runtime (`flow/hardcaml_asic_flow/`) | Twelve modules (`__init__`, `backend_protocol`, `librelane_bridge`, `stage_metadata_probe`, `probe`, `runtime_observation`, `runtime_contract`, `managed_python`, `paths`, `macro_flow`, `physical_runtime`, `timing_intent_runtime`) plus four data files. Calls the official LibreLane API, probes runtimes, provisions, and implements checked physical-macro and linked pre-PNR timing adaptations |
 | Retired Python sources | Sixteen former service modules kept in the checkout only as references and test oracles. Their installed imports are a deliberate Python API break |
 | Hardware project (e.g. the example) | Design and wrapper semantics, testbenches, declaration, flow catalog, dependency pin and chosen evidence stores |
 | Workbench ASIC adapter | Consumes the project's public provider interface and translates it into feature data |
@@ -262,8 +262,17 @@ resolution fails closed before application; no hardware is inserted. The first
 qualified CMOS5L subset and standalone synthesized-netlist audit CLI are documented
 in the [timing-intent guide](guides/timing-intent.md). Requested intent,
 producer-reported resolution and command-completed application stay separate.
-Native coverage is unavailable in this first reader; ordinary-flow evidence
-integration and post-PNR qualification remain open in PT.7c.
+PT.7c adds native stored-exception comparison, category-bound diagnostic enumeration
+and endpoint inventory, with ordinary macro-free coarse-synthesis linked STAPrePNR
+production and collect/report/archive source replay. The analysis is separate from
+the physical-stage recipe and uses only its explicitly selected default corner.
+Fresh macro-free named synthesis now binds required linked analysis to the exact
+frozen methodology, attempt, occurrence and promoted checkpoint State, with early
+expectation persistence and shared report/inspection validation. Checkpoints remain
+unchanged and named evidence remains path-bound; named archives/physical endpoints
+are unsupported. Exhaustive effects/per-check coverage and post-PNR qualification
+remain open. See the [PT.7c contract](development/pt7c-native-flow.md) and
+[named synthesis contract](development/pt7-named-synthesis.md).
 Resolved target constraints include drive/load and timing margins. Expose those
 facts and the emitted constraint identity to observers rather than creating a
 second editable configuration in Workbench. Generated clocks and CTS (clock-tree

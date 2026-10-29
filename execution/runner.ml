@@ -52,6 +52,7 @@ type lifecycle = Started | Published | Finished
 type point = Validate | Cancel | Clock | Invoke | Publish | Hook of lifecycle | Observe | Persist
 type diagnostic = { action_key : string option; point : point; error : error }
 type ('run, 'checkpoint) t = { attempt_id : string; plan : Execution_plan.t; occurrences : occurrence list;
+  timing_intent : J.t option;
   status : status; exit_code : int; run : 'run option; steps : step list; archive : string option;
   artifacts : 'checkpoint publication list; primary : diagnostic option; secondary : diagnostic list }
 type ('run, 'segment, 'checkpoint) callbacks = {
@@ -67,7 +68,7 @@ let to_json ?methodology ~run_json t = obj ((match methodology with None -> [] |
   (match t.plan with Coarse _ -> invalid_arg "methodology reference requires stage execution"
    | Stages plan -> (match Methodology_execution_record.of_json ~attempt_id:t.attempt_id ~plan raw with
      | Ok _ -> () | Error e -> invalid_arg e));
-  ["methodology",raw]) @ ["attempt_id",str t.attempt_id; "plan",Execution_plan.to_json t.plan;
+   ["methodology",raw]) @ (match t.timing_intent with None -> [] | Some x -> ["timing_intent",x]) @ ["attempt_id",str t.attempt_id; "plan",Execution_plan.to_json t.plan;
   "occurrences",J.array (List.map occurrence_json t.occurrences); "status",str (status_name t.status); "exit_code",int t.exit_code]
   @ (match t.run with None -> [] | Some r -> ["run",run_json r])
   @ (match t.archive with None -> [] | Some p -> ["archive",str p])
@@ -107,7 +108,7 @@ let round_seconds seconds =
     if comparison>0 || (comparison=0 && Z.testbit q 0) then Z.succ q else q in
   float_of_string (Z.to_string rounded ^ "e-6")
 external monotonic_now : unit -> float = "hardcaml_asic_monotonic"
-let execute ?initial ?(clock=monotonic_now) ?(cancel=fun () -> None)
+let execute ?initial ?timing_intent ?(clock=monotonic_now) ?(cancel=fun () -> None)
     ?(lifecycle=fun _ _ _ _ -> ()) ?(observe=fun _ _ -> ()) ?(persist=fun _ -> ()) ~attempt_id plan callbacks =
   if attempt_id="" || String.contains attempt_id '/' || String.contains attempt_id '\000' then invalid_arg "invalid attempt ID";
   ignore (str attempt_id);
@@ -115,7 +116,7 @@ let execute ?initial ?(clock=monotonic_now) ?(cancel=fun () -> None)
   let occurrences = Array.of_list (List.map (fun (a : Action.t) -> {occurrence_id=attempt_id^"/"^a.key;
     action_key=a.key;status=(if a.enabled then Unreached else Skipped);exit_code=None;
     duration_seconds=0.;best_effort=false;error=None;verdict=None}) actions) in
-  let state = ref {attempt_id;plan;occurrences=Array.to_list occurrences;status=Running;exit_code=0;
+   let state = ref {attempt_id;plan;timing_intent;occurrences=Array.to_list occurrences;status=Running;exit_code=0;
     run=None;steps=[];archive=None;artifacts=[];primary=None;secondary=[]} in
   let source = ref initial and cancelled = ref false in
   let last_clock = ref None in
@@ -136,13 +137,15 @@ let execute ?initial ?(clock=monotonic_now) ?(cancel=fun () -> None)
   let save key best_effort = match protect (fun () -> persist (snapshot ()); Ok ()) with
     | Ok () -> None | Error e -> record key best_effort Persist e; Some e in
   let check_cancel () = protect (fun () -> match cancel () with None -> Ok () | Some e -> Error e) in
-  let validation = protect (fun () ->
+  let initial_saved=match timing_intent with None -> true | Some _ -> save None false=None in
+  let validation = if not initial_saved then Ok () else protect (fun () ->
     let expected = match plan with Execution_plan.Coarse _ -> None
       | Stages p -> Execution_plan.Stage_plan.source_boundary p in
     if expected <> Option.map (fun (s : _ source) -> s.boundary) initial then Error (failure "plan initial boundary does not match supplied handoff")
     else callbacks.validate plan) in
   (match validation with Error e -> record None false Validate e | Ok () -> ());
-  ignore (save None false);
+  (match timing_intent with None -> ignore (save None false) | Some _ ->
+    if initial_saved && (!state).primary<>None then ignore (save None false));
   List.iteri (fun i (action : Action.t) ->
     let best_effort = (!state).primary<>None && action.gate=Action.Run_available && (!state).run<>None in
     if action.enabled && not !cancelled && ((!state).primary=None || best_effort) then begin
@@ -201,9 +204,14 @@ let execute ?initial ?(clock=monotonic_now) ?(cancel=fun () -> None)
                if p.evidence.boundary<>boundary then fail Publish (failure "publication boundary does not match action")
                else begin
                  publication:=Some p;
-                 state := {!state with artifacts=(!state).artifacts@[p]};
-                 source:=Some {boundary;checkpoint=p.checkpoint};
-                 hook Published (Some p);
+                  state := {!state with artifacts=(!state).artifacts@[p]};
+                  source:=Some {boundary;checkpoint=p.checkpoint};
+                  (* Required named analysis may block/fail in Published. Retain
+                     its promoted artifact durably before entering that hook.
+                     Historical hook/persistence ordering remains unchanged. *)
+                  (match timing_intent with None -> () | Some _ ->
+                    match save (Some action.key) best_effort with None -> () | Some e -> set_local e);
+                  if !local=None then hook Published (Some p);
                  (match save (Some action.key) best_effort with None -> () | Some e -> set_local e);
                  poll ()
                end)

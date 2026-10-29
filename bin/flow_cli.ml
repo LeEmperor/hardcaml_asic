@@ -9,6 +9,7 @@ let exclusive a keys required =
 let choice a k choices = Option.iter (fun v -> if not (List.mem v choices) then error ("invalid --"^k^": "^v)) (get a k)
 let validate a =
   let c=a.command in
+  if c="timing-intent-inspect" then choice a "kind" ["standalone";"coarse_run";"execution"];
   if c="preparation-inspect" then (
     if String.trim (value a "attempt")="" then error "expected a nonempty attempt path";
     Option.iter (fun id -> if String.length id<>64 || not (String.for_all (function '0'..'9'|'a'..'f' -> true | _ -> false) id)
@@ -121,7 +122,7 @@ let route a request =
     | "collect" -> c,fields ["run-dir"] @ (if flag a "stdout" then ["--stdout"] else fields ["output"]) @ presentation
      | "report" -> c,fields ["target"] @ presentation
        | "resources-inspect" -> c,fields ["run-dir"] @ presentation
-       | "timing-intent-inspect" -> c,[value a "target"] @ presentation
+       | "timing-intent-inspect" -> c,[value a "target"] @ fields ["kind"] @ presentation
       | "resource-inspect" -> c,fields ["target";"kind";"query";"resource-id";"section";"expected-digest";"artifact-id";"offset";"limit"] @ presentation
     | "inspect" -> c,fields ["execution";"domain";"stage";"row-id";"expected-digest"] @ presentation
     | "archive" -> c,fields ["run-dir";"output"] @ switches ["list";"force"] @ presentation

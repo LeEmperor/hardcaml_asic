@@ -156,8 +156,9 @@ let verify_associations
   let m = Yojson.Safe.from_string manifest in
   let snapshot_fields =
     match m with
-    | `Assoc xs when List.Assoc.mem xs "resource_snapshot" ~equal:String.equal ->
-      [ "resource_snapshot" ]
+    | `Assoc xs ->
+      List.filter [ "resource_snapshot"; "timing_intent"; "timing_native_coverage" ]
+        ~f:(fun field -> List.Assoc.mem xs field ~equal:String.equal)
     | _ -> []
   in
   J.object_

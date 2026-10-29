@@ -110,22 +110,7 @@ let validate_shared_files refs =
     let hashes=List.map (fun r -> (checked (Checkpoint.file_record (Filename.concat (text (get r "path")) name))).sha256) refs in
     match hashes with [] -> () | h::rest ->
       if not (List.for_all ((=) h) rest) then invalid_arg ("selected checkpoints have different "^name)) ["closure.json";"resolved.json"]
-let validate_execution_snapshot ?(admit_metadata=(fun _ -> ())) raw = protect (fun () ->
-  (* Resource admission precedes named-record validation, which itself validates
-     its associated checkpoints. Only the subsequently decoded record is used. *)
-  (match get raw "artifacts" with J.Array refs ->
-    if List.length refs>7 then invalid_arg "execution checkpoint count bound exceeded";
-    List.iter (fun reference -> let path=text (get reference "path") in
-      List.iter (fun name -> admit_metadata (Filename.concat path name))
-        ["manifest.json";"segment.json";"state.json";"resolved.json";"closure.json"]) refs | _ -> ());
-  let record=checked (Stage_execution_record.of_json raw) in
-  let compatibility=ref None in
-  let manifests=List.map (fun reference ->
-    let manifest,_,_=checkpoint ~supplementary:false ~admit_metadata reference !compatibility in
-    compatibility:=Some manifest.Checkpoint.compatibility;
-    text (get reference "path"),manifest) record.references in
-  validate_shared_files record.references;
-  record,manifests)
+let validate_execution_snapshot = Stage_execution_record.validate_snapshot
 let validate_execution path = protect (fun () ->
   let raw=json path in
   fst (checked (validate_execution_snapshot raw)))
@@ -142,6 +127,7 @@ let readable = function
       if !i>=0 && s.[!i]='.' then decr i; String.sub s 0 (!i+1))
   | v -> J.canonical v
 let run ?(verbose=false) target = protect (fun () ->
+  let snapshot=ref None in
   let kind,path,selected,execution,refs = match target with
     | Coarse_run _ -> invalid_arg "coarse target requires Report_service"
     | Checkpoint path ->
@@ -149,7 +135,11 @@ let run ?(verbose=false) target = protect (fun () ->
       let r=checked (Runner.reference ~boundary:m.boundary ~path ~identity:m.identity) in
       "checkpoint",path,J.null,None,[Runner.reference_json r]
     | Stage_execution {path;selected_record} ->
-      let r=checked (Stage_execution_record.read selected_record) in
+      let document=Evidence_json.read selected_record in
+      let bytes=Evidence_json.raw_bytes document in
+      let raw=codec (J.parse bytes) in
+      let r,manifests=checked (validate_execution_snapshot raw) in
+      snapshot:=Some (selected_record,J.sha256_bytes bytes,raw,r,manifests);
       "stage_execution",path,str selected_record,Some r,r.references in
   let compatibility=ref None in
   let diagnostics=ref [] in
@@ -168,7 +158,9 @@ let run ?(verbose=false) target = protect (fun () ->
       requested,physical in
    let methodology = match execution with
      | Some {methodology=Some r;_} -> Some (Historical_methodology.recorded r)
-     | _ -> None in
+      | _ -> None in
+   let timing_intent=match !snapshot with None -> None | Some (execution,execution_sha256,raw,record,checkpoints) ->
+     checked (Timing_intent_execution.inspect_snapshot ~execution ~execution_sha256 ~raw ~record ~checkpoints ()) in
    let envelope=obj (["contract",str "hardcaml-asic.report";"schema_version",codec (J.integer "1");
     "target",obj ["kind",str kind;"path",str path;"selected_record",selected];
     "execution",(match execution with None -> J.null | Some r -> r.raw);
@@ -176,7 +168,8 @@ let run ?(verbose=false) target = protect (fun () ->
      "acceptance",str "not_evaluated";"external_postcheck",str "not_evaluated";
      "resource_realization",obj ["status",str "unavailable";"reason",str "checkpoint boundary metrics do not establish per-resource instance realization; use coarse/finalized resource evidence where retained"];
      "checkpoints",J.array checkpoints;"diagnostics",J.array !diagnostics] @
-      (match methodology with None -> [] | Some m -> ["methodology",m]) @
+       (match methodology with None -> [] | Some m -> ["methodology",m]) @
+       (match timing_intent with None -> [] | Some j -> ["timing_intent",codec (J.parse (Yojson.Safe.to_string j))]) @
       (match execution with None -> [] | Some r ->
         match Timing_analysis.load_file ~expected_record:r.raw (text selected) with None -> [] | Some analysis -> ["timing_analysis",analysis])) in
   let b=Buffer.create 2048 in
@@ -185,7 +178,12 @@ let run ?(verbose=false) target = protect (fun () ->
   line "STAGE REPORT  %s" path;
   line "  requested: %s; physical completion: %s" (show requested) (show physical);
    line "  acceptance: not_evaluated; external postcheck: not_evaluated";
-   Option.iter (fun m -> Buffer.add_string b (Historical_methodology.human ~verbose m)) methodology;
+    Option.iter (fun m -> Buffer.add_string b (Historical_methodology.human ~verbose m)) methodology;
+    Option.iter (fun j ->
+      let status=match j with `Assoc xs -> (match List.assoc_opt "status" xs with Some (`String s) -> s | _ -> "unavailable") | _ -> "unavailable" in
+      line "NAMED SYNTHESIS TIMING INTENT  %s" status;
+      line "  Exact retained association; exhaustive coverage unavailable, timing closure not established.";
+      line "  Path-bound evidence; named archive/relocation unsupported.") timing_intent;
   (match execution with None -> () | Some r ->
     line "EXECUTION  %s (%s, exit %s)" (text (get r.raw "attempt_id")) r.status (show (get r.raw "exit_code"));
     line "  %-28s %-14s %s" "Stage" "Status" "Duration (s)";

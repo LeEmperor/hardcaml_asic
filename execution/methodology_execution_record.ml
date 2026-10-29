@@ -11,7 +11,10 @@ let text = function J.String x -> x | _ -> failwith "methodology reference strin
 let read path =
   if (Unix.lstat path).Unix.st_kind <> Unix.S_REG then failwith "regular methodology snapshot required";
   let ic = open_in_bin path in
-  Fun.protect ~finally:(fun () -> close_in_noerr ic) (fun () -> really_input_string ic (in_channel_length ic))
+  Fun.protect ~finally:(fun () -> close_in_noerr ic) (fun () ->
+    let bytes=in_channel_length ic in
+    if bytes>8*1024*1024 then failwith "methodology snapshot exceeds 8MiB metadata bound";
+    really_input_string ic bytes)
 let decode bytes = match M.of_string bytes with Ok p -> p | Error e -> failwith (Core.Error.to_string_hum e)
 let sha bytes = Hardcaml_asic.Flow.Plan_json.sha256 bytes
 let publish ~directory ~attempt_id ~expected plan =

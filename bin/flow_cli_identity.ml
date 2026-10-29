@@ -29,6 +29,11 @@ let describe () =
           "resource_evidence_schemas",`Assoc ["write",`Int 2;"read",`List [`Int 1;`Int 2]];
          "timing_analysis1",`Bool true;
          "timing_intent_evidence1",`Assoc ["read_only",`Bool true;"scope",`String "standalone_synthesized_netlist_sta";"native_path_effect_coverage",`String "unavailable"];
+         "timing_intent_evidence2",`Assoc ["read_only",`Bool true;"profile",`String "opensta-2.7-native-state-v2";"native_data_schema",`Int 2;"native_path_effect_coverage",`String "unavailable"];
+          "timing_intent_flow1",`Assoc ["kind",`String "coarse_run";"stage",`String "synthesized_netlist";"native_path_effect_coverage",`String "unavailable";"named_execution",`Bool false];
+           "timing_intent_execution1",`Assoc ["kind",`String "execution";"target",`String "exact_execution_json";"stage",`String "synthesized_netlist";"native_path_effect_coverage",`String "unavailable";"named_archive",`Bool false;"relocation",`Bool false;
+             "external_aliases",`Assoc ["contract",`String "declared_external_collateral_target_v1";"precheck_requires_roots",`Bool true;"counts_declared_paths",`Bool true];
+             "outer_inventory",`Assoc ["max_sources",`Int 4096;"max_source_bytes",`Int (128*1024*1024);"max_total_bytes",`Int (512*1024*1024)]];
         "timing_stage1",`Bool true;
         "json_commands",strings ["preflight";"run";"postcheck";"collect";"report";"inspect";"execute";"archive";"stages";"checkpoint-inspect";
              "observation describe";"observation inspect";"observation read-updates";"observation watch";"finalize";"finalization-inspect";"preparation-inspect";"resources-inspect";"resource-inspect";"timing-intent-inspect"];

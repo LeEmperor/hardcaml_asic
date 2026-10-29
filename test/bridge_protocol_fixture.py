@@ -42,7 +42,9 @@ def run(bridge, request_path):
     class Classic:
         Steps = [types.SimpleNamespace(id=id_) for id_ in ids]
         gating_config_vars = {"*": ["CLOCK_PERIOD"]}
-        def __init__(self, config, pdk_root):
+        def __init__(self, config, pdk_root, config_override_strings=()):
+            assert list(config_override_strings) == ["OPENROAD_THREADS=6", "STA_THREADS=1",
+                                                     "KLAYOUT_DRC_THREADS=6", "KLAYOUT_XOR_THREADS=6"]
             Path(config).with_name("constructed").touch()
             self.project = Path(config).parents[1]
             self.config = Config(CLOCK_PERIOD=10)
@@ -112,6 +114,10 @@ def run(bridge, request_path):
     librelane = types.ModuleType("librelane")
     common = types.ModuleType("librelane.common")
     common.Path = type("ToolPath", (str,), {})
+    def set_tpe(executor):
+        assert executor._max_workers == 6
+        executor.shutdown()
+    common.set_tpe = set_tpe
     flows = types.ModuleType("librelane.flows")
     flows.Flow = types.SimpleNamespace(factory=types.SimpleNamespace(get=lambda name: Classic))
     state = types.ModuleType("librelane.state")

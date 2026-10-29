@@ -1,0 +1,10 @@
+(executable
+ (name consumer)
+ (modules consumer)
+ (libraries hardcaml_asic.execution yojson))
+
+(rule
+ (alias runtest)
+ (deps probe.py ../../dune-project)
+ (action (run python3 -B %{dep:probe.py} %{exe:consumer.exe}
+   %{exe:../timing_intent_flow/emitter.exe})))

@@ -14,6 +14,8 @@ type t = private
   }
 val of_json : Identity_json.t -> (t, string) result
 val read : string -> (t, string) result
+val validate_snapshot : ?admit_metadata:(string -> unit) -> Identity_json.t ->
+  (t * (string * Checkpoint.t) list, string) result
 val path : workspace:string -> attempt_id:string -> string
 
 (** Writer-owned deterministic location. [available] returns it only after strict

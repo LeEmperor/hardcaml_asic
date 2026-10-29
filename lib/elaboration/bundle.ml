@@ -703,7 +703,9 @@ let render
      ; "info.yaml", info_yaml resolved source_name
      ]
       @ (if List.is_empty resolved.macros then [] else [macro_stub_path, macro_stub])
-     @ Option.value_map resolved.physical_plan ~default:[] ~f:Macro_physical_plan.files
+      @ Option.value_map resolved.timing_intent ~default:[] ~f:(fun _ ->
+        [ Timing_coverage_tcl.path, Timing_coverage_tcl.render () ])
+      @ Option.value_map resolved.physical_plan ~default:[] ~f:Macro_physical_plan.files
     @ Option.value_map simulation_rtl ~default:[] ~f:(fun rtl ->
       [ "simulation/" ^ source_name, rtl ])
   in
@@ -768,7 +770,8 @@ let render
         , Option.value_map simulation_project ~default:(`List []) ~f:(fun simulation ->
              list resource_json (Elaborated_project.resources simulation)) )
        ] @ Option.value_map resolved.timing_intent ~default:[] ~f:(fun intent ->
-           ["timing_intent", Timing_intent.to_json intent])
+            ["timing_intent", Timing_intent.to_json intent;
+             "timing_native_coverage", Timing_coverage_tcl.manifest ()])
         @ (if List.is_empty resolved.macros then [] else
        [ "macro_contract", assoc
             ([ "schema_version", `Int (if Option.is_some resolved.physical_plan then 2 else 1)

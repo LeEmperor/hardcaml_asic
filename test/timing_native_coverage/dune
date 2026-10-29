@@ -1,0 +1,33 @@
+(copy_files ../timing_intent_evidence/bundle_fixture.ml)
+
+(test
+ (name check)
+ (modules check bundle_fixture)
+ (libraries core hardcaml hardcaml_asic hardcaml_asic.execution yojson unix)
+ (preprocess (pps ppx_jane ppx_hardcaml))
+ (deps ../../dune-project (glob_files *-excerpt.sdc) native-newline-cases.json))
+
+(executable
+ (name producer_emit)
+ (modules producer_emit)
+ (libraries hardcaml_asic))
+
+(rule
+ (alias producer-model)
+ (deps producer_check.py)
+ (action (run python3 -B %{dep:producer_check.py} %{exe:producer_emit.exe})))
+
+(alias
+ (name runtest)
+ (deps (alias producer-model)))
+
+(rule
+ (alias runtest)
+ (deps comment_check.py native-continued-comment-excerpt.sdc)
+ (action (run python3 -B %{dep:comment_check.py}
+   %{dep:native-continued-comment-excerpt.sdc})))
+
+(rule
+ (alias runtest)
+ (deps newline_check.py native-newline-cases.json)
+ (action (run python3 -B %{dep:newline_check.py} %{dep:native-newline-cases.json})))

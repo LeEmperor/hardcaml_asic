@@ -224,9 +224,17 @@ let collect ?context ?synthesis_state run_dir =
      | Unix.Unix_error (e,f,p) -> error ("resource evidence: "^f^" "^p^": "^Unix.error_message e);`Null
      | End_of_file -> error "resource evidence: truncated input";`Null in
    let resource_artifacts=match resource_evidence with `Assoc _ -> (match get resource_evidence "evidence_refs" with `List refs -> List.map (fun r -> get r "path") refs | _ -> []) | _ -> [] in
-   let artifacts=List.sort_uniq compare (artifacts@resource_artifacts) in
+    let artifacts=List.sort_uniq compare (artifacts@resource_artifacts) in
+    let timing_intent=if not (Timing_intent_flow.expected manifest || get record "timing_intent_expected"=`Bool true) then `Null
+      else match Timing_intent_flow.inspect ~run_dir () with
+      | Ok evidence -> evidence
+      | Error message -> error ("timing intent evidence: "^message);
+        `Assoc ["status",`String "invalid";"reason",`String message;"sources",`List []] in
+    let timing_artifacts=match timing_intent with `Assoc _ -> (match get timing_intent "sources" with `List xs -> List.map (fun r -> get r "path") xs | _ -> []) | _ -> [] in
+    let artifacts=List.sort_uniq compare (artifacts@timing_artifacts) in
    `Assoc ((if physical_profile then ["physical_profile",`String "cmos5l_real_gds_v1";"physical_evidence",physical_evidence] else []) @
-     ["resource_evidence",resource_evidence;
+      (if timing_intent=`Null then [] else ["timing_intent",timing_intent]) @
+      ["resource_evidence",resource_evidence;
       "resource_evidence_unavailable_reason",(if resource_evidence=`Null then `String (if has_resource_inventory then "resource evidence collection failed (see errors)" else "historical manifest resource inventory unavailable; retention not evaluated") else `Null)] @
      ["schema_version",`Int 1; "tool",librelane; "mode",`String "nominal and reported corners";
     "metrics",`Assoc (List.map add_metric (mapped@timing@physical)); "checks",`Assoc checks;

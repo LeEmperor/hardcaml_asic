@@ -47,7 +47,8 @@ type lifecycle = Started | Published | Finished
 type point = Validate | Cancel | Clock | Invoke | Publish | Hook of lifecycle | Observe | Persist
 type diagnostic = private { action_key : string option; point : point; error : error }
 type ('run, 'checkpoint) t = private
-  { attempt_id : string; plan : Execution_plan.t; occurrences : occurrence list
+   { attempt_id : string; plan : Execution_plan.t; occurrences : occurrence list
+   ; timing_intent : Identity_json.t option
   ; status : status; exit_code : int; run : 'run option; steps : step list
   ; archive : string option; artifacts : 'checkpoint publication list
   ; primary : diagnostic option; secondary : diagnostic list }
@@ -74,8 +75,13 @@ type ('run, 'segment, 'checkpoint) callbacks =
     Finished hooks run even if started/invoke/published fails. Promoted artifacts
     survive later hook failures; no rollback/retry. [observe] sees returned
     postcheck outcomes only. Finite nondecreasing clock, six-decimal duration.
-    Hooks are coarse service facts, never simulated backend step observations. *)
-val execute : ?initial:'checkpoint source -> ?clock:(unit -> float)
+     Hooks are coarse service facts, never simulated backend step observations. *)
+(* [timing_intent] is the provider's versioned named expectation. It is serialized
+   from the initial snapshot onward, saved before callbacks.validate or cancellation
+   polling. Failed initial storage prevents validation/work. For these executions only, promotion is
+   persisted before Published; failed persistence vetoes the required hook while
+   retaining the promoted artifact. Ordinary records keep historical ordering. *)
+val execute : ?initial:'checkpoint source -> ?timing_intent:Identity_json.t -> ?clock:(unit -> float)
   -> ?cancel:(unit -> error option)
   -> ?lifecycle:(lifecycle -> Action.t -> occurrence -> 'checkpoint publication option -> unit)
   -> ?observe:(Action.t -> ('run, 'segment) outcome -> unit)
@@ -89,6 +95,7 @@ val execute : ?initial:'checkpoint source -> ?clock:(unit -> float)
      Optional named-flow evidence is verified against this attempt and stage plan
      before serialization; without it, historical serialization is unchanged. *)
 val to_json : ?methodology:Methodology_execution_record.t -> run_json:('run -> Identity_json.t) -> ('run, 'checkpoint) t -> Identity_json.t
+val occurrence_json : occurrence -> Identity_json.t
 
 (** Separate explicit version-1 envelope: primary and secondary errors, lifecycle
     points, codes, signals and secondary cleanup diagnostics. Persist separately

@@ -7,6 +7,7 @@ type segment = { request : B.request; process : T.result; reply : B.reply; repor
   transport_record : string; transport_result : string }
 type runtime = Docker of T.docker | Fixture of T.native * string
 type t = { workspace : string; project : string; pdk_root : string; store : string;
+   workers : int; cancel : unit -> int option;
   compatibility : J.t; runtime : runtime; environment : string list; timeout : float;
    initial : checkpoint Runner.source option; completed : (string, segment) Hashtbl.t;
    mutable transport_records : (string * string) list;
@@ -14,7 +15,7 @@ type t = { workspace : string; project : string; pdk_root : string; store : stri
     verify_inputs : unit -> (unit, string) result;
     verify_resolved : string -> (unit, string) result;
    failure_exit_code : B.operation -> T.result -> int option }
-let bridge_sha256 = "5de491ee0b9cf91e5cf8ab187e900406f731f1d83900db58890f56ae7be8cfc0"
+let bridge_sha256 = "19e34f189f8cd47a3911c48a772c0b77a7a3f66dc3470a252f9cd88251f1fed0"
 let protocol_sha256 = "eb6490db856f551ffe2ab35ea872bdc85c86801339e67a9d5bdf427238b25ae1"
 exception Service_error of Runner.error
 let fail s = raise (Service_error (Runner.failure s))
@@ -48,7 +49,8 @@ let handoff t ~boundary path =
   if not (within t.store path) then fail "checkpoint must belong to selected mounted store";
   let manifest = checked (Checkpoint.validate ~restart:true ~restart_to:boundary ~compatibility:t.compatibility path) in
   {path; manifest}
-let create_internal ~runtime ~workspace ~project ~pdk_root ~checkpoint_store ~compatibility ~environment ~timeout ?initial_checkpoint ?(verify_runtime=(fun () -> Ok ())) ?(verify_inputs=(fun () -> Ok ())) ?(verify_resolved=(fun _ -> Ok ())) ?(failure_exit_code=(fun _ _ -> None)) () = protect (fun () ->
+let create_internal ~runtime ~workspace ~project ~pdk_root ~checkpoint_store ~compatibility ~environment ~timeout ?(workers=6) ?(cancel=fun () -> None) ?initial_checkpoint ?(verify_runtime=(fun () -> Ok ())) ?(verify_inputs=(fun () -> Ok ())) ?(verify_resolved=(fun _ -> Ok ())) ?(failure_exit_code=(fun _ _ -> None)) () = protect (fun () ->
+   if workers < 1 || workers > 6 then fail "segment workers must be in 1..6";
   if not (Float.is_finite timeout) || timeout <= 0. then fail "finite positive timeout required";
   let workspace = directory workspace and project = directory project and pdk_root = directory pdk_root
   and store = directory checkpoint_store in
@@ -66,10 +68,10 @@ let create_internal ~runtime ~workspace ~project ~pdk_root ~checkpoint_store ~co
        ~declared_ref:selected.declared_ref ~image_id:selected.image_id ~repo_digests:selected.repo_digests
        ~os:selected.os ~architecture:selected.architecture ~variant:selected.variant ~flags:selected.flags ()) <> T.to_json binding
        then fail "selected runtime differs from compatibility" | Fixture _ -> ());
-     let t = {workspace;project;pdk_root;store;compatibility;runtime;environment;timeout;initial=None;completed=Hashtbl.create 8;transport_records=[];verify_runtime;verify_inputs;verify_resolved;failure_exit_code} in
+      let t = {workspace;project;pdk_root;store;compatibility;runtime;environment;timeout;workers;cancel;initial=None;completed=Hashtbl.create 8;transport_records=[];verify_runtime;verify_inputs;verify_resolved;failure_exit_code} in
   let prog = match runtime with Docker d ->
     ignore (T.docker_command d ~project:workspace ~pdk_root ~name:(T.owned_name ()) ~workdir:project
-      ~pdk:(text (get (get compatibility "target") "technology")) ~uid:(Unix.getuid ()) ~gid:(Unix.getgid ()) ());
+       ~workers ~pdk:(text (get (get compatibility "target") "technology")) ~uid:(Unix.getuid ()) ~gid:(Unix.getgid ()) ());
     d.executable | Fixture (n,fixture) ->
       if Filename.is_relative fixture || String.contains fixture '\000' then fail "absolute testing fixture required";
       regular fixture; n.interpreter in
@@ -83,7 +85,7 @@ let create_internal ~runtime ~workspace ~project ~pdk_root ~checkpoint_store ~co
   {t with initial})
 let create ~binding = match binding with
   | T.Docker d -> create_internal ~runtime:(Docker d)
-    | T.Native _ -> fun ~workspace:_ ~project:_ ~pdk_root:_ ~checkpoint_store:_ ~compatibility:_ ~environment:_ ~timeout:_ ?initial_checkpoint:_ ?verify_runtime:_ ?verify_inputs:_ ?verify_resolved:_ ?failure_exit_code:_ () ->
+     | T.Native _ -> fun ~workspace:_ ~project:_ ~pdk_root:_ ~checkpoint_store:_ ~compatibility:_ ~environment:_ ~timeout:_ ?workers:_ ?cancel:_ ?initial_checkpoint:_ ?verify_runtime:_ ?verify_inputs:_ ?verify_resolved:_ ?failure_exit_code:_ () ->
     Error (Runner.failure "native physical stage support is not demonstrated")
 let initial t = t.initial
 (* POSIX signal values at Runner's boundary, rather than OCaml's negative
@@ -161,7 +163,7 @@ let call t ~operation ~boundary ~candidate ~source tag =
   let bridge = t.project ^ "/bridge/librelane_bridge.py" in
   let output = Process.File (t.workspace ^ "/" ^ tag ^ ".log") in
   let invocation = match t.runtime with
-    | Docker d -> T.docker_invocation d ~project:t.workspace ~pdk_root:t.pdk_root ~workdir:t.project
+     | Docker d -> T.docker_invocation d ~workers:t.workers ~project:t.workspace ~pdk_root:t.pdk_root ~workdir:t.project
       ~pdk:(text (get (get t.compatibility "target") "technology")) ~interpreter:true ~arguments:[bridge;path]
       ~cwd:t.project ~environment:t.environment ~stdout:output ~stderr:output ()
     | Fixture (n,fixture) -> T.native_invocation n ~arguments:[fixture;bridge;path]
@@ -187,11 +189,11 @@ let call t ~operation ~boundary ~candidate ~source tag =
      "host_uid",int (Unix.getuid ());"host_gid",int (Unix.getgid ());
      "timeout_seconds",float t.timeout;
      "resources",(match t.runtime with Fixture _ -> J.null | Docker d -> obj [
-       "cpus",int 20;"openlane_max_cores",int 20;"openroad_threads",int 20;"omp_num_threads",int 20;
+        "cpus",int t.workers;"openlane_max_cores",int t.workers;"openroad_threads",int t.workers;"omp_num_threads",int t.workers;
        "container_user",(if d.rootless then J.null else str (Printf.sprintf "%d:%d" (Unix.getuid ()) (Unix.getgid ())))]) ]));
    t.transport_records <- t.transport_records @ [launch_path,terminal_path];
    let started = Unix.gettimeofday () in
-   let process = T.run ~timeout:t.timeout invocation in
+    let process = T.run ~cancel:t.cancel ~timeout:t.timeout invocation in
    let recording_error = try
      write_fresh terminal_path (obj (correlation @ ["kind",str "backend_transport_result";
        "started_at_unix",float started;"ended_at_unix",float (Unix.gettimeofday ());
@@ -275,7 +277,9 @@ let publish t action (_:(unit,checkpoint) Runner.context) segment = protect (fun
   Hashtbl.remove t.completed segment.request.candidate;
   {Runner.evidence=Runner.of_checkpoint_publication p; checkpoint={path=p.path;manifest=p.checkpoint}})
 let callbacks t = {Runner.validate=validate t;invoke=invoke t;publish=publish t}
-let execute ?persist ?lifecycle ~attempt_id plan t = Runner.execute ?initial:t.initial ?persist ?lifecycle ~attempt_id plan (callbacks t)
+let execute ?persist ?lifecycle ~attempt_id plan t =
+  let cancel () = Option.map (fun n -> Runner.cancellation ~signal:(signal n) "stage execution interrupted") (t.cancel ()) in
+  Runner.execute ?initial:t.initial ~cancel ?persist ?lifecycle ~attempt_id plan (callbacks t)
 module Testing = struct
   let create_native_fixture ~fixture ~interpreter =
     create_internal ~runtime:(Fixture ((match T.native ~interpreter with T.Native n -> n | _ -> assert false),fixture))

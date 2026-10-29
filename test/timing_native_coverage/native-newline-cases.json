@@ -1,0 +1,87 @@
+[
+  {
+    "name": "LF-ordinary-comment",
+    "state": "current_design top\n# ordinary comment\nset_false_path -from [get_ports {ena}] -to [get_pins {u0/D}]\n",
+    "false_paths": 1, "disables": 0, "designs": ["top"], "reader": "accept"
+  },
+  {
+    "name": "CRLF-ordinary-comment",
+    "state": "current_design top\r\n# ordinary comment\r\nset_false_path -from [get_ports {ena}] -to [get_pins {u0/D}]\r\n",
+    "false_paths": 1, "disables": 0, "designs": ["top"], "reader": "CR in native SDC"
+  },
+  {
+    "name": "LF-CRLF-mixed-comment",
+    "state": "current_design top\n# ordinary comment\r\nset_false_path -from [get_ports {ena}] -to [get_pins {u0/D}]\n",
+    "false_paths": 1, "disables": 0, "designs": ["top"], "reader": "CR in native SDC"
+  },
+  {
+    "name": "bare-CR-extra-scope",
+    "state": "current_design top\n# ordinary comment\rset_false_path -from [get_ports {ena}] -to [get_pins {u1/D}]\nset_false_path -from [get_ports {ena}] -to [get_pins {u0/D}]\n",
+    "false_paths": 2, "disables": 0, "designs": ["top"], "reader": "CR in native SDC"
+  },
+  {
+    "name": "bare-CR-masking",
+    "state": "current_design top\n# ordinary comment\rset_disable_timing -from {CLK} -to {Q} [get_cells {u0}]\nset_false_path -from [get_ports {ena}] -to [get_pins {u0/D}]\n",
+    "false_paths": 1, "disables": 1, "designs": ["top"], "reader": "CR in native SDC"
+  },
+  {
+    "name": "bare-CR-design-selection",
+    "state": "current_design top\n# ordinary comment\rcurrent_design wrong_top\nset_false_path -from [get_ports {ena}] -to [get_pins {u0/D}]\n",
+    "false_paths": 1, "disables": 0, "designs": ["top", "wrong_top"], "reader": "CR in native SDC"
+  },
+  {
+    "name": "CR-only-extra-scope",
+    "state": "current_design top\r# ordinary comment\rset_false_path -from [get_ports {ena}] -to [get_pins {u1/D}]\rset_false_path -from [get_ports {ena}] -to [get_pins {u0/D}]\r",
+    "false_paths": 2, "disables": 0, "designs": ["top"], "reader": "CR in native SDC"
+  },
+  {
+    "name": "indented-semicolon-bare-CR-masking",
+    "state": "current_design top\n;  # ordinary comment\rset_disable_timing -from {CLK} -to {Q} [get_cells {u0}]\nset_false_path -from [get_ports {ena}] -to [get_pins {u0/D}]\n",
+    "false_paths": 1, "disables": 1, "designs": ["top"], "reader": "CR in native SDC"
+  },
+  {
+    "name": "CR-outside-comment",
+    "state": "current_design top\rset_false_path -from [get_ports {ena}] -to [get_pins {u0/D}]\n",
+    "false_paths": 1, "disables": 0, "designs": ["top"], "reader": "CR in native SDC"
+  },
+  {
+    "name": "CR-inside-braced-value",
+    "state": "current_design top\nset_load {note\rcontinued} [get_ports {x}]\nset_false_path -from [get_ports {ena}] -to [get_pins {u0/D}]\n",
+    "false_paths": 1, "disables": 0, "designs": ["top"], "reader": "CR in native SDC"
+  },
+  {
+    "name": "LF-continued-comment",
+    "state": "current_design top\n# continued comment \\\nset_false_path -from [get_ports {ena}] -to [get_pins {u0/D}]\n",
+    "false_paths": 0, "disables": 0, "designs": ["top"], "reader": "continued native SDC comment"
+  },
+  {
+    "name": "CRLF-continued-comment",
+    "state": "current_design top\r\n# continued comment \\\r\nset_false_path -from [get_ports {ena}] -to [get_pins {u0/D}]\r\n",
+    "false_paths": 0, "disables": 0, "designs": ["top"], "reader": "CR in native SDC"
+  },
+  {
+    "name": "mixed-LF-CRLF-command-continuations",
+    "state": "current_design top\nset_false_path\\\r\n -from [get_ports {ena}]\\\n -to [get_pins {u0/D}]\n",
+    "false_paths": 1, "disables": 0, "designs": ["top"], "reader": "CR in native SDC"
+  },
+  {
+    "name": "LF-native-command-continuations",
+    "state": "current_design top\nset_false_path\\\n -from [get_ports {ena}]\\\n -to [get_pins {u0/D}]\n",
+    "false_paths": 1, "disables": 0, "designs": ["top"], "reader": "accept"
+  },
+  {
+    "name": "LF-extra-scope-control",
+    "state": "current_design top\n# ordinary comment\nset_false_path -from [get_ports {ena}] -to [get_pins {u1/D}]\nset_false_path -from [get_ports {ena}] -to [get_pins {u0/D}]\n",
+    "false_paths": 2, "disables": 0, "designs": ["top"], "reader": "extra exception relations"
+  },
+  {
+    "name": "LF-masking-control",
+    "state": "current_design top\n# ordinary comment\nset_disable_timing -from {CLK} -to {Q} [get_cells {u0}]\nset_false_path -from [get_ports {ena}] -to [get_pins {u0/D}]\n",
+    "false_paths": 1, "disables": 1, "designs": ["top"], "reader": "unsupported native SDC command: set_disable_timing"
+  },
+  {
+    "name": "LF-design-selection-control",
+    "state": "current_design top\n# ordinary comment\ncurrent_design wrong_top\nset_false_path -from [get_ports {ena}] -to [get_pins {u0/D}]\n",
+    "false_paths": 1, "disables": 0, "designs": ["top", "wrong_top"], "reader": "repeated/ambiguous current_design selection"
+  }
+]

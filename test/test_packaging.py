@@ -58,7 +58,7 @@ class LayoutTest(unittest.TestCase):
         stanzas = (PACKAGE_ROOT / "dune").read_text()
         runtime = {"__init__", "backend_protocol", "librelane_bridge", "stage_metadata_probe",
                    "probe", "runtime_observation", "runtime_contract", "managed_python", "paths",
-                   "macro_flow", "physical_runtime"}
+                   "macro_flow", "physical_runtime", "timing_intent_runtime"}
         installed = set(re.findall(r"\(hardcaml_asic_flow/(\w+)\.py as flow/hardcaml_asic_flow/\w+\.py\)", stanzas))
         self.assertEqual(installed, runtime)
         data = set(re.findall(r"as flow/hardcaml_asic_flow/data/([^\s)]+)", stanzas))

@@ -9,6 +9,34 @@ let text = function J.String x when x <> "" && not (String.contains x '\000') ->
 let array = function J.Array xs -> xs | _ -> failwith "array required"
 let read p = codec (Result_store.read_json p)
 let within parent child = String.starts_with ~prefix:(parent ^ "/") child
+(* Allocation authority, not circuit/runtime readiness: inspect existing ancestors
+   and link targets without creating anything. Match result-store path resolution
+   for not-yet-existing descendants so aliases cannot hide an overlapping root. *)
+let prospective_directory path =
+  if path="" || String.contains path '\000' then failwith "invalid metadata/workspace path";
+  let absolute=if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path else path in
+  let rec walk current links = function
+    | [] -> current
+    | ""::rest | "."::rest -> walk current links rest
+    | ".."::rest -> walk (Filename.dirname current) links rest
+    | name::rest ->
+      let candidate=Filename.concat current name in
+      match Unix.lstat candidate with
+      | stat when stat.Unix.st_kind=Unix.S_LNK ->
+        if links=0 then failwith "metadata/workspace symlink resolution limit";
+        let target=Unix.readlink candidate in
+        walk (if Filename.is_relative target then current else "/") (links-1)
+          (String.split_on_char '/' target @ rest)
+      | stat ->
+        if stat.Unix.st_kind<>Unix.S_DIR then failwith ("metadata/workspace directory required: " ^ candidate);
+        walk candidate links rest
+      | exception Unix.Unix_error (Unix.ENOENT,_,_) -> walk candidate links rest in
+  walk "/" 40 (String.split_on_char '/' absolute)
+let admit_metadata_roots ~workspace ~evidence_root =
+  let workspace=prospective_directory workspace and evidence_root=prospective_directory evidence_root in
+  if workspace="/" || evidence_root="/" || evidence_root=workspace ||
+     within workspace evidence_root || within evidence_root workspace then
+    failwith "evidence root must be separate from workspace"
 let directory p = let p = checked (Checkpoint.absolute_path p) in
   if Unix.realpath p <> p || (Unix.lstat p).Unix.st_kind <> Unix.S_DIR then failwith ("canonical directory required: " ^ p); p
 let output p = let normalized = checked (Checkpoint.absolute_path p) in
@@ -45,28 +73,59 @@ let now () = let t = Unix.gmtime (Unix.gettimeofday ()) in
   Printf.sprintf "%04d-%02d-%02dT%02d:%02d:%02dZ" (t.Unix.tm_year + 1900) (t.tm_mon + 1) t.tm_mday t.tm_hour t.tm_min t.tm_sec
 type t = {service:Segment_service.t;compatibility:J.t;binding:T.binding;preflight_path:string;
   evidence_directory:string;summary_path:string;diagnostics_path:string;attempt_id:string;
-  methodology:Methodology_execution_record.t option}
+   methodology:Methodology_execution_record.t option;
+   timing_intent:J.t option; cancel:unit -> int option;
+   capture_timing:(Runner.occurrence -> Segment_service.segment -> Segment_service.checkpoint Runner.publication -> unit) option}
 type error = {cause:Runner.error;preflight_path:string option;methodology:Methodology_execution_record.t option}
 let installed_resources ~executable = Filename.dirname (Filename.dirname (Unix.realpath executable)) ^ "/lib/hardcaml_asic/flow/hardcaml_asic_flow"
 let prepare ~bundle ~support_tools ~pdk_root ~python ~docker ~git ~resources ~workspace ~checkpoint_store
-     ~evidence_root ~environment ?(timeout=600.) ?(probe_timeout=20.) ?initial_checkpoint ?observation ?failure_exit_code ?methodology ?(after_methodology_snapshot=(fun () -> ())) ~plan () =
+      ~evidence_root ~environment ?(timeout=600.) ?(probe_timeout=20.) ?(cancel=fun () -> None) ?initial_checkpoint ?observation ?failure_exit_code ?methodology ?(after_methodology_snapshot=(fun () -> ())) ~plan () =
   let preflight = ref None in
   let published_methodology = ref None in
   let operation = ref None in
   let operation_report = ref None in
-  let named_request r = obj ["methodology",Methodology_execution_record.to_json r;
+  let early_timing = ref None and early_snapshot = ref None in
+  let timing_fields () = match !early_timing,!early_snapshot with
+    | Some expectation,Some snapshot -> ["timing_intent",expectation;"timing_intent_snapshot",snapshot]
+    | _ -> [] in
+  let with_timing value = match value with J.Object fields ->
+    obj (timing_fields () @ List.filter (fun (k,_) -> not (List.mem_assoc k (timing_fields ()))) fields)
+    | _ -> value in
+  let named_request r = obj (["methodology",Methodology_execution_record.to_json r;
     "plan",Execution_plan.to_json plan;"bundle",s bundle;"workspace",s workspace;
     "checkpoint_store",s checkpoint_store;"support_tools",s support_tools;"pdk_root",s pdk_root;
     "python",s python;"docker",s docker;"git",s git;"resources",s resources;
-    "timeout_seconds",codec (J.float timeout);"probe_timeout_seconds",codec (J.float probe_timeout)] in
+    "timeout_seconds",codec (J.float timeout);"probe_timeout_seconds",codec (J.float probe_timeout)] @ timing_fields ()) in
   let save_report path report =
+    let report=with_timing report in
     (* Receipt references are operation-relative; retain the exact same report
        there as in the journal, including pending and terminal diagnostics. *)
     Option.iter (fun p -> Result_store.save_json p report) !operation_report;
     if Some path <> !operation_report then Result_store.save_json path report in
   try
-    if evidence_root=workspace || within workspace evidence_root || within evidence_root workspace then failwith "evidence root must be separate from workspace";
-    let _,evidence_report,receipt_path,receipt = Result_store.begin_preflight ~results_root:evidence_root ~bundle () in
+    admit_metadata_roots ~workspace ~evidence_root;
+    (* Inspect only the already-frozen typed plan here. Eligibility, bundle bytes,
+       paths, cancellation and probes are deliberately checked AFTER the requested
+       analysis has its own durable metadata snapshot. *)
+    let early_native=match methodology with None -> false | Some (_,p) -> Timing_intent_named_service.plan_expected p in
+    let _,evidence_report,receipt_path,receipt =
+      if not early_native then Result_store.begin_preflight ~results_root:evidence_root ~bundle ()
+      else (
+        let allocation=Result_store.allocate (evidence_root ^ "/operations") in
+        let evidence_directory=allocation.directory in
+        let report=evidence_directory ^ "/preflight.json" and receipt_path=evidence_directory ^ "/operation.json" in
+        operation:=Some receipt_path;operation_report:=Some report;
+        preflight:=Some (match observation with None -> report | Some w -> Observation_writer.preflight_path w);
+        let attempt_id=match observation with None -> Filename.basename evidence_directory | Some w -> Observation_writer.stream_id w in
+        let expectation=Timing_intent_named_service.expectation ~workspace ~attempt_id in
+        let path=evidence_directory ^ "/timing-intent-expectation.json" in
+        Result_store.save_json path expectation;
+        Unix.chmod path 0o400;
+        early_timing:=Some expectation;
+        early_snapshot:=Some (obj ["path",s path;"sha256",s (hash path)]);
+       let receipt=with_timing (Result_store.operation_receipt allocation ~bundle) in
+        Result_store.save_json receipt_path receipt;
+        allocation,report,receipt_path,receipt) in
     operation := Some receipt_path;
     operation_report := Some evidence_report;
     let report_path = match observation with None -> evidence_report | Some w -> Observation_writer.preflight_path w in
@@ -90,7 +149,7 @@ let prepare ~bundle ~support_tools ~pdk_root ~python ~docker ~git ~resources ~wo
     if methodology<>None then (
       Result_store.save_json receipt_path receipt;
        save_report report_path (obj (["ready",J.bool false;"issues",J.array [];"status",s "pending"] @ reference_fields @ request_fields)));
-    let probe = Runtime_probe.create ~directory:evidence_directory ~environment ~timeout:probe_timeout in
+     let probe = Runtime_probe.create_cancellable ~cancel ~directory:evidence_directory ~environment ~timeout:probe_timeout in
     let docker = Runtime_probe.find_executable ~environment docker and git = Runtime_probe.find_executable ~environment git in
     let bundle = Unix.realpath bundle |> directory in
     let support_tools = Unix.realpath support_tools |> directory and pdk_root = Unix.realpath pdk_root |> directory in
@@ -107,7 +166,8 @@ let prepare ~bundle ~support_tools ~pdk_root ~python ~docker ~git ~resources ~wo
     (match initial_checkpoint with None -> (try ignore (Unix.lstat workspace); failwith "fresh workspace already exists" with Unix.Unix_error (Unix.ENOENT,_,_) -> ())
       | Some _ -> ignore (directory workspace));
     let manifest_path = bundle ^ "/manifest.json" in
-    let manifest_hash = hash manifest_path and manifest = read manifest_path in
+     let manifest_hash = hash manifest_path and manifest = read manifest_path in
+     Timing_intent_named_service.validate_plan ~methodology ~initial_checkpoint ~plan manifest;
     if Macro_contract.active manifest then
       failwith "SRAM segmented checkpoints are unsupported; use run --stage synthesis (fresh coarse synthesis)";
     if get manifest "schema_version" <> codec (J.integer "1") || get manifest "adapter" <> s "LibreLane" then failwith "unsupported bundle schema or adapter";
@@ -125,7 +185,7 @@ let prepare ~bundle ~support_tools ~pdk_root ~python ~docker ~git ~resources ~wo
       if hash (safe_child root relative) <> text (get entry "sha256") then failwith ("changed bundle file: " ^ relative)) files in
     validate_files bundle;
     let git_env = List.filter (fun x -> not (String.starts_with ~prefix:"GIT_OPTIONAL_LOCKS=" x)) environment @ ["GIT_OPTIONAL_LOCKS=0"] in
-    let git_probe = Runtime_probe.create ~directory:(Result_store.allocate (evidence_directory ^ "/collateral")).directory ~environment:git_env ~timeout:probe_timeout in
+     let git_probe = Runtime_probe.create_cancellable ~cancel ~directory:(Result_store.allocate (evidence_directory ^ "/collateral")).directory ~environment:git_env ~timeout:probe_timeout in
     List.iter (fun (root,key) -> if Runtime_probe.command git_probe ~prog:git ~arguments:["-C";root;"rev-parse";"HEAD"] <> text (get requested key)
       then failwith ("collateral revision mismatch: " ^ key)) [support_tools,"support_tools_revision";pdk_root,"pdk_revision"];
     let refs = array (get target "external_references") in
@@ -143,7 +203,7 @@ let prepare ~bundle ~support_tools ~pdk_root ~python ~docker ~git ~resources ~wo
     List.iter (fun (name,digest) -> if hash (resources ^ "/" ^ name) <> digest then failwith ("installed runtime resource changed: " ^ name))
       ["librelane_bridge.py",Segment_service.bridge_sha256;"backend_protocol.py",Segment_service.protocol_sha256];
     let payload_hash = hash (resources ^ "/stage_metadata_probe.py") in
-    let host,container,binding = Runtime_probe.observe probe ~python ~docker ~payload:(resources ^ "/stage_metadata_probe.py") ~pdk_root policy in
+     let host,container,binding = Runtime_probe.observe ~workers:6 probe ~python ~docker ~payload:(resources ^ "/stage_metadata_probe.py") ~pdk_root policy in
     if hash (resources ^ "/stage_metadata_probe.py") <> payload_hash then failwith "metadata payload changed during probes";
     let evaluation = checked (Runtime_evidence.evaluate_observations policy ~host ~container ()) in
     let issues = Runtime_evidence.issues evaluation in
@@ -202,20 +262,33 @@ let prepare ~bundle ~support_tools ~pdk_root ~python ~docker ~git ~resources ~wo
        Ok () with exn -> Error (Printexc.to_string exn) in
      let verify_resolved path = match methodology with None -> Ok () | Some r ->
        Methodology_execution_service.check_resolved (Methodology_execution_record.plan r) path in
-     let service = match Segment_service.create ~binding ~workspace ~project ~pdk_root ~checkpoint_store ~compatibility ~environment ~timeout
+     let service = match Segment_service.create ~workers:6 ~cancel ~binding ~workspace ~project ~pdk_root ~checkpoint_store ~compatibility ~environment ~timeout
         ~verify_inputs ~verify_resolved
        ?initial_checkpoint ?failure_exit_code ~verify_runtime:(fun () -> Runtime_probe.verify probe binding) () with Ok t -> t | Error e -> raise (Runner.Callback_error e) in
     (match (Segment_service.callbacks service).validate plan with Ok () -> () | Error e -> raise (Runner.Callback_error e));
     let summary_path = reserve (Stage_execution_record.path ~workspace ~attempt_id) in
     let diagnostics_path = reserve (workspace ^ "/diagnostics-" ^ attempt_id ^ ".json") in
-    Result_store.save_json (evidence_directory ^ "/prepared.json") (obj (["compatibility",compatibility;"workspace",s workspace;"summary_path",s summary_path;"diagnostics_path",s diagnostics_path] @ reference_fields @ request_fields));
+     Result_store.save_json (evidence_directory ^ "/prepared.json") (with_timing (obj (["compatibility",compatibility;"workspace",s workspace;"summary_path",s summary_path;"diagnostics_path",s diagnostics_path] @ reference_fields @ request_fields)));
     Result_store.save_json receipt_path (Result_store.finish_receipt receipt ~status:Ready ~exit_code:0 ~ended_at:(now ()) ());
-    Ok {service;compatibility;binding;preflight_path=report_path;evidence_directory;summary_path;diagnostics_path;attempt_id;methodology}
+      let timing_intent = !early_timing in
+      if Timing_intent_named_service.expected manifest && timing_intent=None then
+        failwith "named timing expectation was not retained before preparation";
+     let capture_timing = match methodology,timing_intent with Some methodology,Some expectation ->
+       Some (fun occurrence segment publication -> Timing_intent_named_service.capture ~timeout ~workspace ~resources
+         ~methodology ~plan ~expectation ~occurrence ~segment ~publication ~binding ~pdk_root ~environment ~cancel
+         ~verify_runtime:(fun () -> Runtime_probe.verify probe binding) ~verify_inputs ())
+       | _ -> None in
+     Ok {service;compatibility;binding;preflight_path=report_path;evidence_directory;summary_path;diagnostics_path;attempt_id;methodology;
+       timing_intent;capture_timing;cancel}
   with exn ->
     let cause = match exn with Runner.Callback_error e -> e | _ -> Runner.failure (Printexc.to_string exn) in
     (match !preflight with None -> () | Some p ->
       (try let old = read p in
          let detail = obj (["ready",J.bool false;"issues",J.array [s cause.message];"previous_report",old;"bundle",s bundle]
+           @ (match !early_timing with None -> [] | Some _ ->
+             ["status",s (match cause.kind with Runner.Cancellation _ -> "interrupted" | _ -> "failed");
+              "exit_code",codec (J.integer (string_of_int cause.exit_code));
+              "signal",(match cause.kind with Runner.Cancellation n -> codec (J.integer (string_of_int n)) | _ -> J.null)])
            @ (match !published_methodology with None -> [] | Some r ->
              ["methodology",Methodology_execution_record.to_json r;"request",named_request r])) in
         save_report p detail;
@@ -265,13 +338,30 @@ let execute ?observation t plan =
       | exn ->
         prerr_endline ("timing analysis capture unavailable: " ^ Printexc.to_string exn))
   in
-  let result =
-    Segment_service.execute
-      ~persist
-      ?lifecycle:(Option.map Observation_writer.lifecycle observation)
-      ~attempt_id:t.attempt_id
-      plan
-      t.service
+   let callbacks = Segment_service.callbacks t.service in
+   let association = ref None in
+   let publish action context segment =
+     match callbacks.publish action context segment with
+     | Error e -> Error e
+     | Ok publication -> association := Some (context.Runner.occurrence_id,segment,publication); Ok publication in
+   let lifecycle event action occurrence publication =
+     (* Runner has retained the promotion before this callback. Observation of
+        Published is independent of the required analysis completing. *)
+     Option.iter (fun w -> Observation_writer.lifecycle w event action occurrence publication) observation;
+     match event,publication,t.capture_timing with
+     | Runner.Published,Some publication,Some capture when action.Execution_plan.Action.key="implementation.synthesis" ->
+       (match !association with
+        | Some (id,segment,p) when id=occurrence.Runner.occurrence_id && p=publication -> capture occurrence segment publication
+        | _ -> raise (Runner.Callback_error (Runner.failure "named timing: missing originating publication association")))
+     | _ -> () in
+   let cancel () = Option.map (fun n -> Runner.cancellation ~signal:(Segment_service.signal n) "stage execution interrupted") (t.cancel ()) in
+   let result =
+     Runner.execute ?initial:(Segment_service.initial t.service) ?timing_intent:t.timing_intent ~cancel
+       ~persist
+       ~lifecycle
+       ~attempt_id:t.attempt_id
+       plan
+       {callbacks with publish}
   in
   (* Supplementary capture cannot replace the primary implementation outcome. *)
   (try

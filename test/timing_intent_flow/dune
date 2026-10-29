@@ -1,0 +1,28 @@
+(executable
+ (name emitter)
+ (modules emitter)
+ (libraries core hardcaml hardcaml_asic)
+ (preprocess (pps ppx_jane ppx_hardcaml)))
+
+(executable
+ (name consumer)
+ (modules consumer)
+ (libraries hardcaml_asic.execution hardcaml_asic.flow_domain unix yojson))
+
+(rule
+ (alias runtest)
+ (deps check.py ../../dune-project
+   ../../flow/hardcaml_asic_flow/timing_intent_runtime.py
+   (source_tree ../../flow)
+   ../../bin/experimental_run.exe
+   ../../bin/experimental_timing_intent_inspect.exe
+   ../../bin/experimental_archive.exe)
+ (action (run python3 -B %{dep:check.py} %{exe:emitter.exe} %{exe:consumer.exe}
+   %{exe:../../bin/flow_cli.exe} %{exe:../../bin/experimental_archive.exe}
+    %{dep:../../flow/hardcaml_asic_flow/timing_intent_runtime.py})))
+
+(rule
+ (alias runtest)
+ (deps driver_startup.py ../../flow/hardcaml_asic_flow/timing_intent_runtime.py)
+ (action (run python3 -B %{dep:driver_startup.py}
+   %{dep:../../flow/hardcaml_asic_flow/timing_intent_runtime.py})))

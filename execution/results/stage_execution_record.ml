@@ -23,12 +23,32 @@ let validate_methodology_checkpoints r references =
       (text (get reference "path") ^ "/resolved.json"))) references
 let decode raw =
   let fields = match raw with J.Object xs -> xs | _ -> invalid_arg "expected execution object" in
-  if List.exists (fun (k,_) -> not (List.mem k ["attempt_id";"plan";"occurrences";"status";"exit_code";"artifacts";"methodology"])) fields
+  if List.exists (fun (k,_) -> not (List.mem k ["attempt_id";"plan";"occurrences";"status";"exit_code";"artifacts";"methodology";"timing_intent"])) fields
   then invalid_arg "not a segmented Runner record";
   let attempt = text (get raw "attempt_id") in
   if attempt="" || String.contains attempt '/' || String.contains attempt '\000' then invalid_arg "invalid execution attempt ID";
   let plan = checked (Execution_plan.Stage_plan.of_json (get raw "plan")) in
   let methodology = Option.map (fun r -> checked (Methodology_execution_record.of_json ~attempt_id:attempt ~plan r)) (List.assoc_opt "methodology" fields) in
+  (match List.assoc_opt "timing_intent" fields with None -> () | Some expectation ->
+    ignore (codec (J.exact_object expectation ~fields:["schema_version";"kind";"attempt_id";"occurrence_id";"profile";"directory";"request";"publication";"companion"]));
+    let str s=codec (J.string s) in
+    if get expectation "schema_version"<>codec (J.integer "1") ||
+       get expectation "kind"<>str "hardcaml-asic.named-timing-expectation" ||
+       get expectation "attempt_id"<>str attempt ||
+       get expectation "occurrence_id"<>str (attempt^"/implementation.synthesis") ||
+       get expectation "profile"<>str "opensta-2.7-native-state-v2" then
+      invalid_arg "execution timing expectation contract/attempt/occurrence/profile mismatch";
+    if methodology=None || Execution_plan.Stage_plan.schema_version plan<>4 ||
+       Execution_plan.Stage_plan.source_boundary plan<>None ||
+       Execution_plan.Stage_plan.sequence plan<>[S.Synthesis] then
+      invalid_arg "execution timing expectation requires fresh named schema4 synthesis";
+    let directory=text (get expectation "directory") in
+    if Filename.is_relative directory || checked (Checkpoint.absolute_path directory)<>directory ||
+       Filename.basename directory<>attempt || Filename.basename (Filename.dirname directory)<>"timing-intent" then
+      invalid_arg "execution timing expectation directory mismatch";
+    List.iter (fun (key,name) -> if get expectation key<>str (directory^"/"^name) then
+      invalid_arg ("execution timing expectation path mismatch: "^key))
+      ["request","request.json";"publication","publication.json";"companion","analysis.json"]);
   let status = text (get raw "status") and exit = code (get raw "exit_code") in
   if not (match status with "completed"|"running" -> exit=0 | "failed" -> exit>0
     | "interrupted" -> exit>128 && exit<=255 | _ -> false) then invalid_arg "inconsistent execution status/exit";
@@ -91,6 +111,14 @@ let decode raw =
     if get o "status"=codec (J.string "completed") && not (List.exists (fun r ->
       match a.stage with Physical b -> get r "boundary"=codec (J.string (S.to_string b)) | _ -> false) references)
     then invalid_arg "completed stage missing checkpoint publication") actions occurrences;
+  let advertised=match methodology with None -> false | Some r ->
+    let plan=Hardcaml_asic.Methodology_plan.to_yojson (Methodology_execution_record.plan r) in
+    match plan with `Assoc fields -> (match List.assoc_opt "bundle_manifest" fields with
+      | Some (`String raw) ->
+        let m=Yojson.Safe.from_string raw in Timing_intent_flow.expected m
+      | _ -> false) | _ -> false in
+  if List.mem_assoc "timing_intent" fields || advertised then
+    List.iter (fun reference -> Timing_intent_inventory.admit_checkpoint (text (get reference "path"))) references;
   Option.iter (fun r -> validate_methodology_checkpoints r references) methodology;
   {raw;plan;occurrences;references;status;methodology}
 let protect f = try Ok (f ()) with Invalid_argument s | Failure s -> Error s
@@ -98,6 +126,39 @@ let check_methodology_checkpoints r references = protect (fun () -> validate_met
 let of_json raw = protect (fun () -> decode raw)
 let read path = match Result_store.read_json path with
   | Error e -> Error (J.error_message e) | Ok j -> of_json j
+let validate_snapshot ?(admit_metadata=(fun _ -> ())) raw =
+  try
+    (match get raw "artifacts" with J.Array refs ->
+      if List.length refs>7 then invalid_arg "execution checkpoint count bound exceeded";
+      List.iter (fun reference -> List.iter (fun name ->
+        admit_metadata (Filename.concat (text (get reference "path")) name))
+        ["manifest.json";"segment.json";"state.json";"resolved.json";"closure.json"]) refs | _ -> ());
+    let record=checked (of_json raw) in
+    let compatibility=ref None in
+    let checkpoints=List.map (fun reference ->
+      let path=text (get reference "path") in
+      let m=checked (Checkpoint.read path) in
+      let c=Option.value !compatibility ~default:m.compatibility in
+      let m=checked (Checkpoint.validate ~compatibility:c path) in
+      if get reference "identity"<>codec (J.string m.identity) ||
+         get reference "boundary"<>codec (J.string (S.to_string m.boundary)) then
+        invalid_arg "selected checkpoint reference identity/boundary mismatch";
+      let segment=Evidence_json.read (path^"/segment.json") in
+      let bytes=Evidence_json.raw_bytes segment in
+      if String.length bytes>32*1024*1024 then invalid_arg "checkpoint segment byte bound exceeded";
+      let inventory=match List.assoc_opt "segment.json" m.files with Some r -> r | None -> invalid_arg "validated checkpoint has no segment inventory" in
+      if J.sha256_bytes bytes<>inventory.sha256 then invalid_arg "checkpoint segment bytes differ from validated inventory SHA-256";
+      let segment=codec (J.parse bytes) in
+      if get segment "metrics"<>m.metrics then invalid_arg "checkpoint manifest/segment metrics mismatch";
+      if get segment "boundary"<>codec (J.string (S.to_string m.boundary)) then invalid_arg "checkpoint segment boundary mismatch";
+      compatibility:=Some m.compatibility;path,m) record.references in
+    List.iter (fun name ->
+      let hashes=List.map (fun (path,_) -> (checked (Checkpoint.file_record (path^"/"^name))).sha256) checkpoints in
+      match hashes with [] -> () | h::rest -> if not (List.for_all ((=) h) rest) then
+        invalid_arg ("selected checkpoints have different "^name)) ["closure.json";"resolved.json"];
+    Ok (record,checkpoints)
+  with Invalid_argument e | Failure e | Sys_error e -> Error e
+     | Unix.Unix_error (e,f,p) -> Error (f^" "^p^": "^Unix.error_message e)
 let path ~workspace ~attempt_id =
   if attempt_id="" || String.contains attempt_id '/' || String.contains attempt_id '\000'
   then invalid_arg "invalid execution attempt ID";

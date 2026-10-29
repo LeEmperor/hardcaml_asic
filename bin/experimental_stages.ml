@@ -85,7 +85,10 @@ let main () =
      let bytes=Fun.protect ~finally:(fun () -> close_in_noerr ic) (fun () -> really_input_string ic (in_channel_length ic)) in
      let p=match Hardcaml_asic.Methodology_plan.of_string bytes with Ok p -> p | Error e -> failwith (Core.Error.to_string_hum e) in
      methodology:=Some (!expected_plan_identity,p);
-     ignore (checked (Methodology_execution_service.check ~bundle:(abs !bundle) ~expected:!expected_plan_identity p));
+      (* Native named validation belongs after Stage_preparation's durable
+         expectation. Keep historical eager validation for producer-free plans. *)
+      if not (Timing_intent_named_service.plan_expected p) then
+        ignore (checked (Methodology_execution_service.check ~bundle:(abs !bundle) ~expected:!expected_plan_identity p));
      ())
    else if !expected_plan_identity<>"" then failwith "--expected-plan-identity requires --methodology-plan";
    let select value suffix = if !value="" then (if !toolchain="" then failwith "--toolchain or explicit tool paths required"; abs !toolchain ^ suffix) else abs !value in

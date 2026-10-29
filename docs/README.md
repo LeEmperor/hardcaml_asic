@@ -30,7 +30,7 @@ How to use behavior that is implemented now.
 | [Resource preparation](guides/resource-preparation.md) | Project-owned durable Elaborate & Resolve operation, identities, cancellation and historical CLI inspection |
 | [Resource realization](guides/resource-realization.md) | Bundle-owned expectations, reconciliation, physical footprint/class sums, explicit area ratios and sampled resource timing/electrical evidence |
 | [Bounded resource inspection](guides/resource-inspection.md) | Client-facing exact targets, inventory availability, classified measurements and digest-fenced detail/artifact pages |
-| [Narrow timing intent](guides/timing-intent.md) | Exact synchronizer/reset endpoints, fail-closed SDC resolution and retained standalone STA audit inspection |
+| [Narrow timing intent](guides/timing-intent.md) | Exact synchronizer/reset endpoints, native stored scope/diagnostics, standalone/coarse STA inspection and source-closed archives |
 | [Execution and results](guides/flow.md) | Command and storage defaults, run/postcheck/collect/report/archive, observation schemas, runtime policy, finalization |
 | [Stage quickstart](guides/stage-quickstart.md) | Explicit six-stage runs, checkpoints, restart, live watch and reporting |
 | [OCaml stage recipes](guides/ocaml-stage-recipes.md) | Typed `Flow.Stage` / `Flow.Recipe` declarations and schema-3 Python interoperability |
@@ -67,6 +67,12 @@ to the phase plan for current status.
 
 - [PT.7 timing-intent implementation](development/pt7-timing-intent.md): bounded
   declaration/SDC/evidence contract, example native acceptance and independent reviews.
+- [PT.7c native/coarse-flow implementation](development/pt7c-native-flow.md): native
+  scope/diagnostic contracts, ordinary synthesis linkage, review corrections and
+  final retained-evidence acceptance; exhaustive coverage limits remain explicit.
+- [PT.7 named synthesis integration](development/pt7-named-synthesis.md): exact
+  methodology/occurrence/checkpoint association, required analysis lifecycle,
+  path-bound source inventory and reviewed area/delay acceptance.
 
 - [Default flow journal and foreground watch](development/flow-journal.md)
 - [Journal event timing and live observation](development/journal-event-timing.md)

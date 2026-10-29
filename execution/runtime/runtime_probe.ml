@@ -88,7 +88,7 @@ let observe_container ?(workers=20) t ~docker ~payload policy =
     "interpreter_flags",get b "interpreter_flags";
     "packaging_path",s (if get b "interpreter_flags" = flags T.Isolated then "isolated" else "image-owned-environment");
     "image_identity",get b "image_identity";"engine_identity",get b "engine_identity"]) | _ -> assert false
-let observe t ~python ~docker ~payload ~pdk_root policy =
+let observe ?(workers=6) t ~python ~docker ~payload ~pdk_root policy =
   let code = read payload in
   let host = metadata ~host:true (command t ~prog:python ~arguments:["-I";"-B";"-c";code;"host"]) in
   let host = match host with J.Object xs -> obj (xs @ ["interpreter",s python;"interpreter_flags",flags T.Isolated]) | _ -> assert false in
@@ -99,7 +99,7 @@ let observe t ~python ~docker ~payload ~pdk_root policy =
       ~info ~inspection ~observation:(obj ["interpreter_flags",flags flag])) in
     let d = match binding with T.Docker d -> d | _ -> assert false in
     let base,out,err = paths t in
-    let invocation = T.docker_invocation d ~project:t.directory ~pdk_root ~interpreter:true
+     let invocation = T.docker_invocation d ~workers ~project:t.directory ~pdk_root ~interpreter:true
       ~arguments:["-c";code;"container"] ~cwd:"/" ~environment:t.environment ~stdout:(Process.File out) ~stderr:(Process.File err) () in
     let spec = T.process_specification invocation in
     Result_store.save_json (base ^ ".json") (obj ["argv",J.array (List.map s spec.argv)]);

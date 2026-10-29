@@ -16,7 +16,7 @@ let grammar command query = match command with
   | "collect" -> ["output"], ["stdout"], "run-dir"
   | "report" -> [], [], "target"
   | "resources-inspect" -> [], [], "run-dir"
-  | "timing-intent-inspect" -> [], [], "target"
+  | "timing-intent-inspect" -> ["kind"], [], "target"
   | "resource-inspect" -> ["kind";"query";"resource-id";"section";"expected-digest";"artifact-id";"offset";"limit"], [], "target"
   | "inspect" -> ["domain";"stage";"row-id";"expected-digest"], [], "execution"
   | "archive" -> ["output"], ["list";"force"], "run-dir"
@@ -53,6 +53,7 @@ let help command query =
     if command="report" then print_endline "TARGET: coarse run, stage checkpoint, stage workspace, or explicit execution JSON";
      if command="inspect" then print_endline "Read-only retained evidence: --domain timing|clocks|physical|routing --stage synthesis|floorplan|placement|cts|routing|timing|signoff. --expected-digest alone pins a timing_analysis1 source; with --row-id it pins the index for detail. JSON contract: hardcaml-asic.inspection schema 1.";
      if command="preparation-inspect" then print_endline "Read-only retained Elaborate & Resolve Resources preparation. --current-identity compares an explicit preparation identity; absent comparison does not reconstruct current sources. JSON contract: hardcaml-asic.preparation-inspection schema 1.";
+     if command="timing-intent-inspect" then print_endline "Read-only timing evidence. --kind execution requires an exact named execution JSON; --kind coarse_run selects ordinary linked synthesis evidence; default standalone preserves schema-1/2 audit inspection. Named evidence is path-bound; named archives/relocation unsupported. Exhaustive path-effect coverage remains unavailable.";
     List.iter (fun k -> Printf.printf "  --%s VALUE\n" k) values;
     List.iter (fun k -> Printf.printf "  --%s\n" k) flags);
   print_endline "-h, --help  show help\n--json  machine-readable payload (default: human summary)\n--verbose  expanded diagnostics on stderr";

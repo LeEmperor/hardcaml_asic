@@ -11,7 +11,18 @@
     not reconstruction of the whole base-SDC policy. Log processing retains only
     bounded receipt/wire state (65,536 lines, 64 KiB/line, 1,028 events/2 MiB wire).
 
-    The producer contract is [docs/development/pt7-evidence-handoff.md]. Sources
+    Schema 1 retains current SDC serializer suffix replay. Schema 2 instead binds
+    the retained versioned native producer to its identity-covered bundle member,
+    with no current producer or SDC renderer replay. It interprets exact stored
+    exception scope and complete returned diagnostic groups/native endpoints;
+    exhaustive exception effect and overall coverage remain unavailable.
+    Schema 2 requires native profile/data version 2 with category-bound raw
+    diagnostics and a leading native current_design matching the manifest top.
+    Older native-v1 schema-2 captures reject explicitly as unsupported and require
+    recapture; they are never relabelled as category-bound profile-2 evidence.
+
+    Producer contracts are [docs/development/pt7-evidence-handoff.md] and
+    [docs/development/pt7c-native-handoff.md]. Sources
     must not be mutated concurrently with inspection. Receipts are source-replayed
     producer assertions, not authenticated execution attestations. *)
 val inspect : directory:string -> unit -> (Evidence_json.t, string) result

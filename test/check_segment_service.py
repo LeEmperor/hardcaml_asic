@@ -267,7 +267,7 @@ def verify(consumer, service, package, root, fixture, engine):
         assert launch["argv"][1:] in launches
         assert launch["container_name"] in names
         assert launch["binding"]["engine_identity"] == config["binding"]["engine_identity"]
-        assert launch["resources"]["cpus"] == 20
+        assert launch["resources"]["cpus"] == 6
         assert terminal["transport_succeeded"] and terminal["cleanup"]["error"] is None
         assert len(terminal["cleanup"]["attempts"]) == 1
     retained = Path(config["summary_path"]).read_bytes()

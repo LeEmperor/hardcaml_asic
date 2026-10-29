@@ -277,6 +277,29 @@ let run ~execution ~domain ~stage ?row_id ?expected_digest () = protect (fun () 
   List.iter (fun (path,manifest) ->
     if Hashtbl.find_opt manifest_values (Filename.concat path "manifest.json")<>Some manifest.Checkpoint.raw then
       invalid_arg "checkpoint manifest changed between capture and validation") manifests;
+  let timing_alias_recheck=ref (fun () -> ()) in
+  (if domain="timing" && stage="synthesis" then
+    match checked (Timing_intent_execution.inspect_snapshot ~execution:execution_source.path
+      ~execution_sha256:execution_source.hash ~raw:record.raw ~record ~checkpoints:manifests ()) with
+    | None -> ()
+    | Some evidence ->
+      (match evidence with `Assoc fields -> (match List.assoc_opt "association" fields with
+        | Some (`Assoc association) -> (match List.assoc_opt "external_aliases" association with
+          | Some rows ->
+            let aliases=Timing_intent_inventory.aliases_of_json rows in
+            let checkpoint=match List.find_opt (fun (_,m)->m.Checkpoint.boundary=Execution_plan.Stage.Synthesis) manifests with
+              | Some (_,m)->m | None->invalid_arg "missing captured timing alias checkpoint" in
+            let roots=[text (get checkpoint.compatibility "pdk_root");text (get checkpoint.compatibility "project")^"/tt"] in
+            timing_alias_recheck:=(fun () -> Timing_intent_inventory.validate_aliases ~roots ~external_files:checkpoint.external_files aliases)
+          | None -> ())
+        | _ -> ()) | _ -> ());
+      let evidence=codec (J.parse (Yojson.Safe.to_string evidence)) in
+      let sources=array (get evidence "sources") in
+      List.iter (fun source -> let path=text (get source "path") in
+        if path<>execution_source.path && not (Hashtbl.mem metadata_seen path) then (
+          admit (Unix.stat path).Unix.st_size;
+          Hashtbl.add metadata_seen path ())) sources;
+      observed:=List.rev_append sources !observed);
   let diagnostics=ref [] and rows=ref [] and size=ref 0 and truncated=ref false in
   let diagnostic s = if List.length !diagnostics<256 then diagnostics:= !diagnostics@[limit 1500 (printable s)] else truncated:=true in
   let observe s = observed:=source_ref s::!observed;s in
@@ -624,4 +647,5 @@ let run ~execution ~domain ~stage ?row_id ?expected_digest () = protect (fun () 
   (* Recheck every observed file: a mixed generation never becomes an index. *)
   List.iter (fun ref -> let path=text (get ref "path") in
     if (checked (Checkpoint.file_record path)).sha256<>text (get ref "sha256") then invalid_arg ("inspection source changed: "^path)) !observed;
+  (!timing_alias_recheck) ();
   result)

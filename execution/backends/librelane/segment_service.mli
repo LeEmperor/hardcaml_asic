@@ -18,7 +18,8 @@ val verify_reply : Backend_protocol.request -> Backend_protocol.reply
     Raises [Runner.Callback_error] on invalid evidence. *)
 val create : binding:Execution_transport.binding -> workspace:string -> project:string -> pdk_root:string
   -> checkpoint_store:string -> compatibility:Identity_json.t
-  -> environment:string list -> timeout:float
+   -> environment:string list -> timeout:float
+     -> ?workers:int -> ?cancel:(unit -> int option)
      -> ?initial_checkpoint:string -> ?verify_runtime:(unit -> (unit, string) result)
      -> ?verify_inputs:(unit -> (unit, string) result)
      -> ?verify_resolved:(string -> (unit, string) result)
@@ -48,7 +49,10 @@ val process_json : Process_supervisor.result -> Identity_json.t
       checks each candidate/staging resolved.json against the selected contract.
       Named Stage_preparation supplies both; defaults preserve ordinary callers.
       Stable trusted parents and exclusive workspace use are still required; these
-      checks do not make arbitrary adversarial filesystem races impossible. *)
+       checks do not make arbitrary adversarial filesystem races impossible. *)
+(* [workers] defaults to6 and admits1..6; the qualified bridge bounds its native
+   executor/tool settings to6 (STA1). [cancel] is forwarded to every supervised
+   backend call, including publication validation, and polled by execute. *)
 
 val initial : t -> checkpoint Runner.source option
 
@@ -87,8 +91,9 @@ module Testing : sig
       Execution_transport/Process_supervisor. Compatibility still requires the
       exact-image schema; it is fixture evidence, not real runtime readiness. *)
   val create_native_fixture : fixture:string -> interpreter:string
-    -> workspace:string -> project:string -> pdk_root:string -> checkpoint_store:string
+     -> workspace:string -> project:string -> pdk_root:string -> checkpoint_store:string
     -> compatibility:Identity_json.t -> environment:string list -> timeout:float
+      -> ?workers:int -> ?cancel:(unit -> int option)
       -> ?initial_checkpoint:string -> ?verify_runtime:(unit -> (unit, string) result)
       -> ?verify_inputs:(unit -> (unit, string) result)
       -> ?verify_resolved:(string -> (unit, string) result)
